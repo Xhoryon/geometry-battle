@@ -1,2 +1,2 @@
 export * from './Manifest';
-export * from './AlgorithmSubmission';
+export * from './Package';

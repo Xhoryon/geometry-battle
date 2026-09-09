@@ -1,9 +1,16 @@
 /**
- * Team Controller UI
- * Plan 2 Phase E: Shooter Selection UI
+ * Team Controller / Judge Controller UI —— 绑定 Canonical Match Pipeline
+ *
+ * 修复的 Finding：
+ *   P0-1  Shooter 选择写入硬编码空 DSL
+ *   P0-10 需要正式入口
+ *   P0-12 未锁定即可开局
+ *   P2-19 死点仍可被选择
+ *
+ * 所有动作都是 MatchEngine 的薄封装，不复制任何规则。
  */
 
-import { MatchController } from '../competition/MatchController';
+import { MatchEngine } from '../core/Match';
 import { Point } from '../field/Field';
 
 export interface ShooterSelectionState {
@@ -13,142 +20,76 @@ export interface ShooterSelectionState {
   locked: boolean;
 }
 
-/**
- * Team Controller for Shooter Selection
- */
 export class TeamControllerUI {
-  private match: MatchController;
-  private team: 'A' | 'B';
+  constructor(private engine: MatchEngine, private team: 'A' | 'B') {}
 
-  constructor(match: MatchController, team: 'A' | 'B') {
-    this.match = match;
-    this.team = team;
-  }
-
-  /**
-   * 获取存活 shooter 列表
-   */
   getAliveShooters(): { id: string; position: Point }[] {
-    const state = this.match.getState();
-    const map = state.config.map;
-    if (!map) return [];
-
-    const teamPoints = this.team === 'A' ? map.teamA : map.teamB;
-    return teamPoints.map((p, i) => ({
-      id: `${this.team}${i + 1}`,
-      position: p,
-    }));
+    return this.engine
+      .getSnapshot()
+      .points.filter((p) => p.team === this.team && p.alive)
+      .map((p) => ({ id: p.id, position: p.position }));
   }
 
-  /**
-   * 选择 shooter
-   */
   selectShooter(shooterId: string): { success: boolean; error: string | null } {
-    return this.match.selectShooter(this.team, shooterId);
+    const r = this.engine.selectShooter(this.team, shooterId);
+    return { success: r.ok, error: r.error };
   }
 
-  /**
-   * 获取当前状态
-   */
+  lockShooter(): { success: boolean; error: string | null } {
+    const r = this.engine.lockShooter(this.team);
+    return { success: r.ok, error: r.error };
+  }
+
   getState(): ShooterSelectionState {
+    const snap = this.engine.getSnapshot();
     return {
       team: this.team,
       alive: this.getAliveShooters(),
-      selected: null,
-      locked: false,
+      selected: snap.shooters[this.team]?.id ?? null,
+      locked: snap.locked[this.team],
     };
   }
 
-  /**
-   * 渲染 shooter 选择界面
-   */
   renderSelectionUI(): string {
-    const alive = this.getAliveShooters();
-    const state = this.match.getState();
-
+    const s = this.getState();
     const lines: string[] = [];
-    lines.push('┌─────────────────────────────────────────────────────┐');
-    lines.push(`│           TEAM ${this.team} CONTROLLER                  │`);
-    lines.push('├─────────────────────────────────────────────────────┤');
-    lines.push(`│  Alive Shooters (${alive.length} remaining):`);
-
-    for (const shooter of alive) {
-      lines.push(`│    ${shooter.id.padEnd(4)} (${shooter.position.x.toFixed(1)}, ${shooter.position.y.toFixed(1)})`);
+    lines.push(`┌─────────────────────────────────────────────────────────────┐`);
+    lines.push(`│                  TEAM ${this.team} CONTROLLER                      │`);
+    lines.push(`├─────────────────────────────────────────────────────────────┤`);
+    lines.push(`│  Alive points (${s.alive.length}):`);
+    if (s.alive.length === 0) lines.push('│    (none)');
+    for (const p of s.alive) {
+      const marker = s.selected === p.id ? ' ← SELECTED' : '';
+      lines.push(`│    ${p.id.padEnd(4)} (${p.position.x.toFixed(1)}, ${p.position.y.toFixed(1)})${marker}`);
     }
-
-    const currentPhase = state.phase;
-    if (currentPhase === 'LOCKED') {
-      if (this.team === 'A' && state.shooterA) {
-        lines.push(`│  Selected: ${state.shooterA.id} ✓`);
-      } else if (this.team === 'B' && state.shooterB) {
-        lines.push(`│  Selected: ${state.shooterB.id} ✓`);
-      }
-      lines.push('│  Status: LOCKED');
-    } else if (currentPhase === 'READY' || currentPhase === 'SELECT_SHOOTER') {
-      lines.push('│  Status: SELECT SHOOTER');
-    } else {
-      lines.push(`│  Status: ${currentPhase}`);
-    }
-
-    lines.push('└─────────────────────────────────────────────────────┘');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(`│  Locked: ${s.locked ? '✓ YES' : '✕ NO'}`);
+    lines.push(`└─────────────────────────────────────────────────────────────┘`);
     return lines.join('\n');
   }
 }
 
-/**
- * Judge Controller UI
- * Plan 2 Phase E: Judge Control Panel
- */
 export class JudgeControllerUI {
-  private match: MatchController;
+  constructor(private engine: MatchEngine) {}
 
-  constructor(match: MatchController) {
-    this.match = match;
+  /** 裁判显式 START ROUND —— 双方 READY 不会自动触发 */
+  startRound(): { success: boolean; error: string | null } {
+    const r = this.engine.judgeStartRound();
+    return { success: r.ok, error: r.error };
   }
 
-  /**
-   * 开始 Round
-   */
-  startRound(): boolean {
-    return this.match.judgeStart();
-  }
-
-  /**
-   * 获取当前 Phase
-   */
-  getPhase(): string {
-    return this.match.getPhase();
-  }
-
-  /**
-   * 渲染 Judge 控制面板
-   */
-  renderControlPanel(): string {
-    const phase = this.getPhase();
-    const state = this.match.getState();
-
+  renderJudgeUI(): string {
+    const snap = this.engine.getSnapshot();
     const lines: string[] = [];
-    lines.push('┌─────────────────────────────────────────────────────┐');
-    lines.push('│              JUDGE CONTROLLER                       │');
-    lines.push('├─────────────────────────────────────────────────────┤');
-    lines.push(`│  Current Phase: ${phase.padEnd(34)}│`);
-    lines.push('├─────────────────────────────────────────────────────┤');
-    lines.push('│  CONTROLS:                                         │');
-
-    const canStart = phase === 'LOCKED';
-    const canSelect = phase === 'READY' || phase === 'SELECT_SHOOTER';
-
-    lines.push(`│  [${canSelect ? 'X' : ' '}] SELECT SHOOTERS`.padEnd(55) + '│');
-    lines.push(`│  [${canStart ? 'X' : ' '}] START ROUND`.padEnd(55) + '│');
-    lines.push('│  [ ] PAUSE MATCH                                   │');
-    lines.push('│  [ ] RESUME MATCH                                  │');
-    lines.push('│  [ ] END MATCH                                     │');
-    lines.push('├─────────────────────────────────────────────────────┤');
-    lines.push('│  ROUND INFO:                                       │');
-    lines.push(`│    Round: ${String(state.roundNumber).padEnd(42)}│`);
-    lines.push(`│    Alive - A: ${String(state.aliveA).padEnd(37)}│`);
-    lines.push(`│    Alive - B: ${String(state.aliveB).padEnd(37)}│`);
-    lines.push('└─────────────────────────────────────────────────────┘');
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push('│                     JUDGE CONSOLE                           │');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(`│  Phase:   ${snap.phase}`);
+    lines.push(`│  Round:   ${snap.round}`);
+    lines.push(`│  A:       ${snap.locked.A ? 'LOCKED' : 'pending'} ${snap.shooters.A ? `(${snap.shooters.A.id})` : ''}`);
+    lines.push(`│  B:       ${snap.locked.B ? 'LOCKED' : 'pending'} ${snap.shooters.B ? `(${snap.shooters.B.id})` : ''}`);
+    lines.push(`│  Alive:   A=${snap.alive.A}  B=${snap.alive.B}`);
+    lines.push('└─────────────────────────────────────────────────────────────┘');
     return lines.join('\n');
   }
 }

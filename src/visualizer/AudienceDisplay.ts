@@ -4,7 +4,7 @@
  */
 
 import { Point } from '../field/Field';
-import { ASTNode, evaluateAST } from '../function/DSL';
+import { CanonicalNode, evaluateNode } from '../core/Ast';
 
 export interface VisualizerConfig {
   width: number;
@@ -26,7 +26,7 @@ export const DEFAULT_VISUALIZER_CONFIG: VisualizerConfig = {
  * 渲染函数图像上的点
  */
 export function sampleFunctionPoints(
-  fn: ASTNode,
+  fn: CanonicalNode,
   xStart: number,
   xEnd: number,
   step: number = 0.05
@@ -36,7 +36,7 @@ export function sampleFunctionPoints(
   const actualStep = step * direction;
 
   for (let x = xStart; direction > 0 ? x <= xEnd : x >= xEnd; x += actualStep) {
-    const y = evaluateAST(fn, x);
+    const y = evaluateNode(fn, x);
     if (isFinite(y) && !isNaN(y)) {
       points.push({ x, y });
     }
@@ -49,7 +49,7 @@ export function sampleFunctionPoints(
  * 计算轨迹动画帧
  */
 export function computeAnimationFrames(
-  fn: ASTNode,
+  fn: CanonicalNode,
   xStart: number,
   xEnd: number,
   frameCount: number = 30
@@ -203,8 +203,8 @@ export interface AnimationFrame {
 }
 
 export function generateAnimationData(
-  fnA: ASTNode | null,
-  fnB: ASTNode | null,
+  fnA: CanonicalNode | null,
+  fnB: CanonicalNode | null,
   xStartA: number,
   xEndA: number,
   xStartB: number,

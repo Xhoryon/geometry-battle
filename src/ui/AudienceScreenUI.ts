@@ -1,203 +1,114 @@
 /**
- * Audience Screen UI
- * Plan 2 Phase F: Audience Display
+ * Audience Screen UI —— 只读消费 Canonical Match Pipeline 的状态
+ *
+ * 修复的 Finding：
+ *   P1-24 比赛结束前显示错误的获胜者
+ *   P2-3  UI 与真实引擎状态脱节
+ *
+ * 关键约束：观众屏只读取引擎快照 / 已落盘回放，
+ * 不参与判定，也不重新运行算法。
  */
 
-import { MatchController } from '../competition/MatchController';
-import { MatchLogger, RoundLog } from '../replay/ReplayLogger';
-import { formatAudienceState, AudienceState } from '../visualizer/AudienceDisplay';
-import { astToString, ASTNode } from '../function/DSL';
+import { MatchEngine, MatchSnapshot } from '../core/Match';
+import { Replay, ReplayFrame, RoundLog } from '../core/Logs';
+import { AudienceState, formatAudienceState } from '../visualizer/AudienceDisplay';
+import { parseCanonicalDSL, toMathString } from '../core/Ast';
 
-export interface MatchResult {
+export interface MatchResultSummary {
   winner: 'A' | 'B' | 'draw';
   rounds: number;
   totalKillsA: number;
   totalKillsB: number;
 }
 
-/**
- * Audience Screen - Main spectator view
- */
 export class AudienceScreenUI {
-  private match: MatchController;
-  private logger: MatchLogger | null;
+  constructor(private engine: MatchEngine) {}
 
-  constructor(match: MatchController, logger?: MatchLogger) {
-    this.match = match;
-    this.logger = logger || null;
-  }
-
-  /**
-   * 获取观众状态
-   */
   getAudienceState(): AudienceState {
-    const state = this.match.getState();
-    const matchState = this.match.getState();
+    const snap = this.engine.getSnapshot();
+    const last = snap.rounds[snap.rounds.length - 1] ?? null;
+
+    const fnText = (log: RoundLog | null, team: 'A' | 'B'): string | null => {
+      if (!log) return null;
+      const raw = team === 'A' ? log.aFunction : log.bFunction;
+      if (!raw) return null;
+      const parsed = parseCanonicalDSL(raw);
+      return parsed.ok && parsed.ast ? toMathString(parsed.ast) : null;
+    };
 
     return {
-      roundNumber: state.roundNumber,
-      phase: state.phase,
+      roundNumber: snap.round,
+      phase: snap.phase,
       teamA: {
-        name: state.config.teamAName,
-        alive: state.aliveA,
-        shooter: state.shooterA?.id || null,
-        computing: state.phase === 'COMPUTING' && !state.resultA,
-        computeTime: state.resultA?.computeTimeMs || null,
-        function: state.functionA ? astToString(state.functionA) : null,
+        name: 'Team A',
+        alive: snap.alive.A,
+        shooter: snap.shooters.A?.id ?? null,
+        computing: snap.phase === 'COMPUTING',
+        computeTime: last ? last.aTimeMs : null,
+        function: fnText(last, 'A'),
       },
       teamB: {
-        name: state.config.teamBName,
-        alive: state.aliveB,
-        shooter: state.shooterB?.id || null,
-        computing: state.phase === 'COMPUTING' && !state.resultB,
-        computeTime: state.resultB?.computeTimeMs || null,
-        function: state.functionB ? astToString(state.functionB) : null,
+        name: 'Team B',
+        alive: snap.alive.B,
+        shooter: snap.shooters.B?.id ?? null,
+        computing: snap.phase === 'COMPUTING',
+        computeTime: last ? last.bTimeMs : null,
+        function: fnText(last, 'B'),
       },
-      trajectoryA: null,  // TODO: compute from function
+      trajectoryA: null,
       trajectoryB: null,
-      hits: [...state.hitsA, ...state.hitsB],
-      winner: null,
+      hits: last ? [...last.aHits, ...last.bHits] : [],
+      // 只有比赛真正结束后才展示胜者（P1-24）
+      winner: snap.phase === 'MATCH_END' ? snap.winner : null,
     };
   }
 
-  /**
-   * 获取比赛结果
-   */
-  getMatchResult(): MatchResult | null {
-    const winner = this.match.getWinner();
-    if (winner === 'draw' && this.match.getState().aliveA > 0 && this.match.getState().aliveB > 0) {
-      return null;
-    }
-
-    const state = this.match.getState();
-    const logs = state.roundLogs;
-
-    const totalKillsA = logs.reduce((sum, log) => sum + log.aKills, 0);
-    const totalKillsB = logs.reduce((sum, log) => sum + log.bKills, 0);
-
-    return {
-      winner,
-      rounds: state.roundNumber,
-      totalKillsA,
-      totalKillsB,
-    };
-  }
-
-  /**
-   * 渲染主屏幕
-   */
   render(): string {
-    const state = this.getAudienceState();
+    return formatAudienceState(this.getAudienceState());
+  }
+
+  renderSnapshotBoard(snap: MatchSnapshot): string {
     const lines: string[] = [];
-
-    lines.push('');
-    lines.push('╔═══════════════════════════════════════════════════════════════════════╗');
-    lines.push('║                                                                       ║');
-    lines.push(`║                          R O U N D   ${String(state.roundNumber).padStart(2, ' ')}                        ║`);
-    lines.push('║                                                                       ║');
-    lines.push('╠═══════════════════════════════════════════════════════════════════════╣');
-    lines.push('║                                                                       ║');
-
-    // Team A info
-    const aAlive = '●'.repeat(state.teamA.alive) + '○'.repeat(8 - state.teamA.alive);
-    lines.push(`║  TEAM A  ${state.teamA.name.padEnd(15)}  ${aAlive}  ${String(state.teamA.alive).padStart(2)} ALIVE     ║`);
-    lines.push(`║  Shooter: ${(state.teamA.shooter || '???').padEnd(10)}                                        ║`);
-
-    if (state.teamA.computing) {
-      lines.push('║  >>> COMPUTING...                                                    ║');
-    } else if (state.teamA.function) {
-      const fn = state.teamA.function.length > 40
-        ? state.teamA.function.substring(0, 37) + '...'
-        : state.teamA.function;
-      lines.push(`║  f(x) = ${fn.padEnd(52)}║`);
-      if (state.teamA.computeTime !== null) {
-        lines.push(`║  Time: ${state.teamA.computeTime.toFixed(2).padEnd(55)}ms  ║`);
-      }
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push(`│  ROUND ${String(snap.round).padEnd(3)} ${snap.phase.padEnd(51)}│`);
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(`│  TEAM A  alive=${String(snap.alive.A).padEnd(3)}   TEAM B  alive=${String(snap.alive.B).padEnd(3)}                │`);
+    lines.push(`│  Shooter A: ${(snap.shooters.A?.id ?? '???').padEnd(6)}        Shooter B: ${(snap.shooters.B?.id ?? '???').padEnd(6)}      │`);
+    lines.push(`│  Locked: A=${snap.locked.A ? 'Y' : 'N'} B=${snap.locked.B ? 'Y' : 'N'}                                            │`);
+    if (snap.phase === 'MATCH_END') {
+      lines.push(`│  WINNER: ${(snap.winner ?? 'draw').toUpperCase()}`.padEnd(62) + '│');
     }
-
-    lines.push('║                                                                       ║');
-    lines.push('║                         ┌─────────────────┐                            ║');
-    lines.push('║                         │   MATCH FIELD   │                            ║');
-    lines.push('║                         │                 │                            ║');
-    lines.push('║                         │   [-20]  [0]  [20]  │                            ║');
-    lines.push('║                         │    A    ●●●●    B    │                            ║');
-    lines.push('║                         │        ●●●●        │                            ║');
-    lines.push('║                         │                 │                            ║');
-    lines.push('║                         └─────────────────┘                            ║');
-    lines.push('║                                                                       ║');
-
-    // Team B info
-    const bAlive = '●'.repeat(state.teamB.alive) + '○'.repeat(8 - state.teamB.alive);
-    lines.push(`║  TEAM B  ${state.teamB.name.padEnd(15)}  ${bAlive}  ${String(state.teamB.alive).padStart(2)} ALIVE     ║`);
-    lines.push(`║  Shooter: ${(state.teamB.shooter || '???').padEnd(10)}                                        ║`);
-
-    if (state.teamB.computing) {
-      lines.push('║  >>> COMPUTING...                                                    ║');
-    } else if (state.teamB.function) {
-      const fn = state.teamB.function.length > 40
-        ? state.teamB.function.substring(0, 37) + '...'
-        : state.teamB.function;
-      lines.push(`║  f(x) = ${fn.padEnd(52)}║`);
-      if (state.teamB.computeTime !== null) {
-        lines.push(`║  Time: ${state.teamB.computeTime.toFixed(2).padEnd(55)}ms  ║`);
-      }
-    }
-
-    lines.push('║                                                                       ║');
-
-    // Hits
-    if (state.hits.length > 0) {
-      lines.push(`║  HITS: ${state.hits.join(', ').padEnd(57)}║`);
-    }
-
-    lines.push('║                                                                       ║');
-    lines.push(`║                          Phase: ${state.phase.padEnd(31)}║`);
-    lines.push('║                                                                       ║');
-    lines.push('╚═══════════════════════════════════════════════════════════════════════╝');
-    lines.push('');
-
+    lines.push('└─────────────────────────────────────────────────────────────┘');
     return lines.join('\n');
   }
 
-  /**
-   * 渲染比赛结束屏幕
-   */
-  renderMatchEnd(): string {
-    const result = this.getMatchResult();
-    if (!result) return '';
-
+  /** 回放一帧 —— 只读已记录的数据 */
+  renderReplayFrame(replay: Replay, index: number): string {
+    const frame: ReplayFrame | undefined = replay.frames[index];
+    if (!frame) return `(no frame ${index})`;
     const lines: string[] = [];
-    lines.push('');
-    lines.push('╔═══════════════════════════════════════════════════════════════════════╗');
-    lines.push('║                                                                       ║');
-    lines.push('║                      M A T C H   C O M P L E T E                      ║');
-    lines.push('║                                                                       ║');
-    lines.push('╠═══════════════════════════════════════════════════════════════════════╣');
-    lines.push('║                                                                       ║');
-
-    if (result.winner === 'draw') {
-      lines.push('║                            ╱╲    ╱╲                                ║');
-      lines.push('║                           ╱  ╲  ╱  ╲                               ║');
-      lines.push('║                              DRAW                                   ║');
-    } else {
-      lines.push(`║                                                                       ║`);
-      lines.push(`║                    ╔═══════════════════════╗                         ║`);
-      lines.push(`║                    ║                       ║                         ║`);
-      lines.push(`║                    ║    TEAM ${result.winner} WINS!    ║                         ║`);
-      lines.push(`║                    ║                       ║                         ║`);
-      lines.push(`║                    ╚═══════════════════════╝                         ║`);
-    }
-
-    lines.push('║                                                                       ║');
-    lines.push(`║  Rounds Played: ${String(result.rounds).padEnd(56)}║`);
-    lines.push(`║  Team A Kills: ${String(result.totalKillsA).padEnd(57)}║`);
-    lines.push(`║  Team B Kills: ${String(result.totalKillsB).padEnd(57)}║`);
-    lines.push('║                                                                       ║');
-    lines.push('╠═══════════════════════════════════════════════════════════════════════╣');
-    lines.push('║  [REPLAY]  [MATCH LOG]  [NEW MATCH]                                ║');
-    lines.push('╚═══════════════════════════════════════════════════════════════════════╝');
-    lines.push('');
-
+    lines.push(`═══ REPLAY ${replay.matchId} — ROUND ${frame.round} (${index + 1}/${replay.frames.length}) ═══`);
+    lines.push(`  stateHash: ${frame.stateHash.substring(0, 16)}…`);
+    lines.push(`  Shooter A: ${frame.shooterA?.id ?? '-'}   Shooter B: ${frame.shooterB?.id ?? '-'}`);
+    lines.push(`  f_A(x) = ${frame.functionMathA ?? '(invalid)'}`);
+    lines.push(`  f_B(x) = ${frame.functionMathB ?? '(invalid)'}`);
+    lines.push(`  t_A = ${frame.timerA === null ? '-' : frame.timerA.toFixed(3) + 'ms'}   t_B = ${frame.timerB === null ? '-' : frame.timerB.toFixed(3) + 'ms'}`);
+    lines.push(`  first solver: ${frame.firstSolver}`);
+    lines.push(`  hits: A=[${frame.hitsA.map((h) => h.id).join(',')}] B=[${frame.hitsB.map((h) => h.id).join(',')}]`);
+    lines.push(`  killed: [${frame.killed.join(',')}]  cancelled: A=${frame.cancelledA} B=${frame.cancelledB}`);
+    lines.push(`  alive after: ${frame.aliveAfter.map((p) => p.id).join(',') || '(none)'}`);
     return lines.join('\n');
+  }
+
+  getResultSummary(): MatchResultSummary {
+    const log = this.engine.getMatchLog();
+    const killsA = log.rounds.reduce((s, r) => s + r.aKills, 0);
+    const killsB = log.rounds.reduce((s, r) => s + r.bKills, 0);
+    return {
+      winner: log.winner,
+      rounds: log.rounds.length,
+      totalKillsA: killsA,
+      totalKillsB: killsB,
+    };
   }
 }
