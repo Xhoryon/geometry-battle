@@ -4,6 +4,14 @@
 审计日期：2026-09-09
 审计对象文档：`Plans/Output/V1 Remediation Handoff.md`（**被审计对象，非事实来源**）
 
+> **Historical note / Current location（2026-09-09 追加）**：本报告记录**审计当时（HEAD `be3c4a5`）**
+> 的真实观察，按历史保护原则不改写。其后的 Cycle 2 / Cycle 3 修复改动了生产代码，故部分
+> 源码行号已漂移：`Ast.ts:186`（无深度检查的递归点）→ 现第 201 行；`Ast.ts:224-236`
+> （`NODE_LIMIT`/`DEPTH_LIMIT` 后置检查）→ 现第 256-268 行；`SandboxRunner.ts:667-672`
+> （双方共用 `releaseNs` 的赋值块）已被 Cycle 2 的 P1-B 修复**移除**；`cli.ts` 第 193 行
+> （循环外唯一一次 `persistArtifacts`）→ 现第 121 行，且语义已变（改为循环内每回合落盘）。
+> 报告的**事实结论与判定不受影响**。
+
 ---
 
 ## 0. 审计对象与基线

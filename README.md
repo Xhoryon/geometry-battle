@@ -127,7 +127,7 @@ sys.stdout.write(json.dumps({"dsl": dsl}) + "\n")
 | 常量绝对值 | ≤ 1000 |
 | 凸性变号次数（射击区间内） | ≤ 100 |
 | 抗混叠采样预算 | ≤ 400,000 点 |
-| 单次计算超时 | 2000 ms（从共享 GO 时刻起算） |
+| 单次计算超时 | 2000 ms（每方从自己的 GO 写入时刻起算） |
 | 内存上限 | 512 MB |
 | stdout 上限 | 256 KB |
 
@@ -159,7 +159,7 @@ npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回�
 # 类型检查
 npm run typecheck
 
-# 回归测试（16 个必需套件 + 地图公平性）
+# 回归测试（18 个套件：16 个点名套件 + map-fairness + hostile-input）
 npm test
 
 # 地图生成器压力验证（默认 300,000 张）
@@ -196,9 +196,12 @@ npm run stress
 - 每次计算运行在独立的 `sandbox-exec` 沙箱中：默认拒绝、拒绝网络、拒绝 `fork`，
   只允许读自己的包、只允许写自己的 `work/` 目录。
 - 平台源码目录、密封包目录、`/Users`、沙箱根目录均不可读。
-- 宿主环境变量不继承（只保留 `PATH`/`HOME`/`TMPDIR`/`LANG`/`PYTHON*`/`GB_TEAM`）。
-- 双方进程都完成 READY 握手后，由宿主写入同一个 GO 时刻；两侧计时相对同一时刻起算，
-  与进程创建顺序无关。
+- 宿主环境变量不继承（只保留 `PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`/`PYTHON*`/`GB_TEAM`）。
+- 公平启动：双方进程都完成 READY 握手后，宿主才先后写入 GO；每个 Runner 的正式
+  compute latency 与超时预算都从**自己的** GO 写入时刻起算，因此不是双方共用一个
+  时间戳。`releaseSkewUs` 只是两次 GO 写入之间交付延迟的诊断量，不参与计时。
+- `timing-fairness` 验证的是 slot / 顺序不产生可利用的系统性优势（同算法下「A 更快」
+  的比例接近 0.5、换序胜率差有界），**不构成「绝对公平」的保证**。
 - 每回合使用全新沙箱，回合结束后整个目录被销毁（无跨回合持久化）。
 
 ---

@@ -3,6 +3,13 @@
 > 本文件由**独立审计 Agent**编写。审计对象是冻结候选树，审计职责到"给出判定"为止。
 > 审计期间未修改任何生产代码、测试、构建脚本或既有文档；本文件是唯一写入仓库的文件。
 
+> **Historical note（2026-09-09 追加，Closure Round）**：本报告记录的是**审计当时（HEAD `18c0562`）**
+> 的真实观察，按历史保护原则**不改写**。生产代码自 `18c0562` 起未再变动
+> （`git diff 18c0562..HEAD -- src tests starter` 为空），故本报告中的**源码行号仍然成立**；
+> 发生漂移的只有 `Plans/` 与 `README.md` 的**文档**行号，已在 §4 表下方与 §5 E-4 处加 current note。
+> E-1…E-4 四项阻塞已由后续 Closure Round 逐条修正（docs-only），见
+> [`Plans/Output/V1 Documentation Closure Handoff.md`](V1%20Documentation%20Closure%20Handoff.md)。
+
 ---
 
 ## 1. 审计对象
@@ -381,10 +388,16 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 | **H-2** | §2 Cycle 3 表 D-1 行（第 193 行） | "①…②…**二者均为承重点：突变任一处，D-1 回归用例即失败**" | 只突变 ①（`selfPaths` 加回 `sandboxRoot`、保留短路）时 `runner-isolation` **6/6 通过** | 见下方 E-2 | **阻塞（E-2）** |
 | **H-3** | §2 P3-14 行（第 165 行）、§4 P3-14 行（第 315 行） | "数值 oracle（30 AST × 13 点 × 390 次比对）**已入常驻回归**"，回归测试列 `dsl-contract` | `tests/` 中不存在该 oracle：全仓无 `390`/`oracle` 字样，`evaluateNode` 在测试中仅 3 处单点断言；390/390 oracle 属 Plan 1 审计探针 `x19.ts`（不在仓库） | 见下方 E-3 | **阻塞（E-3）** |
 | **H-4** | §2 P2-15 行（第 135 行） | "83 事件覆盖全流程" | 同一文档 §3 记 84 事件（8 轮）；本轮 6 轮对局为 61 事件。83 为陈旧数字 | `grep -n "83 事件\|84 事件" "Plans/Output/V1 Remediation Handoff.md"` | 非阻塞（O-1） |
-| **H-5** | `README.md` 第 130、200 行（非 Handoff，但属"既有文档"） | "单次计算超时 2000 ms（**从共享 GO 时刻起算**）"、"由宿主写入同一个 GO 时刻；**两侧计时相对同一时刻起算**" | 实现为每方以自己 `release()` 返回的 GO 时刻起算（`SandboxRunner.ts` 每 runner 独立 `releaseNs`；`releaseSkewUs` 仅为诊断量） | 见下方 E-4 | **阻塞（E-4）** |
+| **H-5** | `README.md` 第 130、198 行（非 Handoff，但属"既有文档"；行号为**审计当时所见**，current 为第 130、200 行） | "单次计算超时 2000 ms（**从共享 GO 时刻起算**）"、"由宿主写入同一个 GO 时刻；**两侧计时相对同一时刻起算**" | 实现为每方以自己 `release()` 返回的 GO 时刻起算（`SandboxRunner.ts` 每 runner 独立 `releaseNs`；`releaseSkewUs` 仅为诊断量） | 见下方 E-4 | **阻塞（E-4）** |
 
 > 说明：H-1…H-3、H-5 均为"纯文档失实"，不改变代码行为，但会误导复现者/审计者与赛事操作员，
 > 属用户判据中的"至少阻塞"。H-4 为措辞/陈旧数字，P3。
+
+> **Current location（本表行号均为审计当时所见，未改写）**：`Plans/Output/V1 Remediation Handoff.md`
+> 在本次审计之后又有文档编辑（含 Closure Round），被引用内容现位于：
+> H-1 → §6 第 411 行、§7 第 552 行；H-2 → 第 200 行；H-3 → §2 第 170 行、§4 第 326 行；
+> H-4 → 第 140 行。H-1…H-4 的内容均已在 Closure Round 修正（见
+> [`Plans/Output/V1 Documentation Closure Handoff.md`](V1%20Documentation%20Closure%20Handoff.md)）。
 
 ---
 
@@ -470,8 +483,9 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 ### E-4（文档失实 / 公平性机制被误述）：README 称计时"从共享 GO 时刻起算"
 
 - **现象**：`README.md` 第 130 行"单次计算超时 | 2000 ms（**从共享 GO 时刻起算**）"、
-  第 200 行"由宿主写入同一个 GO 时刻；**两侧计时相对同一时刻起算**"
-  （审计当时为第 198 行；目录重组把 README 结构树由 1 行扩为 3 行，其后行号 +2）。
+  第 198 行"由宿主写入同一个 GO 时刻；**两侧计时相对同一时刻起算**"
+  （**current note**：该段现位于第 200 行 —— 目录重组把 README 结构树由 1 行扩为 3 行，
+  其后行号 +2；此处保留审计当时所见行号）。
   这与实现（每方以自己 `release()` 的 GO 时刻起算）以及 Handoff §2 的
   P1-10 / P1-19 / P1-B（"从本队自己的 GO 时刻起算（Cycle 2 修正）"）直接矛盾——
   描述的正是 Cycle 1 已修复的偏置形态。
@@ -558,5 +572,6 @@ $ git status --short
 ```
 
 > 注：以上 `text` 块是**审计当时的终端输出原样记录**，其中的路径与行号均按当时状态保留，不作改写
-> （故其中的 `README.md:198` 与正文现行的「第 200 行」并存，后者才是当前 HEAD 的位置）。
+> （其中的 `README.md:198` 与正文 §5 E-4 一致，均记录审计当时所见行号；该段在 current HEAD
+> 上位于第 200 行，正文已加 current note 说明）。
 > 本文件现位于 `Plans/Output/`；其余正文中的路径引用已随目录重组更新。

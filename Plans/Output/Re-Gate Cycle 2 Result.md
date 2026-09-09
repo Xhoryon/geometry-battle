@@ -6,6 +6,15 @@
 - 仓库：`/Users/jiayihuang/Downloads/几何斗殴/`
 - 判定标准：**主动尝试推翻每一条声明**；只有全部尝试失败且无 P0/P1 才写 PASS。
 
+> **Historical note / Current location（2026-09-09 追加）**：本报告记录**审计当时（HEAD `2b44b77`）**
+> 的真实观察，按历史保护原则不改写。其后的 Cycle 3 修复改动了生产代码，部分源码行号已漂移：
+> `Ast.ts:132-138` 未变；`Ast.ts:257` 当时指向的就是 `nodeCount` 检查（深度第二道防线当时与现在
+> 均在第 263 行，报告的措辞不精确，非行号漂移）；`SandboxRunner.ts:308-351`（`parseAlgorithmOutput`）
+> → 现第 316-359 行；`SandboxRunner.ts:606-629`（`release()`）→ 现第 614-637 行；
+> `SandboxRunner.ts:503`/`:508`（stdout 判限 / 截断）→ 现第 511 行 / 第 516 行；
+> `Match.ts:717-724`（`sandboxDenyReadPaths()`）→ 现第 726-733 行。
+> 本报告的核心阻塞项 **D-1 已由 Cycle 3 修复**；报告的判定不受行号漂移影响。
+
 ---
 
 ## 1. 最终判定（Verdict）

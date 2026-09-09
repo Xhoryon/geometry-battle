@@ -137,7 +137,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P2-12 先解者受调度抖动 | 每方以自己 GO 时刻起算 + `TIE_EPS_MS` 并列判定（Cycle 2 修正） | `timing-fairness` | FIXED |
 | P2-13 `pointCount` 无上限 | 入口校验 6–10 | `map-fairness` | FIXED |
 | P2-14 强制放置回退 | 改为返回 null（`generateMap` 顺序换种子，512 次后抛错） | `map-fairness` | FIXED |
-| P2-15 AuditLog 事件面不完整 | 83 事件覆盖全流程 | `replay` | FIXED |
+| P2-15 AuditLog 事件面不完整 | 84 事件覆盖全流程（8 轮 E2E，见 §3） | `replay` | FIXED |
 | P2-16 状态机 7/19 不可达 | `Round.ts` 全阶段可达 | `full-match-e2e` | FIXED |
 | P2-17 三套状态机 | 旧模块删除，收敛为 `Round.ts` | — | REMOVED |
 | P2-18 裁判控制简陋 | START ROUND 已有；**PAUSE/RESUME/END MATCH 未实现** | — | **DEFERRED** |
@@ -167,7 +167,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P3-11 `Competition` 自相矛盾 | 模块删除 | — | REMOVED |
 | P3-12 命名误导 | 重命名为 `SandboxRunner` 并文档化 | — | FIXED-DOC |
 | P3-13 弱 LCG | 换成 `mulberry32`（确定性不变，分布改善） | `map-fairness` | FIXED |
-| P3-14 未覆盖领域 | 部分补测（数值 oracle 已入常驻回归）；其余见第 4 节 | `dsl-contract` | PARTIAL |
+| P3-14 未覆盖领域 | 数值 oracle **未入常驻回归**：390/390（30 AST × 13 点）比对属 Plan 1 审计探针 `x19.ts`（历史审计证据，**不在仓库**），仓库 `tests/` 中无该 oracle；其余见第 4 节 | `dsl-contract`（仅 3 处单点 `evaluateNode` 断言，非该 oracle） | PARTIAL |
 
 ### Cycle 2 — 针对 `Plans/Output/Re-Gate Cycle 1 Result.md`（判定 FAIL）的修复矩阵
 
@@ -191,11 +191,13 @@ Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。
 
 Cycle 2 独立审计判 **FAIL**：解除条件 (a)(b)(c)(d) 全部达成，其余核验项全部通过，
 阻塞项仅 **D-1**（P1），另有 **D-2 / D-3** 两条 P3。下表逐条对应，每条都有常驻回归测试，
-且 D-1 / D-2 已做**突变承重验证**（把修复改回缺陷形态，测试必须失败）。
+且 D-1 / D-2 已做**突变承重验证**（把修复改回缺陷形态，观察测试是否失败）。
+其中 D-1 的两个修复分量**并非同等承重**：只有 ② `SYSTEM_DENIES` 短路是承重点，
+单独回退 ① （`selfPaths` 收窄）时用例仍 6/6 通过 —— 实测结果见该行 Fix 列。
 
 | Finding | Root Cause | Affected Files | Fix | Regression Test | Status |
 |---|---|---|---|---|---|
-| **D-1**（P1）`sandboxRoot` 位于 `/tmp` 下时，`/tmp` 兜底拒绝被静默丢弃 → 算法可读任意未被显式 deny 的 `/tmp` 文件（含**其他场次的密封包**） | 自保护过滤的判定对象是 `sandboxRoot`：当 `sandboxRoot` 落在 `/tmp` 之下时，`covers('/private/tmp', sandboxRoot)` 为真，于是**系统兜底 deny 也被当作「会阻断沙箱自身」而整条丢弃** | `src/runner/SandboxRunner.ts` | ① 自保护判定对象收窄为 `sandboxDir` / `work`（不再含 `sandboxRoot`）；② `SYSTEM_DENIES = ['/private/tmp','/private/var/tmp']` **永不参与过滤**（命中即短路保留）。二者均为承重点：突变任一处，D-1 回归用例即失败 | `runner-isolation`（新增「`sandboxRoot` 位于 `/tmp` 下时，任意 `/tmp` 读取仍被拒绝（D-1 回归）」：结构性断言 profile 保留 `(deny file-read* (subpath "/private/tmp"))` + 行为断言读 `/tmp` 文件、列举 `/tmp` 均被拒 + 反向对照 `LEAK:ctrl_dir`） | FIXED |
+| **D-1**（P1）`sandboxRoot` 位于 `/tmp` 下时，`/tmp` 兜底拒绝被静默丢弃 → 算法可读任意未被显式 deny 的 `/tmp` 文件（含**其他场次的密封包**） | 自保护过滤的判定对象是 `sandboxRoot`：当 `sandboxRoot` 落在 `/tmp` 之下时，`covers('/private/tmp', sandboxRoot)` 为真，于是**系统兜底 deny 也被当作「会阻断沙箱自身」而整条丢弃** | `src/runner/SandboxRunner.ts` | ① 自保护判定对象收窄为 `sandboxDir` / `work`（不再含 `sandboxRoot`）；② `SYSTEM_DENIES = ['/private/tmp','/private/var/tmp']` **永不参与过滤**（命中即短路保留）。**承重关系（本轮实测，`runner-isolation` 6 用例）**：单独回退 ①（`selfPaths` 加回 `sandboxRoot`、保留 ②）→ **6/6 PASS**（不承重，属纵深防御）；单独回退 ②（移除短路、保留 ①）→ **5/6 FAIL**（承重点，失败用例即 D-1 回归）；①+② 同时回退 → **5/6 FAIL**。因此**不得**宣称「突变任一处即失败」 | `runner-isolation`（新增「`sandboxRoot` 位于 `/tmp` 下时，任意 `/tmp` 读取仍被拒绝（D-1 回归）」：结构性断言 profile 保留 `(deny file-read* (subpath "/private/tmp"))` + 行为断言读 `/tmp` 文件、列举 `/tmp` 均被拒 + 反向对照 `LEAK:ctrl_dir`） | FIXED |
 | **D-2**（P3）解析失败原因在集成层被抹平：删掉 AST 深度守卫后集成回归仍会通过 | `tryParseAst` 只返回 AST，把解析失败一律压成「输出不是合法 DSL」，于是「深度超限」这一关键诊断在 `MatchEngine` 层消失（随后必然被 Shooter 校验拒绝，文案相同） | `src/core/Match.ts` | 新增 `parseAstDetailed()` 保留失败原因（`parseCanonicalDSL` 的 `code: message` 列表），`validateOutcome` 如实透出 | `hostile-input`（40 层确定性用例改为承重断言：必须匹配 `/在第 \d+ 层拒绝/`，且不得出现 Shooter 校验文案 `/相差/`） | FIXED |
 | **D-3**（P3）日志自相矛盾：`result = INVALID_A` 而 `aErrorCode = null` | 运行器**成功**、但输出构不成合法 DSL（如使用被禁算子）时，运行器自身没有错误码可回填 | `src/core/Match.ts` | 新增 `errorCodeFor()`：`outcome.errorCode ?? (success && !final ? 'INVALID_DSL' : null)`；失败/取消路径仍保留运行器自己的错误码 | `hostile-input`（新增「输出可解析但非法时，错误码与回合结果一致（D-3 回归）」：round 0 合法过 Preflight、round 1 输出被禁算子 `floor`，断言 `INVALID_A` ⇔ `INVALID_DSL`） | FIXED |
 
@@ -203,6 +205,10 @@ Cycle 2 独立审计判 **FAIL**：解除条件 (a)(b)(c)(d) 全部达成，其�
 > ① 「自保护过滤只允许丢弃会阻断 `sandboxDir`/`work` 自身的 deny」→ `selfPaths = [sandboxDir, work]`；
 > ② 「系统兜底 deny 永不参与过滤」→ `if (SYSTEM_DENIES.includes(p)) return true;` 短路；
 > ③ 「新增常驻回归测试」→ `runner-isolation` 第 6 个用例。
+>
+> **承重范围（重要）**：该用例的行为断言只对 ② 敏感 —— 单独回退 ② 即失败（5/6），
+> 单独回退 ① 仍 6/6 通过。① 的价值是消除根因（不再把 `sandboxRoot` 当作自保护对象），
+> ② 的价值是独立兜底（系统 deny 永不被丢）。两者叠加构成修复，但**测试只证明 ② 承重**。
 >
 > 保留这些兜底条目不会伤到沙箱自身：末尾的 `(allow file-read* (subpath sandboxDir))`
 > 按 SBPL「后匹配者胜」重新放行；模板中无条件存在的
@@ -317,7 +323,7 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle3/matches/
 |---|---|---|---|
 | **P2-18** 裁判控制简陋 | `START ROUND` 已实现；`PAUSE` / `RESUME` / `END MATCH` 与倒计时显示**未实现** | 正式比赛路径（上传→选人→开跑→结算→下一轮→胜者）已完整；暂停/终止属异常处置，可由操作员直接终止进程，**截至上一已完成回合**的产物已落盘可读 | Re-Gate PASS 后补 |
 | **P2-21** 动画无停止 / 无时序 | `AudienceDisplay` 已收敛为纯数据层，动画驱动**未接线** | 用户明确禁止本轮做视觉优化；观众屏已能展示真实状态 | Re-Gate PASS 后补 |
-| **P3-14** 未覆盖领域（部分） | 已补：数值 oracle（30 AST × 13 点 × 390 次比对）已入常驻回归。**未补**：① Rule 31「病态但合法 DSL 使 Judge 卡死」的构造性测试；② Unicode / CJK 路径 / 非 ASCII 输出的编码测试；③ A/B 间 CPU 限额、线程数、数学库版本对称性 | ① 校验采样步长固定、成本有界，未找到可放大的入口；② 包校验已限制扩展名与体积；③ 双方运行在同一宿主同一沙箱模板下 | 下一轮补测 |
+| **P3-14** 未覆盖领域（部分） | 数值 oracle（30 AST × 13 点 × 390 次比对）**未入常驻回归**：该比对属 Plan 1 审计探针 `x19.ts`（历史审计证据，**不在仓库**），仓库 `tests/` 中无该 oracle，`dsl-contract` 仅有 3 处单点 `evaluateNode` 断言。**未补**：① Rule 31「病态但合法 DSL 使 Judge 卡死」的构造性测试；② Unicode / CJK 路径 / 非 ASCII 输出的编码测试；③ A/B 间 CPU 限额、线程数、数学库版本对称性 | ① 校验采样步长固定、成本有界，未找到可放大的入口；② 包校验已限制扩展名与体积；③ 双方运行在同一宿主同一沙箱模板下 | 下一轮补测 |
 
 **僵局（stalemate）—— 规范缺口，不是实现缺陷**：`Plan V1 §28` 只定义"一方全部点死亡则比赛结束"，
 **没有定义双方都无法命中时的终止条件**。实测：使用不做避障的朴素算法包时，比赛可持续
@@ -366,7 +372,8 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle3/matches/
 > 于是当 `sandboxRoot` 位于 `/tmp` 之下时，系统兜底 `/private/tmp` 这条 deny
 > 反被判定为「会阻断沙箱自身」而**整条丢弃** —— 算法可读任意未被显式 deny 的 `/tmp` 文件
 > （含其他场次的密封包）。现已把判定对象收窄为 `sandboxDir`/`work`，并让系统兜底 deny
-> **永不参与过滤**。该路径由 `runner-isolation` 新增的 D-1 用例覆盖，且已做突变承重验证。
+> **永不参与过滤**。该路径由 `runner-isolation` 新增的 D-1 用例覆盖，突变承重验证已做，
+> 但**承重的是 ② 短路**：单独回退 ① 时用例仍 6/6 通过（详见 §2「Cycle 3 — 修复矩阵」D-1 行 Fix 列）。
 
 | 攻击 | 期望 | 实测 |
 |---|---|---|
@@ -394,15 +401,34 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle3/matches/
 进程与内存：
 - 算法运行在**独立进程组**（`pgid === pid`），取消/超时后整组清理；
 - 宿主侧每 60ms 轮询 RSS（Darwin 上 `RLIMIT_AS` 是空操作）；
-- 宿主环境变量不继承（白名单 `PATH`/`HOME`/`TMPDIR`/`LANG`/`PYTHON*`/`GB_TEAM`），
+- 宿主环境变量不继承（白名单 `PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`/`PYTHON*`/`GB_TEAM`），
   并扫描 `/TOKEN|SECRET|KEY|PASS|AUTH|AWS|ANTHROPIC|SSH/i` 无泄漏。
 
 ---
 
 ## 6. Fairness Evidence
 
-`tests/timing-fairness.ts`（3 tests，可通过 `ROUNDS_ORDER` / `ROUNDS_SWAP` 环境变量放大）。
-默认 **300 轮同算法对局 + 150 对换序对局**（≥ 用户要求的 100 轮；放大命令见第 8 节）。
+`tests/timing-fairness.ts`（3 tests，可通过 `GB_FAIRNESS_ROUNDS` / `GB_FAIRNESS_SWAP_ROUNDS`
+环境变量放大；另有 `GB_FAIRNESS_MIN`（默认 100）作为「轮数下限」断言门槛）。
+默认 **300 轮同算法对局 + 150 对换序对局**（≥ 用户要求的 100 轮；放大命令见第 7 节）。
+
+**E-1 修正后实跑（Closure Round，直接复制第 7 节命令执行）：**
+
+```text
+$ GB_FAIRNESS_ROUNDS=1000 GB_FAIRNESS_SWAP_ROUNDS=500 npx ts-node tests/timing-fairness.ts
+  ✓ timing-fairness: 同算法对局 1000 轮 —— 释放偏差与耗时对称 (787636ms)
+      rounds=1000 releaseSkewUs(median=21.250 p95=31.334 max=104.500)
+      readySkewMs(median=255.618 p95=451.684 max=2323.771)
+      timeDiffMs(median=-0.010 p95=0.374) medianTimeA=5.09ms medianTimeB=5.10ms aFasterRate=0.517
+  ✓ timing-fairness: 配对换序 500×2 轮 —— 胜率无顺序偏移 (656256ms)
+      pairs=500 X胜率(当A)=0.501 X胜率(当B)=0.509 Δ=0.008
+  ✓ timing-fairness: 每方 release() 记录自己的 GO 时刻（P1-B 回归） (666ms)
+
+timing-fairness: 3/3 passed        （退出码 0）
+```
+
+**环境变量确实生效的直接证据**：测试名由环境变量在模块加载时拼出，实测打印
+「同算法对局 **1000** 轮」「配对换序 **500×2** 轮」，**没有**静默退回默认 300 / 150。
 
 **批次 1 —— 相同算法对相同算法，300 轮：**
 
@@ -513,7 +539,9 @@ RESULT: PASS — generator 输出 0 张非法地图
 **每个 P0/P1 都至少保留一条常驻测试**；Cycle 3 的 D-1（P1）对应
 `runner-isolation` 的「`sandboxRoot` 位于 `/tmp` 下时，任意 `/tmp` 读取仍被拒绝」，
 D-2 / D-3（P3）对应 `hostile-input` 的两个用例。三者均已做**突变承重验证**：
-把修复改回缺陷形态后，对应用例必须失败（否则该用例不承重）。
+把修复改回缺陷形态后观察对应用例是否失败（否则该用例不承重）。
+**范围说明**：D-1 的突变验证结论是「② `SYSTEM_DENIES` 短路承重、① `selfPaths` 收窄不单独承重」
+（单独回退 ① → 6/6 PASS），不得简化为「三者任一突变即失败」。
 
 放大验证命令：
 
@@ -521,7 +549,8 @@ D-2 / D-3（P3）对应 `hostile-input` 的两个用例。三者均已做**突�
 npm test                                   # 全部 18 套件
 npm run typecheck                          # tsc --noEmit
 npm run stress                             # 300,000 张地图压力验证
-ROUNDS_ORDER=1000 ROUNDS_SWAP=500 npx ts-node tests/timing-fairness.ts   # 加大公平性样本
+GB_FAIRNESS_ROUNDS=1000 GB_FAIRNESS_SWAP_ROUNDS=500 npx ts-node tests/timing-fairness.ts   # 加大公平性样本（默认 300/150）
+GB_FAIRNESS_ROUNDS=5 GB_FAIRNESS_SWAP_ROUNDS=5 GB_FAIRNESS_MIN=1 npx ts-node tests/timing-fairness.ts   # 冒烟（~20s）；GB_FAIRNESS_MIN 默认 100，仅冒烟时调低
 npx ts-node tests/run-all.ts dsl-contract replay hostile-input            # 只跑指定套件
 ```
 
@@ -643,7 +672,7 @@ git diff --stat 18c0562..HEAD -- src tests starter package.json tsconfig.json   
 | **E-1** | §6 / §7 的公平性放大命令用了不存在的环境变量名 `ROUNDS_ORDER` / `ROUNDS_SWAP`，按文档执行会**静默按默认 300/150 轮运行** | 改为 `GB_FAIRNESS_ROUNDS` / `GB_FAIRNESS_SWAP_ROUNDS`（可选 `GB_FAIRNESS_MIN`） |
 | **E-2** | §2 Cycle 3 表 D-1 行称两个修复组件"突变任一处，用例即失败"；实测**仅**突变 `selfPaths` 时 `runner-isolation` 仍 6/6 通过（真正承重的是 `SYSTEM_DENIES` 短路） | 改写承重声明，或补一条只针对 `selfPaths` 的断言 |
 | **E-3** | §2 / §4 的 P3-14 行称"数值 oracle（30 AST × 13 点 × 390 次比对）已入常驻回归"；`tests/` 中不存在该 oracle（属 Plan 1 审计探针 `x19.ts`，不在仓库） | 把 oracle 落为常驻用例，或改为"未入常驻回归" |
-| **E-4** | `README.md` 第 130 / 200 行称计时"从共享 GO 时刻起算"，与实现及 §2 P1-10 / P1-19 直接矛盾 | 改为"每方以自己 `release()` 返回的 GO 时刻起算" |
+| **E-4** | `README.md` 第 130 / 198 行称计时"从共享 GO 时刻起算"，与实现及 §2 P1-10 / P1-19 直接矛盾（行号为**Cycle 3 审计当时所见**；该段现位于第 200 行） | 改为"每方以自己 `release()` 返回的 GO 时刻起算" |
 
 另有一条非阻塞项 **O-1（P3）**：§2 P2-15 行"83 事件"与 §3"84 事件"自相矛盾（陈旧数字）。
 
@@ -672,11 +701,28 @@ Plans/Output/   ← Agent 产出的报告、工作日志与交接文档（含本
 - 移动本身由 `git mv` 完成（`60f920e`），9 个文件纯重命名、**字节零变化**；
 - 紧随其后的提交（`5be48d3`）更新了文档中的路径引用、新增 `Plans/README.md`，
   并展开根 `README.md` 的项目结构树（`Plans/` 节点由 1 行变 3 行，使其后行号 +2）；
-- 该结构树改动使指向 README 行号的交叉引用失准，已在**其后一次文档修正**中由「第 198 行」
-  改为「第 200 行」（不属 `5be48d3` 的内容）；
+- 该结构树改动使指向 README 行号的交叉引用失准。**本文档中作为当前指引的行号**已更新为
+  「第 200 行」（不属 `5be48d3` 的内容）；而历史审计报告（Cycle 3 Result）中记录的是
+  **审计当时**看到的「第 198 行」，按历史保护原则保持原样，仅加 current-note 说明现状；
 - 本文档在 `5be48d3` 中除路径更新外，还改写了 §9 的冻结基线（`text` 键值块）并新增本节 §10.5；
 - 历史审计报告中**终端输出转录块保持原样**（记录的是当时的真实输出）；
 - 全仓 `grep` 确认：**没有任何代码、测试或构建配置**引用 `Plans/` 下的文件。
 - 目录与映射说明见 [`Plans/README.md`](../README.md)。
 
 该重组**不改变** §10.1 的判定，也**不解除** E-1…E-4。
+
+### 10.6 Closure Round 后的状态更新（2026-09-09）
+
+用户随后明确授权一个**例外性的最终 Closure Round**
+（任务书：[`Plans/Input/Geometry Battle V1 — Documentation Closure & Final Freeze Re-Gate.md`](../Input/Geometry%20Battle%20V1%20%E2%80%94%20Documentation%20Closure%20&%20Final%20Freeze%20Re-Gate.md)）。
+该轮为 **docs-only**：只允许修改 `README.md` 与 `Plans/**/*.md`，禁止改动任何生产代码或测试。
+
+- §10.2 的 **E-1…E-4 已在该轮逐条修正**（改文档，不改实现 / 测试）；
+- §10.2 之后的 **O-1（83→84 事件）**已一并修正；
+- 该轮**不得**由开发方自行宣布 PASS，仍须由**全新的独立 Audit Agent** 判定；
+- 逐条 Before / Correction / Verification 见
+  [`Plans/Output/V1 Documentation Closure Handoff.md`](V1%20Documentation%20Closure%20Handoff.md)。
+
+> **历史保护说明**：§10.1 / §10.2 / §10.3 记录的是 **Cycle 3 审计当时的真实状态**
+> （判定 `CONDITIONAL PASS`、4 条阻塞项未修复、流程上限用尽），保持原样不改写；
+> 现状以本节为准。
