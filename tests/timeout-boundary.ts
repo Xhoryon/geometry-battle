@@ -17,7 +17,7 @@ import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { runDuel } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
-import { runnerInputFromCore } from './protocol-fixture';
+import { PY_ARGV_PRELUDE, PY_EMIT, runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 const TIMEOUT_MS = 1200;
@@ -43,26 +43,20 @@ function coreFor(seed: number): RoundStateCore {
   };
 }
 
-/** 睡眠 sleepSec 秒后输出合法 DSL 的算法 */
+/** 睡眠 sleepSec 秒后写出合法 result.json 的算法 */
 function sleeperSource(sleepSec: number): string {
-  return `import argparse, json, sys, time
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+  return `import time
+${PY_ARGV_PRELUDE}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
 y0 = by_id[reveal["shooters"][args.team]]["y"]
 time.sleep(${sleepSec})
-dsl = {"type": "add", "args": [
+${PY_EMIT}emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl}) + "\\n")
+]})
 `;
 }
 

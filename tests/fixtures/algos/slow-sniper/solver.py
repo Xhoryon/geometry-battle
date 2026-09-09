@@ -7,8 +7,19 @@ V1.1 输入契约见 sniper/solver.py。延迟发生在**参赛入口内部**，
 import argparse
 import hashlib
 import json
+import os
 import sys
 import time
+
+
+def emit(args, dsl):
+    """唯一的正式输出通道：tmp + 原子 rename（规范 §25/§27）。"""
+    tmp = args.output + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": "1.1", "dsl": dsl}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, args.output)
 
 
 def load_input():
@@ -16,6 +27,7 @@ def load_input():
     ap.add_argument("--team", required=True, choices=["A", "B"])
     ap.add_argument("--public", required=True)
     ap.add_argument("--reveal", required=True)
+    ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
     with open(args.public, "rb") as f:
@@ -27,7 +39,7 @@ def load_input():
     if reveal.get("public_state_sha256") != hashlib.sha256(public_bytes).hexdigest():
         sys.stderr.write("input binding mismatch\n")
         raise SystemExit(2)
-    return args.team, public, reveal
+    return args, public, reveal
 
 
 def shooter_of(public, reveal, team):
@@ -41,7 +53,8 @@ def num(v):
 
 def main():
     time.sleep(0.4)
-    team, public, reveal = load_input()
+    args, public, reveal = load_input()
+    team = args.team
     other = "B" if team == "A" else "A"
     me = shooter_of(public, reveal, team)
     tgt = shooter_of(public, reveal, other)
@@ -51,7 +64,7 @@ def main():
         num(me["y"]),
         {"type": "mul", "args": [num(m), {"type": "sub", "args": [{"type": "variable", "value": "x"}, num(me["x"])]}]},
     ]}
-    print(json.dumps({"dsl": dsl}))
+    emit(args, dsl)
     return 0
 
 

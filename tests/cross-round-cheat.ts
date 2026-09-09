@@ -17,7 +17,13 @@ import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { runDuel, RunnerOutcome } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
-import { runnerInputFromCore } from './protocol-fixture';
+import {
+  PROBE_REPORT_PREFIX,
+  PY_ARGV_PRELUDE,
+  PY_EMIT,
+  probeReport,
+  runnerInputFromCore,
+} from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 
@@ -44,13 +50,8 @@ function coreFor(seed: number): RoundStateCore {
 
 /** 第一轮：写入标记文件、尝试留 socket、尝试留 daemon */
 function roundOneSource(): string {
-  return `import argparse, json, os, socket, subprocess, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+  return `import socket, subprocess
+${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
@@ -83,23 +84,19 @@ attempt("write_work_file", write_work)
 attempt("inet_bind", bind_inet)
 attempt("spawn_daemon", spawn_daemon)
 
-dsl = {"type": "add", "args": [
+# 诊断报告走 stderr（规范 §30）；正式结果只写 result.json（规范 §24）
+sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(report) + "\\n")
+emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
+]})
 `;
 }
 
 /** 第二轮：检查上一轮与自己的工作目录里是否还残留任何东西 */
 function roundTwoSource(prevDir: string): string {
-  return `import argparse, json, os, socket, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+  return `import socket
+${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
@@ -131,11 +128,12 @@ attempt("connect_prev_socket", lambda: socket_connect())
 attempt("read_own_work_file", lambda: open(os.path.join(work, "persist.txt")).read())
 report["prev_dir_exists"] = str(os.path.exists(PREV))
 
-dsl = {"type": "add", "args": [
+# 诊断报告走 stderr（规范 §30）；正式结果只写 result.json（规范 §24）
+sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(report) + "\\n")
+emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
+]})
 `;
 }
 
@@ -150,11 +148,8 @@ function writePkg(dir: string, source: string, name: string): string {
 }
 
 function reportOf(outcome: RunnerOutcome): Record<string, string> {
-  try {
-    return JSON.parse(outcome.stdout.trim()).cheat ?? {};
-  } catch {
-    return {};
-  }
+  // 探针报告在 stderr（规范 §30）—— stdout 已不是 IPC 通道（规范 §24）
+  return probeReport(outcome.stderr);
 }
 
 interface TwoRounds {

@@ -21,23 +21,16 @@ import {
 } from '../src/runner/SandboxRunner';
 import { RunnerInput } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { PY_ARGV_PRELUDE, PY_EMIT } from './protocol-fixture';
 
 const MARKER = 'STARTED.marker';
 
-/** 模块顶层就写标记，然后才读输入、输出一个经过自己 Shooter 的合法 DSL */
-const PROBE_SOURCE = `import json, argparse
-
-# ---- 参赛代码的第一行：START 之前绝不能被执行 ----
+/** 模块顶层就写标记，然后才读输入、写出一个经过自己 Shooter 的合法 result.json */
+const PROBE_SOURCE = `# ---- 参赛代码的第一行：START 之前绝不能被执行 ----
 with open("${MARKER}", "w") as f:
     f.write("ran")
 
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True, choices=["A", "B"])
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-
-with open(args.public, "rb") as f:
+${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "rb") as f:
     public_bytes = f.read()
 public = json.loads(public_bytes.decode("utf-8"))
 with open(args.reveal, "r") as f:
@@ -53,7 +46,7 @@ dsl = {
         {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
     ],
 }
-print(json.dumps({"dsl": dsl}))
+emit(dsl)
 `;
 
 function probePackage(): string {
@@ -134,7 +127,7 @@ test('pre-start-execution: READY 之后不 GO，参赛代码一行都不执行�
     const outcomes = await Promise.all(runners.map((r) => r.done));
     for (const outcome of outcomes) {
       assert(outcome.success, `${outcome.team}: 探针必须正常完成: ${outcome.error}`);
-      assert(outcome.stdout.includes('"dsl"'), `${outcome.team}: 探针必须输出 DSL`);
+      assert(outcome.dslText !== null, `${outcome.team}: 探针必须写出合法的 result.json`);
     }
     for (const team of ['A', 'B'] as const) {
       assert(

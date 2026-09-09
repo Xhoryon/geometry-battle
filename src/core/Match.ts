@@ -590,7 +590,8 @@ export class MatchEngine {
       onFirstResult: (team, outcome) => {
         // 先手立即结算；若击杀了对方 Shooter 则立即取消对方进程（Plan V1 §25）
         if (!outcome.success) return false;
-        const parsed = parseCanonicalDSL(outcome.stdout ? extractDsl(outcome) ?? '' : '');
+        // 结果只来自 output/result.json（规范 §24）；stdout 不参与判定。
+        const parsed = parseCanonicalDSL(outcome.dslText ?? '');
         if (!parsed.ok || !parsed.ast) return false;
         const check = this.validateAst(parsed.ast, team, core);
         if (!check.ok) return false;
@@ -609,9 +610,13 @@ export class MatchEngine {
     });
 
     this.lastIsolation = duel.isolation;
+    // 审计三件套（规范 §23）：两个 release 时刻与它们的偏差。
+    // 计时**不**依赖 startSkew_ns，它只用来事后证明「同一个 GO 事件」确实近似同时。
     this.audit.log('RoundComputeEnd', {
       round,
-      releaseSkewUs: duel.releaseSkewUs,
+      releaseA_ns: duel.releaseANs.toString(),
+      releaseB_ns: duel.releaseBNs.toString(),
+      startSkew_ns: duel.startSkewNs.toString(),
       readySkewMs: duel.readySkewMs,
       isolation: duel.isolation,
     });
@@ -1109,27 +1114,15 @@ export class MatchEngine {
 // 辅助
 // ============================================================================
 
+/**
+ * 取算法结果里的 DSL 文本。
+ *
+ * V1.1 起结果**只能**来自 `output/result.json`（规范 §24）：schema 与字段白名单
+ * 已在 `parseResultFile()` 里严格校验过，这里只是把 AST 文本交给 DSL 解析器。
+ * stdout 不再有解析回退路径 —— 「多输出以最后一次为准」的旧宽容语义已作废（规范 §29）。
+ */
 function extractDsl(outcome: RunnerOutcome): string | null {
-  const text = outcome.stdout.trim();
-  if (!text) return null;
-  const tryOne = (s: string): string | null => {
-    try {
-      const obj = JSON.parse(s);
-      const dsl = obj?.dsl ?? obj?.function ?? obj?.f ?? null;
-      if (dsl === null || dsl === undefined) return null;
-      return typeof dsl === 'string' ? dsl : JSON.stringify(dsl);
-    } catch {
-      return null;
-    }
-  };
-  const whole = tryOne(text);
-  if (whole) return whole;
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const p = tryOne(lines[i]);
-    if (p) return p;
-  }
-  return null;
+  return outcome.dslText;
 }
 
 /**

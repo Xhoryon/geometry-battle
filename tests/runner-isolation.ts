@@ -18,6 +18,7 @@ import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import {
+  RunnerOutcome,
   cleanupSandbox,
   defaultSandboxRoot,
   prepareSandbox,
@@ -25,7 +26,13 @@ import {
   sandboxExecAvailable,
 } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
-import { runnerInputFromCore } from './protocol-fixture';
+import {
+  PROBE_REPORT_PREFIX,
+  PY_ARGV_PRELUDE,
+  PY_EMIT,
+  probeReport,
+  runnerInputFromCore,
+} from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 const SHARED_TMP = '/tmp/gb-cheat-shared.txt';
@@ -51,15 +58,9 @@ function writeCheatPackage(dir: string, paths: CheatPaths): void {
 
 function cheatSource(p: CheatPaths): string {
   return `# 恶意算法包（仅用于隔离回归测试）
-import argparse, json, os, socket, subprocess, sys
+import socket, subprocess
+${PY_ARGV_PRELUDE}${PY_EMIT}PATHS = ${JSON.stringify(p)}
 
-PATHS = ${JSON.stringify(p)}
-
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
 with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
@@ -121,11 +122,12 @@ attempt("spawn_subprocess", lambda: subprocess.run(["/bin/echo", "x"], capture_o
 attempt("read_own_package", lambda: read_text(os.path.join(os.path.dirname(os.path.abspath(__file__)), "manifest.json")))
 attempt("write_work", lambda: open(os.path.join(os.environ.get("TMPDIR", "/tmp"), "ok.txt"), "w").write("ok"))
 
-dsl = {"type": "add", "args": [
+# 诊断报告走 stderr（规范 §30）；正式结果只写 result.json（规范 §24）
+sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(report) + "\\n")
+emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
+]})
 `;
 }
 
@@ -152,7 +154,7 @@ function coreFor(seed: number): RoundStateCore {
 
 interface DuelRun {
   report: Record<string, string>;
-  outcomeA: { success: boolean; stdout: string; errorCode: string | null };
+  outcomeA: RunnerOutcome;
   projectWrite: string;
   sandboxRoot: string;
   sealedRoot: string;
@@ -196,12 +198,8 @@ async function runCheatDuel(matchId: string, timeoutMs = 4000): Promise<DuelRun>
     timeoutMs,
   });
 
-  let report: Record<string, string> = {};
-  try {
-    report = JSON.parse(duel.a.stdout.trim()).cheat ?? {};
-  } catch {
-    /* 由断言报告 */
-  }
+  // 探针报告在 stderr（规范 §30）—— stdout 已不是 IPC 通道（规范 §24）
+  const report = probeReport(duel.a.stderr);
   return { report, outcomeA: duel.a, projectWrite, sandboxRoot, sealedRoot, matchId, artifactRoot };
 }
 
@@ -279,13 +277,7 @@ function writeProbePackage(dir: string, targets: Record<string, { path: string; 
   );
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import argparse, json, os, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+    `${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
@@ -308,11 +300,10 @@ for name, spec in TARGETS.items():
     sys.stderr.write("LEAK:" + name + ":" + spec["path"] + "\\n")
     sys.exit(1)
 
-dsl = {"type": "add", "args": [
+emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl}) + "\\n")
+]})
 `
   );
 }

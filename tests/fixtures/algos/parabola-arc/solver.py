@@ -16,6 +16,7 @@ V1.1 输入契约：--team / --public / --reveal；障碍物只在 reveal 里。
 import argparse
 import hashlib
 import json
+import os
 import math
 import sys
 
@@ -29,11 +30,22 @@ COARSE_MAX_SAMPLES = 2000
 FINE_MAX_SAMPLES = 20000
 
 
+def emit(args, dsl):
+    """唯一的正式输出通道：tmp + 原子 rename（规范 §25/§27）。"""
+    tmp = args.output + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": "1.1", "dsl": dsl}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, args.output)
+
+
 def load_input():
     ap = argparse.ArgumentParser()
     ap.add_argument("--team", required=True, choices=["A", "B"])
     ap.add_argument("--public", required=True)
     ap.add_argument("--reveal", required=True)
+    ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
     with open(args.public, "rb") as f:
@@ -45,7 +57,7 @@ def load_input():
     if reveal.get("public_state_sha256") != hashlib.sha256(public_bytes).hexdigest():
         sys.stderr.write("input binding mismatch\n")
         raise SystemExit(2)
-    return args.team, public, reveal
+    return args, public, reveal
 
 
 def shooter_of(public, reveal, team):
@@ -159,7 +171,8 @@ def build(sx, sy, tx, ty, k):
 
 
 def main():
-    team, public, reveal = load_input()
+    args, public, reveal = load_input()
+    team = args.team
     me = shooter_of(public, reveal, team)
     sx, sy = me["x"], me["y"]
     obstacles = reveal.get("obstacles") or []
@@ -168,7 +181,7 @@ def main():
 
     if not enemies:
         dsl, _ = build(sx, sy, sx, sy, 0.0)
-        print(json.dumps({"dsl": dsl}))
+        emit(args, dsl)
         return 0
 
     ranked = sorted(
@@ -183,12 +196,12 @@ def main():
             dsl, f = build(sx, sy, tx, ty, k)
             c = visibility(f, sx, tx, obstacles, field)
             if c >= MARGIN:
-                print(json.dumps({"dsl": dsl}))
+                emit(args, dsl)
                 return 0
             if best is None or c > best[0]:
                 best = (c, dsl)
 
-    print(json.dumps({"dsl": best[1]}))
+    emit(args, best[1])
     return 0
 
 

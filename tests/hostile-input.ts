@@ -20,24 +20,28 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { MatchEngine } from '../src/core/Match';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { PY_ARGV_PRELUDE, PY_EMIT } from './protocol-fixture';
 
 const ROOT = path.join(__dirname, '..');
 const STARTER = path.join(ROOT, 'starter');
 
 /**
- * Python 表达式：求值为深度 N 的 neg 链 DSL JSON 文本（约 144 KB）。
+ * Python 表达式：求值为深度 N 的 neg 链 result.json 文本（约 144 KB）。
  * 注意返回的是**源码片段**而非 JSON 本身 —— 直接内联 JSON 会让 solver.py 语法错误。
+ *
+ * V1.1 起载荷必须自带 `schema_version`，否则会先被 schema 校验挡下，
+ * 测不到「嵌套过深」这条路径。
  */
 function deepDslPyExpr(depth: number): string {
   return (
-    `'{"dsl":' + '{"type":"neg","args":[' * ${depth} + ` +
+    `'{"schema_version":"1.1","dsl":' + '{"type":"neg","args":[' * ${depth} + ` +
     `'{"type":"number","value":1}' + ']}' * ${depth} + '}'`
   );
 }
 
-/** Python 表达式：求值为 N 层嵌套数组的 JSON（20 万字节，低于 256 KB stdout 上限） */
+/** Python 表达式：求值为 N 层嵌套数组的 result.json（20 万字节，低于 256 KB stdout 上限） */
 function hugeJsonPyExpr(depth: number): string {
-  return `'{"dsl":' + '[' * ${depth} + ']' * ${depth} + '}'`;
+  return `'{"schema_version":"1.1","dsl":' + '[' * ${depth} + ']' * ${depth} + '}'`;
 }
 
 function writeManifest(dir: string, name: string): void {
@@ -57,34 +61,30 @@ function writeRoundGatedPackage(dir: string, name: string, payloadExpr: string):
   writeManifest(dir, name);
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import argparse, json, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+    `${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
 y0 = by_id[reveal["shooters"][args.team]]["y"]
 if public.get("round", 0) == 0:
-    sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}}) + "\\n")
+    emit({"type": "number", "value": y0})
 else:
-    sys.stdout.write(${payloadExpr} + "\\n")
+    # 绕过 emit 直接写恶意载荷（规范 §29 要求它必须被干净拒绝）
+    with open(args.output, "w", encoding="utf-8") as f:
+        f.write(${payloadExpr})
 `
   );
 }
 
-/** 恶意包：连 Preflight 都输出超深 AST */
+/** 恶意包：连 Preflight 都写超深 AST */
 function writeAlwaysDeepPackage(dir: string, depth: number): void {
   writeManifest(dir, 'always-deep');
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import sys
-N = ${depth}
-sys.stdout.write('{"dsl":' + '{"type":"neg","args":[' * N + '{"type":"number","value":1}' + ']}' * N + "}\\n")
+    `${PY_ARGV_PRELUDE}N = ${depth}
+with open(args.output, "w", encoding="utf-8") as f:
+    f.write('{"schema_version":"1.1","dsl":' + '{"type":"neg","args":[' * N + '{"type":"number","value":1}' + ']}' * N + "}")
 `
   );
 }
@@ -94,19 +94,13 @@ function writeHarmlessPackage(dir: string): void {
   writeManifest(dir, 'harmless');
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import argparse, json, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+    `${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
 y0 = by_id[reveal["shooters"][args.team]]["y"]
-sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}}) + "\\n")
+emit({"type": "number", "value": y0})
 `
   );
 }
@@ -240,7 +234,7 @@ test('hostile-input: 输出可解析但非法时，错误码与回合结果一�
   const forbidden = path.join(tmpDir('hostile-src'), 'forbidden');
   // round 0（Preflight）输出合法小 AST 以通过预检，正式回合再输出被禁算子
   const forbiddenExpr =
-    'json.dumps({"dsl": {"type": "add", "args": [' +
+    'json.dumps({"schema_version": "1.1", "dsl": {"type": "add", "args": [' +
     '{"type": "number", "value": y0}, ' +
     '{"type": "mul", "args": [{"type": "number", "value": 0}, ' +
     '{"type": "floor", "args": [{"type": "variable", "value": "x"}]}]}]}})';

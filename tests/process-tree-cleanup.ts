@@ -17,7 +17,13 @@ import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { cleanupSandbox, prepareSandbox, spawnRunner } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
-import { runnerInputFromCore } from './protocol-fixture';
+import {
+  PROBE_REPORT_PREFIX,
+  PY_ARGV_PRELUDE,
+  PY_EMIT,
+  probeReport,
+  runnerInputFromCore,
+} from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 
@@ -129,13 +135,8 @@ test('process-tree-cleanup: 算法无法 fork / spawn 子进程', async () => {
   );
   fs.writeFileSync(
     path.join(src, 'solver.py'),
-    `import argparse, json, os, subprocess, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+    `import subprocess
+${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
@@ -152,11 +153,11 @@ try:
     report["spawn"] = "allowed"
 except Exception as e:
     report["spawn"] = "blocked:" + type(e).__name__
-dsl = {"type": "add", "args": [
+sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(report) + "\\n")
+emit({"type": "add", "args": [
     {"type": "number", "value": y0},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
-]}
-sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
+]})
 `
   );
 
@@ -183,7 +184,7 @@ sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
   runner.release(); // P1-B：不再传入共享 releaseNs
   const outcome = await runner.done;
 
-  const report = JSON.parse(outcome.stdout.trim()).cheat as Record<string, string>;
+  const report = probeReport(outcome.stderr);
   assertEqual(report.fork, 'blocked:PermissionError', 'fork 必须被拒绝');
   assertEqual(report.spawn, 'blocked:PermissionError', 'spawn 子进程必须被拒绝');
 
@@ -204,20 +205,16 @@ test('process-tree-cleanup: 沙箱环境变量被清理（P1-13）', async () =>
   );
   fs.writeFileSync(
     path.join(src, 'solver.py'),
-    `import argparse, json, os, sys
-ap = argparse.ArgumentParser()
-ap.add_argument("--team", required=True)
-ap.add_argument("--public", required=True)
-ap.add_argument("--reveal", required=True)
-args = ap.parse_args()
-with open(args.public, "r") as f:
+    `${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
 y0 = by_id[reveal["shooters"][args.team]]["y"]
 env = {k: v for k, v in os.environ.items()}
-sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}, "env": env}) + "\\n")
+# 环境变量快照只能走 stderr（规范 §30），不能混进 result.json（规范 §26）
+sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(env) + "\\n")
+emit({"type": "number", "value": y0})
 `
   );
   const seal = sealPackage({ team: 'A', sourceDir: src, sealRoot: sealedRoot, matchId: 'PTREE-ENV' });
@@ -242,7 +239,7 @@ sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}, "env": env}
   runner.release(); // P1-B：不再传入共享 releaseNs
   const outcome = await runner.done;
 
-  const env = JSON.parse(outcome.stdout.trim()).env as Record<string, string>;
+  const env = probeReport(outcome.stderr);
   // 这几个变量由运行时自行注入，与宿主环境无关：
   //   PWD/SHLVL 来自 /bin/sh 启动器（PWD 是沙箱 work 目录）；
   //   SDKROOT/CPATH/LIBRARY_PATH/MANPATH/__CF_USER_TEXT_ENCODING

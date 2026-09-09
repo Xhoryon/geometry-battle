@@ -26,6 +26,12 @@
  *     input/public_state.json   · input/reveal_state.json
  *   队别只经 Runner Context（`--team A|B`）传递，绝不写进 JSON（规范 §11/§12）。
  *   bootstrap 在收到 GO 之前**绝不执行参赛代码**（规范 §14/§15）。
+ *
+ * V1.1 输出协议（Plans/Input/V1.1 — Algorithm Slot, Startup & JSON IPC Protocol.md）：
+ *   沙箱改为四区 —— app/（只读）· input/（只读）· output/（只写 result.json）· work/（可写临时区）。
+ *   stdout **不作为结果通道**（规范 §24）：算法只写 `/output/result.json`，
+ *   内容严格为 `{"schema_version":"1.1","dsl":…}`，多一个键都拒（规范 §25/§26）。
+ *   Judge 只监听该文件出现（规范 §27），计时以「合法结果到达」为终点（规范 §22）。
  */
 
 import { spawn, execFile } from 'child_process';
@@ -38,6 +44,19 @@ import {
   MAX_STDERR_BYTES,
   MEMORY_LIMIT_MB,
 } from '../core/Rules';
+import { PROTOCOL_VERSION } from '../core/InputProtocol';
+
+/** 结果文件在 `output/` 内的固定文件名（规范 §11/§25） */
+export const RESULT_FILENAME = 'result.json';
+
+/**
+ * 结果文件出现后，允许进程自然退出的宽限（ms）。
+ *
+ * 计时终点是**结果文件可读的时刻**，与这个宽限无关；宽限只用来把 stderr 里
+ * 尚未送达宿主的诊断行排空（规范 §30 允许有限 debug log），
+ * 排空后仍不退出就强杀 —— 「ONE OUTPUT ONLY」，写完就该结束。
+ */
+const RESULT_DRAIN_GRACE_MS = 50;
 
 export type RunnerErrorCode =
   | 'TIMEOUT'
@@ -64,8 +83,9 @@ export interface IsolationReport {
 export interface RunnerOutcome {
   team: 'A' | 'B';
   success: boolean;
-  /** GO 之后算法写入的标准输出（已限长） */
+  /** GO 之后算法写入的标准输出（已限长，**不参与判定**，仅留档诊断；规范 §30） */
   stdout: string;
+  /** 有限 debug 日志（已限长；同样不参与判定；规范 §30） */
   stderr: string;
   error: string | null;
   errorCode: RunnerErrorCode | null;
@@ -75,6 +95,10 @@ export interface RunnerOutcome {
   isolation: IsolationReport;
   /** 是否因 shooter 被击杀而取消 */
   cancelled: boolean;
+  /** `output/result.json` 的确切字节（未通过 schema 校验时为 null） */
+  resultJson: string | null;
+  /** 从 result.json 解出的 DSL 文本（AST 对象会被重新序列化） */
+  dslText: string | null;
 }
 
 /**
@@ -109,10 +133,20 @@ export interface DuelOptions {
 export interface DuelResult {
   a: RunnerOutcome;
   b: RunnerOutcome;
-  /** 较早的那个 GO 写入时刻（单调时钟，ns）；仅用于记录 */
-  releaseNs: bigint;
-  /** 两次 GO 写入之间的偏差（µs）；计时不依赖它（P1-B） */
-  releaseSkewUs: number;
+  /**
+   * A 队的 GO 写入时刻（单调时钟，ns）—— A 的计时基准（规范 §22/§23）。
+   * 审计字段 `releaseA_ns`。
+   */
+  releaseANs: bigint;
+  /** B 队的 GO 写入时刻（单调时钟，ns）—— B 的计时基准。审计字段 `releaseB_ns`。 */
+  releaseBNs: bigint;
+  /**
+   * `|releaseA − releaseB|`（ns），审计字段 `startSkew_ns`（规范 §23）。
+   *
+   * 两次 GO 必然来自同一个 GO 事件、同一条启动路径（规范 §19），
+   * 但写入顺序有约 20µs 的交付延迟；**计时不依赖它**（P1-B）。
+   */
+  startSkewNs: bigint;
   readySkewMs: number;
   isolation: IsolationReport;
 }
@@ -209,6 +243,7 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
   const sandboxDir = real(sandboxDirRaw);
   const sandboxRoot = real(sandboxRootRaw);
   const work = path.join(sandboxDir, 'work');
+  const output = path.join(sandboxDir, 'output');
 
   // 除了 /Users 与 sandbox 根目录，还必须显式拒绝平台自己的密封包目录 ——
   // 否则当 artifacts 落在 /Users 之外（例如操作员指定 --artifacts /tmp/...）时，
@@ -234,7 +269,7 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
   // 自保护剔除：只针对**调用方传入**的 deny，且只允许丢弃会阻断
   // sandboxDir / work 自身入口的条目（否则算法连自己的包和 bootstrap 都读不到）。
   // sandboxRoot 不在判定对象内 —— 它被模板无条件 deny，并由末尾 allow 放行。
-  const selfPaths = [sandboxDir, work];
+  const selfPaths = [sandboxDir, work, output];
 
   const extraDenies = [...denyReadPaths, ...SYSTEM_DENIES]
     .map((p) => real(p))
@@ -261,6 +296,7 @@ ${extraDenies}
 (allow file-read* (subpath ${JSON.stringify(sandboxDir)}))
 (allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))
 (allow file-write* (subpath ${JSON.stringify(work)}))
+(allow file-write* (subpath ${JSON.stringify(output)}))
 (allow file-write* (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr"))
 `;
 }
@@ -294,15 +330,19 @@ function copyDir(src: string, dest: string): void {
 
 export interface PreparedSandbox {
   dir: string;
-  /** 只读算法包目录（规范 §23 的 `/app`） */
+  /** 只读算法包目录（规范 §9 的 `/app`） */
   appDir: string;
-  /** 只读输入目录（规范 §23 的 `/input`） */
+  /** 只读输入目录（规范 §10 的 `/input`） */
   inputDir: string;
-  /** 唯一可写目录（规范 §23 的 `/work`） */
+  /** 只写结果目录（规范 §11 的 `/output`，每回合开始必为空） */
+  outputDir: string;
+  /** 可写临时目录（规范 §12 的 `/work`，回合结束即销毁） */
   workDir: string;
   entry: string;
   publicPath: string;
   revealPath: string;
+  /** `<outputDir>/result.json` —— 唯一的正式结果通道（规范 §11/§25） */
+  resultPath: string;
   profilePath: string;
   launcherPath: string;
   isolation: IsolationReport;
@@ -333,8 +373,13 @@ export function prepareSandbox(opts: {
 
   const appDir = path.join(dir, 'app');
   const inputDir = path.join(dir, 'input');
+  const outputDir = path.join(dir, 'output');
   const workDir = path.join(dir, 'work');
   fs.mkdirSync(inputDir, { recursive: true });
+  // output/ 每回合从**空目录**开始（规范 §11）：沙箱目录本身是新建的，
+  // 这里再显式建一次并确保为空，防止未来有人复用沙箱路径。
+  fs.rmSync(outputDir, { recursive: true, force: true });
+  fs.mkdirSync(outputDir, { recursive: true });
   fs.mkdirSync(workDir, { recursive: true });
 
   // 只复制该队自己的包
@@ -347,6 +392,8 @@ export function prepareSandbox(opts: {
   const revealPath = path.join(inputDir, 'reveal_state.json');
   fs.writeFileSync(publicPath, opts.input.publicJson, { mode: 0o444 });
   fs.writeFileSync(revealPath, opts.input.revealJson, { mode: 0o444 });
+
+  const resultPath = path.join(outputDir, RESULT_FILENAME);
 
   const bootstrapPath = path.join(dir, '__gb_bootstrap.py');
   fs.writeFileSync(bootstrapPath, BOOTSTRAP_SOURCE, { mode: 0o444 });
@@ -363,10 +410,12 @@ export function prepareSandbox(opts: {
     dir,
     appDir,
     inputDir,
+    outputDir,
     workDir,
     entry: path.join(appDir, opts.entry),
     publicPath,
     revealPath,
+    resultPath,
     profilePath,
     launcherPath,
     isolation: {
@@ -394,50 +443,65 @@ function killTree(pid: number | undefined): void {
   }
 }
 
-/** 解析算法输出：优先整体 JSON，其次最后一行 JSON */
-function parseAlgorithmOutput(raw: string): { dslText: string | null; error: string | null } {
-  const text = raw.trim();
-  if (!text) return { dslText: null, error: '算法没有输出' };
+/** `result.json` 的严格校验结果（规范 §25/§26/§29） */
+export type ResultParse =
+  | { ok: true; dslText: string }
+  | { ok: false; error: string };
 
-  // JSON.parse 与 JSON.stringify 都是递归实现：超深载荷会在**序列化**阶段
-  // 抛出 RangeError。若把它与「缺少 dsl 字段」混为一谈，恶意包就会被误报成
-  // 格式错误而不是「嵌套过深」（P0-A 家族，Re-Gate Cycle 2）。
-  let sawDslUnserializable = false;
+/** 结果文件**只允许**这两个键（规范 §26：hits/targets/kills/winner/… 一律拒收） */
+const RESULT_ALLOWED_KEYS = ['schema_version', 'dsl'];
 
-  const tryParse = (s: string): string | null => {
-    let obj: unknown;
-    try {
-      obj = JSON.parse(s);
-    } catch {
-      return null; // 非法 JSON，或 JSON.parse 自身在超深载荷上抛 RangeError
-    }
-    if (!obj || typeof obj !== 'object') return null;
-    const record = obj as Record<string, unknown>;
-    const dsl = record.dsl ?? record.function ?? record.f ?? null;
-    if (dsl === null || dsl === undefined) return null;
-    if (typeof dsl === 'string') return dsl;
-    try {
-      return JSON.stringify(dsl);
-    } catch {
-      sawDslUnserializable = true;
-      return null;
-    }
-  };
-
-  const whole = tryParse(text);
-  if (whole) return { dslText: whole, error: null };
-
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const parsed = tryParse(lines[i]);
-    if (parsed) return { dslText: parsed, error: null };
+/**
+ * 严格解析 `output/result.json`（规范 §25/§26）。
+ *
+ * 与 V1.0 的 stdout 解析相比，这里**不做任何宽容**：
+ *   - 顶层必须是 JSON 对象；
+ *   - 键集合必须恰好是 `{schema_version, dsl}` 的子集，多一个键即非法；
+ *   - `schema_version` 必须等于 `"1.1"`；
+ *   - `dsl` 必须存在，可以是 AST 对象，也可以是 AST 的 JSON 字符串。
+ *
+ * JSON.parse 与 JSON.stringify 都是递归实现：超深载荷会在**序列化**阶段
+ * 抛出 RangeError。这类载荷必须报「嵌套过深」而不是被误读成「缺少 dsl」
+ * （P0-A 家族，Re-Gate Cycle 2）。
+ */
+export function parseResultFile(raw: string): ResultParse {
+  let obj: unknown;
+  try {
+    obj = JSON.parse(raw);
+  } catch {
+    // 非法 JSON，或 JSON.parse 自身在超深载荷上抛 RangeError
+    return { ok: false, error: 'result.json 不是合法 JSON' };
   }
-  return {
-    dslText: null,
-    error: sawDslUnserializable
-      ? '算法输出的 DSL 嵌套过深，无法序列化（超出深度上限）'
-      : '算法输出缺少 dsl 字段或不是合法 JSON',
-  };
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    return { ok: false, error: 'result.json 顶层必须是 JSON 对象' };
+  }
+  const record = obj as Record<string, unknown>;
+
+  const extra = Object.keys(record).filter((k) => !RESULT_ALLOWED_KEYS.includes(k));
+  if (extra.length > 0) {
+    return {
+      ok: false,
+      error: `result.json 含不允许的字段：${extra.join(', ')}（规范 §26 只允许 schema_version 与 dsl）`,
+    };
+  }
+  if (record.schema_version !== PROTOCOL_VERSION) {
+    return {
+      ok: false,
+      error: `result.json 的 schema_version 必须是 "${PROTOCOL_VERSION}"，实际为 ${JSON.stringify(
+        record.schema_version
+      )}`,
+    };
+  }
+  const dsl = record.dsl;
+  if (dsl === undefined || dsl === null) {
+    return { ok: false, error: 'result.json 缺少 dsl 字段' };
+  }
+  if (typeof dsl === 'string') return { ok: true, dslText: dsl };
+  try {
+    return { ok: true, dslText: JSON.stringify(dsl) };
+  } catch {
+    return { ok: false, error: 'result.json 的 dsl 嵌套过深，无法序列化（超出深度上限）' };
+  }
 }
 
 export interface SpawnedRunner {
@@ -468,11 +532,13 @@ export function spawnRunner(opts: {
 }): SpawnedRunner {
   const { team, sandbox } = opts;
 
-  // 参赛入口的 argv：队别只经 Runner Context 传递（规范 §12），输入只经文件（规范 §13）。
+  // 参赛入口的 argv：队别只经 Runner Context 传递（规范 §12），输入只经文件（规范 §13），
+  // 结果只经文件（规范 §24）—— 四个参数固定，双方唯一差异是 --team 的取值（规范 §6）。
   const solverArgv = [
     '--team', team,
     '--public', sandbox.publicPath,
     '--reveal', sandbox.revealPath,
+    '--output', sandbox.resultPath,
   ];
   const bootstrapPath = path.join(sandbox.dir, '__gb_bootstrap.py');
 
@@ -523,7 +589,7 @@ export function spawnRunner(opts: {
     const outcome: RunnerOutcome = {
       team, success: false, stdout: '', stderr: '', error: `spawn 失败: ${(e as Error).message}`,
       errorCode: 'SPAWN_ERROR', computeTimeMs: 0, sandboxDir: sandbox.dir,
-      isolation, cancelled: false,
+      isolation, cancelled: false, resultJson: null, dslText: null,
     };
     if (!readySettled) { readySettled = true; rejectReady(new Error(outcome.error!)); }
     resolveDone(outcome);
@@ -552,12 +618,59 @@ export function spawnRunner(opts: {
 
   let monitor: NodeJS.Timeout | null = null;
 
-  const finish = (outcome: Omit<RunnerOutcome, 'team' | 'sandboxDir' | 'isolation' | 'cancelled'>) => {
+  /** 已通过 schema 校验的结果（含它出现的单调时刻 —— 计时终点，规范 §22） */
+  let pendingResult: { resultJson: string; dslText: string; resultNs: bigint } | null = null;
+  /** 结果文件出现过但没通过校验时的原因（最后一次） */
+  let resultError: string | null = null;
+  /** 结果文件是否出现过（用于区分「没写」与「写了但不合法」） */
+  let sawResultFile = false;
+  let poller: NodeJS.Timeout | null = null;
+  let drainTimer: NodeJS.Timeout | null = null;
+
+  const finish = (
+    outcome: Omit<RunnerOutcome, 'team' | 'sandboxDir' | 'isolation' | 'cancelled' | 'resultJson' | 'dslText'> & {
+      resultJson?: string | null;
+      dslText?: string | null;
+    }
+  ) => {
     if (finished) return;
     finished = true;
     clearTimeout(timeoutId);
     if (monitor) { clearInterval(monitor); monitor = null; }
-    resolveDone({ ...outcome, team, sandboxDir: sandbox.dir, isolation, cancelled });
+    if (poller) { clearInterval(poller); poller = null; }
+    if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+    resolveDone({
+      resultJson: null,
+      dslText: null,
+      ...outcome,
+      team,
+      sandboxDir: sandbox.dir,
+      isolation,
+      cancelled,
+    });
+  };
+
+  /**
+   * 收到合法结果后收尾：停止轮询、撤销超时预算、按**结果到达时刻**结算耗时。
+   *
+   * 计时终点是 result.json 可读的时刻（规范 §22/§28），不是进程退出时刻 ——
+   * 因此这里用 `pendingResult.resultNs` 而不是 `process.hrtime.bigint()`。
+   */
+  const finishWithResult = () => {
+    if (!pendingResult) return;
+    if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+    if (goTimeout) { clearTimeout(goTimeout); goTimeout = null; }
+    const { resultJson, dslText, resultNs } = pendingResult;
+    finish({
+      success: true,
+      stdout,
+      stderr,
+      error: null,
+      errorCode: null,
+      computeTimeMs: releaseNs !== null ? Number(resultNs - releaseNs) / 1e6 : 0,
+      resultJson,
+      dslText,
+    });
   };
 
   const timeoutId = setTimeout(() => {
@@ -669,6 +782,13 @@ export function spawnRunner(opts: {
     }
     if (oversize) return;
 
+    // 结果已经拿到（规范 §27：Judge 只监听 result.json 出现）——
+    // 进程之后以什么码退出都不影响判定，计时也已按结果到达时刻结算。
+    if (pendingResult) {
+      finishWithResult();
+      return;
+    }
+
     if (code !== 0) {
       finish({
         success: false, stdout, stderr,
@@ -679,22 +799,56 @@ export function spawnRunner(opts: {
       return;
     }
 
-    const { dslText, error } = parseAlgorithmOutput(stdout);
-    if (!dslText) {
-      finish({
-        success: false, stdout, stderr,
-        error: error ?? '无法解析算法输出',
-        errorCode: 'INVALID_OUTPUT',
-        computeTimeMs,
-      });
-      return;
-    }
-
-    finish({ success: true, stdout, stderr, error: null, errorCode: null, computeTimeMs });
+    finish({
+      success: false,
+      stdout,
+      stderr,
+      error:
+        resultError ??
+        (sawResultFile
+          ? 'output/result.json 未在 deadline 前形成完整合法文件'
+          : '算法未生成 output/result.json'),
+      errorCode: 'INVALID_OUTPUT',
+      computeTimeMs,
+    });
   });
 
+  /**
+   * 轮询 `output/result.json`（规范 §27：Judge 只监听它出现）。
+   *
+   * 1ms 的粒度相对 2000ms 预算可忽略；双方各自轮询、相位独立，
+   * 不产生方向固定的偏置。计时终点是**文件可读的那一刻**（规范 §22/§28），
+   * 而不是进程退出时刻 —— 后者会把解释器退出开销算进算法耗时。
+   */
+  const pollForResult = () => {
+    if (finished || !released || pendingResult) return;
+    if (!fs.existsSync(sandbox.resultPath)) return;
+    let text: string;
+    try {
+      text = fs.readFileSync(sandbox.resultPath, 'utf8');
+    } catch {
+      return; // 与删除/替换竞争，下一拍再看
+    }
+    sawResultFile = true;
+    const parsed = parseResultFile(text);
+    if (!parsed.ok) {
+      // 可能只写了一半（未用 tmp+rename 的算法），继续等到 deadline（规范 §27/§28）
+      resultError = parsed.error;
+      return;
+    }
+    const resultNs = process.hrtime.bigint();
+    pendingResult = { resultJson: text, dslText: parsed.dslText, resultNs };
+    if (poller) { clearInterval(poller); poller = null; }
+    // 给进程一点时间自然退出，把 stderr 里的 debug log 排空（规范 §30）；
+    // 超时仍未退出就强杀 —— ONE OUTPUT ONLY，写完就该结束（规范 §29）。
+    drainTimer = setTimeout(() => {
+      killTree(proc.pid);
+      finishWithResult();
+    }, RESULT_DRAIN_GRACE_MS);
+  };
+
   // 输入不再走 stdin —— 两份 JSON 已由 prepareSandbox 写入 input/，
-  // 参赛入口从 argv 拿到路径自己读（规范 §13）。stdin 现在只承载 GO 信号。
+  // 参赛入口从 argv 拿到路径自己读（规范 §10/§13）。stdin 现在只承载 GO 信号。
 
   return {
     team,
@@ -712,13 +866,16 @@ export function spawnRunner(opts: {
       } catch {
         /* ignore */
       }
-      // 精确超时从 release 起算
+      // 结果通道：只监听 output/result.json 出现（规范 §27）
+      if (poller) clearInterval(poller);
+      poller = setInterval(pollForResult, 1);
+      // 精确超时从 release 起算；到点仍无合法结果 → TIMEOUT（规范 §28）
       if (goTimeout) clearTimeout(goTimeout);
       goTimeout = setTimeout(() => {
         killTree(proc.pid);
         finish({
           success: false, stdout, stderr,
-          error: `算法超时（>${opts.timeoutMs}ms）`,
+          error: `算法超时（>${opts.timeoutMs}ms 内未生成合法的 output/result.json）`,
           errorCode: 'TIMEOUT',
           computeTimeMs: opts.timeoutMs,
         });
@@ -740,12 +897,15 @@ export function spawnRunner(opts: {
 /**
  * 同时运行双方算法。
  *
- * 公平性（P1-10 + Re-Gate Cycle 1 P1-B）：
+ * 公平性（P1-10 + Re-Gate Cycle 1 P1-B + 规范 §19/§22/§23）：
  *   两个进程都完成 READY 握手后，宿主先后写入 GO（约 20µs 交付延迟）。
+ *   两次 GO 由**同一个 GO 事件**触发、走**同一条启动路径**，这就是赛事意义上的
+ *   「同时启动」（规范 §19）。
  *   **每方的 computeTimeMs 与超时预算都从它自己的 GO 时刻起算**，
  *   因此双方拿到等长的计算预算，释放顺序不再产生方向固定的偏置。
  *   早期版本让双方共用同一个 releaseNs，等于把「后写 GO 的那一方」的
  *   交付延迟计进了它的耗时，恒对 B 不利。
+ *   `releaseA_ns` / `releaseB_ns` / `startSkew_ns` 三者写入审计，供事后复核。
  */
 export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   const timeoutMs = opts.timeoutMs ?? COMPUTE_TIMEOUT_MS;
@@ -806,22 +966,23 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     runnerA.cancel();
     runnerB.cancel();
     const [oa, ob] = await Promise.all([runnerA.done, runnerB.done]);
+    const neverReleased = process.hrtime.bigint();
     return {
       a: oa,
       b: ob,
-      releaseNs: process.hrtime.bigint(),
-      releaseSkewUs: 0,
+      releaseANs: neverReleased,
+      releaseBNs: neverReleased,
+      startSkewNs: 0n,
       readySkewMs: 0,
       isolation: sandboxA.isolation,
     };
   }
 
-  // ---- 释放双方：各自记录自己的 GO 时刻（P1-B）----
-  const releaseNsA = runnerA.release();
-  const releaseNsB = runnerB.release();
-  const releaseNs = releaseNsA < releaseNsB ? releaseNsA : releaseNsB;
-  const releaseSkewUs =
-    Number(releaseNsA > releaseNsB ? releaseNsA - releaseNsB : releaseNsB - releaseNsA) / 1000;
+  // ---- 释放双方：各自记录自己的 GO 时刻（P1-B / 规范 §22/§23）----
+  const releaseANs = runnerA.release();
+  const releaseBNs = runnerB.release();
+  const startSkewNs =
+    releaseANs > releaseBNs ? releaseANs - releaseBNs : releaseBNs - releaseANs;
 
   const [outcomeA, outcomeB] = await Promise.all([runnerA.done, runnerB.done]);
 
@@ -832,8 +993,9 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   return {
     a: outcomeA,
     b: outcomeB,
-    releaseNs,
-    releaseSkewUs,
+    releaseANs,
+    releaseBNs,
+    startSkewNs,
     readySkewMs,
     isolation: sandboxA.isolation,
   };

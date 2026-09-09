@@ -72,28 +72,16 @@ function coreFor(map: GeneratedMap): RoundStateCore {
   };
 }
 
+/**
+ * 取算法结果里的 AST。
+ *
+ * V1.1 起结果只来自 `output/result.json`（规范 §24）：`outcome.dslText`
+ * 已经是严格校验过 schema 的 DSL 文本，这里只做 AST 解析。
+ */
 function extractDsl(outcome: RunnerOutcome): CanonicalNode | null {
-  const text = outcome.stdout.trim();
-  if (!text) return null;
-  const tryOne = (s: string): CanonicalNode | null => {
-    try {
-      const obj = JSON.parse(s);
-      const dsl = obj?.dsl ?? obj?.function ?? obj?.f ?? null;
-      if (dsl === null || dsl === undefined) return null;
-      const parsed = parseCanonicalDSL(typeof dsl === 'string' ? dsl : JSON.stringify(dsl));
-      return parsed.ok ? parsed.ast! : null;
-    } catch {
-      return null;
-    }
-  };
-  const whole = tryOne(text);
-  if (whole) return whole;
-  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const r = tryOne(lines[i]);
-    if (r) return r;
-  }
-  return null;
+  if (!outcome.dslText) return null;
+  const parsed = parseCanonicalDSL(outcome.dslText);
+  return parsed.ok ? parsed.ast! : null;
 }
 
 /** 用 Canonical Judge 结算一次 duel，返回双方击杀数 */
@@ -112,7 +100,8 @@ function killsOf(map: GeneratedMap, duel: { a: RunnerOutcome; b: RunnerOutcome }
 }
 
 interface Batch {
-  releaseSkewUs: number[];
+  /** 两次 GO 写入之间的偏差（µs）—— 审计量，不参与计时（规范 §23） */
+  startSkewUs: number[];
   readySkewMs: number[];
   timeA: number[];
   timeB: number[];
@@ -127,7 +116,7 @@ async function orderBatch(n: number): Promise<Batch> {
   const seal = sealPackage({ team: 'A', sourceDir: STARTER, sealRoot: sealedRoot, matchId: 'FAIR-ORDER' });
   assert(seal.sealed, 'starter 应能密封');
 
-  const out: Batch = { releaseSkewUs: [], readySkewMs: [], timeA: [], timeB: [], aFaster: 0, rounds: 0 };
+  const out: Batch = { startSkewUs: [], readySkewMs: [], timeA: [], timeB: [], aFaster: 0, rounds: 0 };
   for (let i = 0; i < n; i++) {
     const map = generateMapOrNull({ seed: 3_000_011 + i * 10_007, pointCount: 8, difficulty: 'medium' });
     if (!map) continue;
@@ -143,7 +132,7 @@ async function orderBatch(n: number): Promise<Batch> {
       timeoutMs: 3000,
     });
     if (!duel.a.success || !duel.b.success) continue;
-    out.releaseSkewUs.push(duel.releaseSkewUs);
+    out.startSkewUs.push(Number(duel.startSkewNs) / 1000);
     out.readySkewMs.push(duel.readySkewMs);
     out.timeA.push(duel.a.computeTimeMs);
     out.timeB.push(duel.b.computeTimeMs);
@@ -218,13 +207,13 @@ test(`timing-fairness: 同算法对局 ${ROUNDS_ORDER} 轮 —— 释放偏差�
   const b = await orderBatch(ROUNDS_ORDER);
   assert(b.rounds >= MIN_ROUNDS, `有效轮数必须 ≥ ${MIN_ROUNDS}，实际 ${b.rounds}`);
 
-  const skew = [...b.releaseSkewUs].sort((x, y) => x - y);
+  const skew = [...b.startSkewUs].sort((x, y) => x - y);
   const ready = [...b.readySkewMs].sort((x, y) => x - y);
   const diffs = b.timeA.map((t, i) => t - b.timeB[i]);
   const aFasterRate = b.aFaster / b.rounds;
 
   console.log(
-    `    [fairness] rounds=${b.rounds} releaseSkewUs(${describe(skew)}) ` +
+    `    [fairness] rounds=${b.rounds} startSkewUs(${describe(skew)}) ` +
       `readySkewMs(${describe(ready)}) timeDiffMs(median=${median(diffs).toFixed(3)} ` +
       `p95=${percentile([...diffs].sort((x, y) => x - y), 95).toFixed(3)}) ` +
       `medianTimeA=${median(b.timeA).toFixed(2)}ms medianTimeB=${median(b.timeB).toFixed(2)}ms ` +

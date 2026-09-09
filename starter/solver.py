@@ -1,24 +1,33 @@
 """
 Geometry Battle — 官方 Starter Algorithm (v1.1)
 
-修复的 Finding：
-    P0-3  原 starter 对 2 元运算符 add 传入 3 个参数，生成的 DSL 必然非法；
-         且函数不经过 Shooter 点，无法通过 Canonical Validator。
+V1.1 启动契约（Plans/Input/V1.1 — Algorithm Slot, Startup & JSON IPC Protocol.md §6）：
 
-输入契约（V1.1，Plans/Input/V1.1 — Algorithm Input Protocol.md §13）：
+    python solver.py \
+      --team A \
+      --public /input/public_state.json \
+      --reveal /input/reveal_state.json \
+      --output /output/result.json
 
-    python solver.py --team A --public /input/public_state.json --reveal /input/reveal_state.json
+    四个参数固定；双方唯一差异是 `--team` 的取值（规范 §6）。
 
+输入（规范 §10/§37）：
     public_state.json  揭盲前的公开世界：schema_version / match_id / round /
                        map{xmin,xmax,ymin,ymax} / points[{id,team,x,y,alive}]
                        —— 含死点（alive=false），但**不含**障碍物与任何 Shooter。
     reveal_state.json  揭盲增量：public_state_sha256 / shooters{A,B}（只给 id）/
                        obstacles[]。用 public_state_sha256 可自检两份输入是否配对。
 
-    队别只经 --team 传入，两份 JSON 对双方**逐字节相同**。
+输出（规范 §11/§25/§26/§27）：
+    只写 `--output` 指定的 `result.json`：
 
-输出契约：
-    stdout 一行 JSON —— {"dsl": <AST 或 AST 的 JSON 字符串>}
+        {"schema_version": "1.1", "dsl": <AST 或 AST 的 JSON 字符串>}
+
+    只允许 `schema_version` 与 `dsl` 两个键 —— hits / winner / computeTime 之类
+    一律不许出现（平台已经知道这些，或者该由 Judge 计算）。
+    写入必须 tmp + 原子 rename，避免 Judge 读到写了一半的 JSON。
+    **stdout 不作为结果通道**（规范 §24），只能作为被丢弃的调试输出；
+    stderr 可以写有限 debug log（规范 §30）。
 
 DSL 白名单（Plan V1 §11）：
     - 只允许运算符：number, variable, add, sub, mul, div, pow, neg,
@@ -33,6 +42,7 @@ DSL 白名单（Plan V1 §11）：
 import argparse
 import hashlib
 import json
+import os
 import sys
 
 
@@ -45,6 +55,7 @@ def load_input():
     ap.add_argument("--team", required=True, choices=["A", "B"])
     ap.add_argument("--public", required=True)
     ap.add_argument("--reveal", required=True)
+    ap.add_argument("--output", required=True)
     args = ap.parse_args()
 
     with open(args.public, "rb") as f:
@@ -58,7 +69,17 @@ def load_input():
     if expected != hashlib.sha256(public_bytes).hexdigest():
         sys.stderr.write("public_state_sha256 mismatch\n")
         raise SystemExit(2)
-    return args.team, public, reveal
+    return args, public, reveal
+
+
+def emit(args, dsl):
+    """唯一的正式输出通道：tmp + 原子 rename（规范 §25/§27）。"""
+    tmp = args.output + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": "1.1", "dsl": dsl}, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, args.output)
 
 
 def shooter_of(public, reveal, team):
@@ -137,14 +158,12 @@ def solve(team, public, reveal):
     else:
         tx, ty = sx, sy
 
-    return {"dsl": build_line_through_shooter(sx, sy, tx, ty)}
+    return build_line_through_shooter(sx, sy, tx, ty)
 
 
 def main():
-    team, public, reveal = load_input()
-    sys.stdout.write(json.dumps(solve(team, public, reveal)))
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+    args, public, reveal = load_input()
+    emit(args, solve(args.team, public, reveal))
     return 0
 
 
