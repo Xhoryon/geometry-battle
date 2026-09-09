@@ -11,13 +11,16 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
 import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import {
+  cleanupSandbox,
   defaultSandboxRoot,
+  prepareSandbox,
   runDuel,
   sandboxExecAvailable,
 } from '../src/runner/SandboxRunner';
@@ -335,6 +338,63 @@ test('runner-isolation: 官方 MatchEngine 路径下双方源包与产物目录�
     leak.errors.some((e) => e.includes('LEAK:outside_dir')),
     `对照用例应报出 LEAK:outside_dir，实际: ${leak.errors.join('; ')}`
   );
+});
+
+test('runner-isolation: sandboxRoot 位于 /tmp 下时，任意 /tmp 读取仍被拒绝（D-1 回归）', async () => {
+  // Re-Gate Cycle 2 审计 D-1：buildProfile 的自保护过滤曾把 sandboxRoot 也列入
+  // 判定对象（`covers(p, sandboxRoot)`），于是当 sandboxRoot 落在 /tmp 之下时，
+  // 系统兜底 deny `/private/tmp` 被整条静默丢弃 —— 算法即可读取任意未被显式
+  // deny 的 /tmp 文件（包括**其他场次的密封包**）。
+  // 本用例把 sandboxRoot 放到 /tmp 下，同时做结构性断言与行为断言。
+  const root = fs.mkdtempSync(path.join('/tmp', 'gb-iso-tmp-'));
+  try {
+    const secret = path.join(root, 'secret.txt');
+    fs.writeFileSync(secret, 'HOST-ONLY');
+
+    // 结构性断言：profile 必须保留系统兜底 deny（这一行是修复的承重断言）
+    const sb = prepareSandbox({
+      sandboxRoot: path.join(root, 'sandboxes'),
+      matchId: 'ISO-TMPROOT-PROFILE',
+      roundNumber: 1,
+      team: 'A',
+      packageDir: STARTER,
+      entry: 'solver.py',
+      memoryLimitMb: 512,
+      denyReadPaths: [],
+    });
+    const profile = fs.readFileSync(sb.profilePath, 'utf-8');
+    assert(
+      profile.includes('(deny file-read* (subpath "/private/tmp"))'),
+      `sandboxRoot 位于 /tmp 下时仍必须保留系统兜底 deny，实际 profile:\n${profile}`
+    );
+    cleanupSandbox(sb.dir);
+
+    // 行为断言：读任意 /tmp 文件、列举 /tmp 都必须被拒绝。
+    // pre.ok 同时证明沙箱仍能读自己的包（否则解释器起不来，Preflight 会失败）。
+    const { pre } = await preflightProbe('ISO-TMPROOT', root, {
+      tmp_secret: { path: secret, kind: 'file' },
+      tmp_list: { path: '/tmp', kind: 'dir' },
+    });
+    assert(
+      pre.ok,
+      `sandboxRoot 位于 /tmp 下时，/tmp 的读取与列举必须全部被拒绝；Preflight 失败说明有泄漏:\n${pre.errors.join('\n')}`
+    );
+
+    // 反向对照：把目标换成未被 deny 的目录（os.tmpdir() 下，不是 /tmp），
+    // 探测包必须能读到并报 LEAK —— 否则上面的 pre.ok 只是「探针没跑」的假阳性。
+    const ctrl = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-iso-ctrl-'));
+    const { pre: leak } = await preflightProbe('ISO-TMPROOT-CTRL', root, {
+      ctrl_dir: { path: ctrl, kind: 'dir' },
+    });
+    assert(!leak.ok, '对照用例：读取未被 deny 的目录必须被探测到（否则断言无效）');
+    assert(
+      leak.errors.some((e) => e.includes('LEAK:ctrl_dir')),
+      `对照用例应报出 LEAK:ctrl_dir，实际: ${leak.errors.join('; ')}`
+    );
+    fs.rmSync(ctrl, { recursive: true, force: true });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('runner-isolation: 洪泛 stdout 被限长（P2-25）', async () => {

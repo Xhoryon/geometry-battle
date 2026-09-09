@@ -513,6 +513,15 @@ export class MatchEngine {
     const cancelledA = cancelled.A || outcomeA.errorCode === 'CANCELLED';
     const cancelledB = cancelled.B || outcomeB.errorCode === 'CANCELLED';
 
+    // 运行器成功、但输出构不成合法函数时，运行器自身没有错误码 —— 补一个与回合
+    // 结果一致的诊断码，避免出现「result = INVALID_A 但 aErrorCode = null」
+    // （Re-Gate Cycle 2 审计 D-3）。失败/取消路径保持运行器自己的错误码。
+    const errorCodeFor = (
+      outcome: RunnerOutcome,
+      final: CanonicalNode | null
+    ): RunnerOutcome['errorCode'] =>
+      outcome.errorCode ?? (outcome.success && !final ? 'INVALID_DSL' : null);
+
     const log: RoundLog = {
       round,
       stateHash,
@@ -536,8 +545,8 @@ export class MatchEngine {
       bBlocked: Boolean(shots.B?.blocked),
       cancelledA,
       cancelledB,
-      aErrorCode: outcomeA.errorCode,
-      bErrorCode: outcomeB.errorCode,
+      aErrorCode: errorCodeFor(outcomeA, finalA),
+      bErrorCode: errorCodeFor(outcomeB, finalB),
       aliveAAfter: aliveAfter.A,
       aliveBAfter: aliveAfter.B,
       result: deriveRoundResult(outcomeA, outcomeB, finalA, finalB, cancelledA, cancelledB),
@@ -761,10 +770,24 @@ export class MatchEngine {
   }
 
   private tryParseAst(outcome: RunnerOutcome): CanonicalNode | null {
+    return this.parseAstDetailed(outcome).ast;
+  }
+
+  /**
+   * 解析算法输出，并保留失败原因。
+   *
+   * 早期实现把解析失败一律压成「输出不是合法 DSL」，于是「深度超限」这类关键
+   * 诊断在集成层被抹平：删掉 AST 深度守卫后集成回归仍会通过（因为随后必然被
+   * Shooter 校验拒绝，文案同样是「输出不合法」）。诊断必须如实透出
+   * （Re-Gate Cycle 2 审计 D-2）。
+   */
+  private parseAstDetailed(outcome: RunnerOutcome): { ast: CanonicalNode | null; reason: string } {
     const dsl = extractDsl(outcome);
-    if (!dsl) return null;
+    if (!dsl) return { ast: null, reason: '输出中找不到 dsl / function / f 字段' };
     const parsed = parseCanonicalDSL(dsl);
-    return parsed.ok ? parsed.ast : null;
+    if (parsed.ok && parsed.ast) return { ast: parsed.ast, reason: '' };
+    const detail = parsed.issues.map((i) => `${i.code}: ${i.message}`).join('; ');
+    return { ast: null, reason: detail || '输出不是合法 DSL' };
   }
 
   private validateOutcome(
@@ -774,8 +797,8 @@ export class MatchEngine {
     team: 'A' | 'B'
   ): { ok: boolean; errors: string[] } {
     if (!outcome.success) return { ok: false, errors: [outcome.error ?? 'unknown'] };
-    const ast = this.tryParseAst(outcome);
-    if (!ast) return { ok: false, errors: ['输出不是合法 DSL'] };
+    const { ast, reason } = this.parseAstDetailed(outcome);
+    if (!ast) return { ok: false, errors: [`输出不是合法 DSL: ${reason}`] };
     const core = this.buildCoreFor(map, 0, shooterPos, shooterPos);
     return this.validateAst(ast, team, core);
   }

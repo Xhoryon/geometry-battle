@@ -199,10 +199,47 @@ test('hostile-input: 刚好超过深度上限的 AST 被确定性拒绝（P0-A �
 
   const pre = await preflightWith('HOSTILE-DEPTH-GUARD', deep40, STARTER);
   assert(!pre.ok, '超过深度上限的 AST 必须 Preflight 失败');
+  const aError = pre.errors.find((e) => e.startsWith('A ')) ?? '';
   assert(
-    pre.errors.some((e) => e.startsWith('A 算法输出不合法')),
+    aError.startsWith('A 算法输出不合法'),
     `深度守卫应在 DSL 校验阶段生效，实际: ${pre.errors.join('; ')}`
   );
+  // 承重断言（Re-Gate Cycle 2 审计 D-2）：必须由**递归之前**的深度守卫拒绝。
+  // 只断言「输出不合法」是不承重的 —— 去掉守卫后 40 层 AST 会被解析通过，
+  // 随后因不过 Shooter 被拒，文案同样是「输出不合法」。
+  // `在第 N 层拒绝` 只可能来自 parseNode 入口处的守卫。
+  assert(
+    /在第 \d+ 层拒绝/.test(aError),
+    `必须由递归前的深度守卫拒绝（诊断需指明拒绝层号），实际: ${aError}`
+  );
+  assert(
+    !/相差/.test(aError),
+    `不得先解析成功再以 Shooter 校验拒绝（那意味着守卫没有前置），实际: ${aError}`
+  );
+});
+
+test('hostile-input: 输出可解析但非法时，错误码与回合结果一致（D-3 回归）', async () => {
+  // Re-Gate Cycle 2 审计 D-3：运行器成功、但 DSL 非法（例如使用被禁算子）时，
+  // 曾出现 result=INVALID_A 而 aErrorCode=null —— 日志自相矛盾。
+  // 这里用「结构合法但含被禁算子」的载荷确定性地复现该路径。
+  const forbidden = path.join(tmpDir('hostile-src'), 'forbidden');
+  // round 0（Preflight）输出合法小 AST 以通过预检，正式回合再输出被禁算子
+  const forbiddenExpr =
+    'json.dumps({"dsl": {"type": "add", "args": [' +
+    '{"type": "number", "value": y0}, ' +
+    '{"type": "mul", "args": [{"type": "number", "value": 0}, ' +
+    '{"type": "floor", "args": [{"type": "variable", "value": "x"}]}]}]}})';
+  writeRoundGatedPackage(forbidden, 'forbidden-op', forbiddenExpr);
+
+  const { result } = await runOneRoundWith('HOSTILE-FORBIDDEN-OP', forbidden, STARTER);
+  assertEqual(result.log.result, 'INVALID_A', '含被禁算子的输出应记为 INVALID_A');
+  assertEqual(
+    result.log.aErrorCode,
+    'INVALID_DSL',
+    'aErrorCode 必须与 INVALID_A 一致，不得为 null（D-3）'
+  );
+  assertEqual(result.log.aFunction, null, '非法函数不得进入日志的函数字段');
+  assert(result.log.bFunction !== null, 'B 的合法输出不应被影响');
 });
 
 test('hostile-input: 超长嵌套 JSON 输出被干净拒绝（P0-A 回归）', async () => {

@@ -165,22 +165,30 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
   // 运维脚本的常见位置，算法没有任何理由读取（注意 /tmp 是 /private/tmp
   // 的符号链接，realpath 后二者相同）。
   //
-  // 但这些是**粗粒度**路径，可能恰好把沙箱自己也罩进去 —— 例如 macOS 的
-  // 默认沙箱根就在 /private/var/folders/<user>/T/ 下。因此下面还要剔除
-  // 「会拒绝沙箱自身」的条目（Re-Gate Cycle 2：此前无条件拒绝
-  // /private/var/folders 会让算法连自己的入口文件都读不到，整场比赛全挂）。
+  // 这些兜底条目**永不参与自保护过滤**（Re-Gate Cycle 2 审计 D-1）。
+  // 早期把 sandboxRoot 也放进 selfPaths：当 sandboxRoot 位于 /tmp 之下时
+  // `covers('/private/tmp', sandboxRoot)` 为真，整条兜底 deny 被静默丢弃，
+  // 算法即可读取任意未被显式 deny 的 /tmp 文件（包括**其他场次的密封包**）。
+  // 保留它们不会伤到沙箱自身 —— 末尾的 `(allow file-read* (subpath sandboxDir))`
+  // 按 SBPL「后匹配者胜」重新放行；模板里无条件存在的
+  // `(deny file-read* (subpath sandboxRoot))` 与它同理，且一直工作正常。
   const SYSTEM_DENIES = ['/private/tmp', '/private/var/tmp'];
 
   /** p 是否等于 self 或是 self 的祖先 */
   const covers = (p: string, self: string): boolean => p === self || self.startsWith(p + path.sep);
 
-  const selfPaths = [sandboxDir, sandboxRoot, work];
+  // 自保护剔除：只针对**调用方传入**的 deny，且只允许丢弃会阻断
+  // sandboxDir / work 自身入口的条目（否则算法连自己的包和 bootstrap 都读不到）。
+  // sandboxRoot 不在判定对象内 —— 它被模板无条件 deny，并由末尾 allow 放行。
+  const selfPaths = [sandboxDir, work];
 
   const extraDenies = [...denyReadPaths, ...SYSTEM_DENIES]
     .map((p) => real(p))
     .filter((p, i, arr) => p.length > 0 && p !== path.sep && arr.indexOf(p) === i)
-    // 会拒绝沙箱自身的 deny 必须剔除，否则算法连自己的包和 bootstrap 都读不到
-    .filter((p) => !selfPaths.some((self) => covers(p, self)))
+    .filter((p) => {
+      if (SYSTEM_DENIES.includes(p)) return true; // 系统兜底永不被剔除
+      return !selfPaths.some((self) => covers(p, self));
+    })
     .map((p) => `(deny file-read* (subpath ${JSON.stringify(p)}))`)
     .join('\n');
 
