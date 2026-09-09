@@ -45,6 +45,7 @@ import {
   MEMORY_LIMIT_MB,
 } from '../core/Rules';
 import { PROTOCOL_VERSION } from '../core/InputProtocol';
+import { THREAD_ENV } from '../submission/Runtime';
 
 /** 结果文件在 `output/` 内的固定文件名（规范 §11/§25） */
 export const RESULT_FILENAME = 'result.json';
@@ -314,6 +315,9 @@ function scrubEnv(sandboxDir: string, team: 'A' | 'B'): NodeJS.ProcessEnv {
     PYTHONHASHSEED: '0',
     PYTHONNOUSERSITE: '1',
     GB_TEAM: team,
+    // 规范 §5：线程上限冻结为 1。双方必须是同一个数值，否则
+    // 「谁的机器核多」会变成计时优势（BLAS/OpenMP 默认吃满所有核）。
+    ...THREAD_ENV,
   };
 }
 

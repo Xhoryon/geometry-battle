@@ -20,9 +20,16 @@
  * 不需要：修改 JSON、DevTools、monkey patch、内部状态注入。
  *
  * 用法:
- *   npx ts-node src/operator/cli.ts --a <pkgA> --b <pkgB> [选项]
+ *   npx ts-node src/operator/cli.ts [--a <pkgA>] [--b <pkgB>] [选项]
+ *
+ * 算法来源（规范 §2/§31/§32）：
+ *   不给 --a/--b  → 直接使用固定槽位 algorithms/team-a|team-b 里的算法；
+ *   给了 --a/--b  → 先按 staging → validate → preflight → hash → seal → replace
+ *                   安装进槽位（坏包不会破坏现有槽位），再从槽位密封。
  *
  * 选项:
+ *   --slots <dir>         算法槽位根目录（默认 <repo>/algorithms）
+ *   --max-rounds <n>      最大回合数（默认 50；僵持时停止并报告未决）
  *   --seed <n>            指定地图种子
  *   --points <6..10>      双方点数（默认 8）
  *   --difficulty <lvl>    easy | medium | hard（默认 medium）
@@ -35,15 +42,26 @@
 import * as path from 'path';
 import * as readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
-import { MatchEngine } from '../core/Match';
+import { MatchEngine, PLATFORM_ROOT } from '../core/Match';
 import { loadReplay, persistArtifacts } from '../core/Logs';
 import { MatchSetupUI } from '../ui/MatchSetupUI';
 import { AudienceScreenUI } from '../ui/AudienceScreenUI';
 import { JudgeControllerUI, TeamControllerUI } from '../ui/TeamControllerUI';
 
 interface CliOptions {
+  /** 上传来源：给出则执行 §31 的 staging→…→replace，否则直接用槽位里的算法 */
   a?: string;
   b?: string;
+  /** 固定算法槽位根目录（规范 §2/§41） */
+  slots: string;
+  /**
+   * 最大回合数（操作台侧护栏，不改变引擎判定）。
+   *
+   * 两个都不绕障碍物的算法（例如出厂 starter）会互相打不到而**永久僵持**：
+   * `getWinner()` 只有在某一方点数全灭时才有结论，僵持时返回 null。
+   * 引擎保持这个语义不变（判定语义是冻结的），由操作台在达到上限时停下并报告未决。
+   */
+  maxRounds: number;
   seed?: number;
   points: number;
   difficulty: 'easy' | 'medium' | 'hard';
@@ -58,6 +76,8 @@ function parseArgs(argv: string[]): CliOptions {
     points: 8,
     difficulty: 'medium',
     artifacts: path.join(process.cwd(), 'artifacts'),
+    slots: path.join(PLATFORM_ROOT, 'algorithms'),
+    maxRounds: 50,
     timeout: 2000,
     auto: false,
   };
@@ -71,6 +91,8 @@ function parseArgs(argv: string[]): CliOptions {
       case '--points': opts.points = Number(next()); break;
       case '--difficulty': opts.difficulty = next() as CliOptions['difficulty']; break;
       case '--artifacts': opts.artifacts = path.resolve(next()); break;
+      case '--slots': opts.slots = path.resolve(next()); break;
+      case '--max-rounds': opts.maxRounds = Number(next()); break;
       case '--timeout': opts.timeout = Number(next()); break;
       case '--auto': opts.auto = true; break;
       case '--replay': opts.replay = path.resolve(next()); break;
@@ -84,9 +106,12 @@ function parseArgs(argv: string[]): CliOptions {
 function printHelp(): void {
   console.log(`Geometry Battle 操作台
 
-  npx ts-node src/operator/cli.ts --a <pkgA> --b <pkgB> [--seed n] [--points 8]
-                                  [--difficulty medium] [--auto] [--artifacts dir]
-  npx ts-node src/operator/cli.ts --replay <artifactDir>`);
+  npx ts-node src/operator/cli.ts [--a <pkgA>] [--b <pkgB>] [--slots <dir>]
+                                  [--seed n] [--points 8] [--difficulty medium]
+                                  [--max-rounds 50] [--auto] [--artifacts dir]
+  npx ts-node src/operator/cli.ts --replay <artifactDir>
+
+  不给 --a/--b 时直接使用固定槽位 algorithms/team-a|team-b 中的算法。`);
 }
 
 /** 只读回放：不重新运行任何算法 */
@@ -137,16 +162,12 @@ async function main(): Promise<void> {
     replayOnly(opts.replay);
     return;
   }
-  if (!opts.a || !opts.b) {
-    printHelp();
-    process.exit(1);
-  }
-
   const setup = new MatchSetupUI({
     seed: opts.seed,
     pointCount: opts.points,
     difficulty: opts.difficulty,
     artifactRoot: opts.artifacts,
+    slotRoot: opts.slots,
     timeoutMs: opts.timeout,
   });
   const engine: MatchEngine = setup.getEngine();
@@ -162,10 +183,31 @@ async function main(): Promise<void> {
   const ask = async (q: string) => (await rl.question(q)).trim();
 
   try {
-    console.log('═══ 1. 上传与密封 ═══');
-    const upA = setup.uploadTeamA(path.resolve(opts.a));
+    console.log('═══ 0. 固定算法槽位（规范 §2/§33）═══');
+    console.log(setup.renderSlotPanel());
+    console.log(setup.renderRuntimePanel());
+
+    // ---- 上传：staging → validate → preflight → hash → seal → replace（§31/§32）----
+    let installedAny = false;
+    for (const team of ['A', 'B'] as const) {
+      const src = team === 'A' ? opts.a : opts.b;
+      if (!src) continue;
+      console.log(`\n安装 Team ${team} ← ${path.resolve(src)}`);
+      console.log('  staging → validate → preflight → hash → seal → replace');
+      const inst = await setup.installAlgorithm(team, path.resolve(src));
+      if (!inst.success) {
+        // 非破坏性：安装失败时槽位仍是安装前那一份
+        throw new Error(`Team ${team} 算法安装失败（槽位未改动）: ${inst.errors.join('; ')}`);
+      }
+      installedAny = true;
+      console.log(`  ✓ 槽位已替换  hash=${inst.hash}  decoySeed=${inst.detail.decoySeed}`);
+    }
+    if (installedAny) console.log('\n' + setup.renderSlotPanel());
+
+    console.log('\n═══ 1. 上传与密封（从槽位密封副本）═══');
+    const upA = setup.uploadFromSlot('A');
     if (!upA.success) throw new Error(`Team A 上传失败: ${upA.errors.join('; ')}`);
-    const upB = setup.uploadTeamB(path.resolve(opts.b));
+    const upB = setup.uploadFromSlot('B');
     if (!upB.success) throw new Error(`Team B 上传失败: ${upB.errors.join('; ')}`);
     console.log(`  A hash: ${upA.hash}`);
     console.log(`  B hash: ${upB.hash}`);
@@ -182,7 +224,14 @@ async function main(): Promise<void> {
     console.log(setup.renderStatusTable());
     persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）
 
+    let played = 0;
+    let stalemate = false;
     while (engine.getWinner() === null) {
+      if (played >= opts.maxRounds) {
+        stalemate = true;
+        break;
+      }
+      played++;
       // ---- 1. PRE-REVEAL：生成 public_state.json，算法进程不存在（规范 §14/§15）----
       const pre = engine.beginRound();
       console.log('\n' + audience.renderPreRevealBoard(engine.getSnapshot()));
@@ -234,7 +283,12 @@ async function main(): Promise<void> {
     const summary = audience.getResultSummary();
 
     console.log('\n═══════════════════════════════════════════════════');
-    console.log(`  WINNER: ${summary.winner.toUpperCase()}`);
+    if (stalemate) {
+      console.log(`  UNDECIDED（达到最大回合数 ${opts.maxRounds}，双方僵持）`);
+      console.log('  引擎不会自行宣布胜者；产物已完整落盘，可由裁判按赛事规则裁定。');
+    } else {
+      console.log(`  WINNER: ${summary.winner.toUpperCase()}`);
+    }
     console.log(`  Rounds: ${summary.rounds}   Kills: A=${summary.totalKillsA} B=${summary.totalKillsB}`);
     console.log(`  Artifacts: ${dir}`);
     console.log('═══════════════════════════════════════════════════');

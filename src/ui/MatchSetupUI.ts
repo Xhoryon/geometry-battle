@@ -11,6 +11,8 @@
 
 import { MatchEngine, MatchOptions, MatchSnapshot } from '../core/Match';
 import { GeneratedMap } from '../map/MapGenerator';
+import { SlotState, TeamSlot } from '../submission/Slot';
+import { FROZEN_RUNTIME, checkRuntime, describeRuntime } from '../submission/Runtime';
 
 export interface MatchSetupState {
   matchId: string;
@@ -21,6 +23,33 @@ export interface MatchSetupState {
   preflightPassed: boolean;
   map: GeneratedMap | null;
   allReady: boolean;
+}
+
+/** 终端框宽（列）。中文按 2 列计算，否则边框会错位。 */
+const BOX_WIDTH = 62;
+const BOX_TOP = `┌${'─'.repeat(BOX_WIDTH)}┐`;
+const BOX_BOTTOM = `└${'─'.repeat(BOX_WIDTH)}┘`;
+
+function displayWidth(s: string): number {
+  let w = 0;
+  for (const ch of s) w += (ch.codePointAt(0) ?? 0) > 0x1100 ? 2 : 1;
+  return w;
+}
+
+function boxLine(text: string): string {
+  const clipped = shorten(text, BOX_WIDTH - 1);
+  return `│${clipped}${' '.repeat(Math.max(0, BOX_WIDTH - displayWidth(clipped)))}│`;
+}
+
+function shorten(text: string, max: number): string {
+  if (displayWidth(text) <= max) return text;
+  let out = '';
+  for (const ch of text) {
+    const w = displayWidth(ch);
+    if (displayWidth(out) + w > max - 1) break;
+    out += ch;
+  }
+  return `${out}…`;
 }
 
 export class MatchSetupUI {
@@ -49,6 +78,33 @@ export class MatchSetupUI {
     return { success: r.ok, hash: r.hash, errors: r.errors };
   }
 
+  /**
+   * 把算法安装进固定槽位（规范 §31/§32）：
+   * staging → validate → preflight → hash → seal → replace。
+   * 失败时现有槽位保持不变。
+   */
+  async installAlgorithm(
+    team: TeamSlot,
+    sourceDir: string
+  ): Promise<{ success: boolean; hash: string | null; errors: string[]; detail: Record<string, unknown> }> {
+    const r = await this.engine.installAlgorithm(team, sourceDir);
+    return { success: r.ok, hash: r.hash, errors: r.errors, detail: r.detail };
+  }
+
+  /** 直接使用槽位里的算法（规范 §2/§41 的常规路径） */
+  uploadFromSlot(team: TeamSlot): { success: boolean; hash: string | null; errors: string[] } {
+    const state = this.engine.slotStates()[team];
+    if (state.status !== 'READY') {
+      return { success: false, hash: null, errors: [`槽位 ${state.dir} 不可用: ${state.status}`] };
+    }
+    const r = this.engine.upload(team, state.dir);
+    return { success: r.ok, hash: r.hash, errors: r.errors };
+  }
+
+  slotStates(): { A: SlotState; B: SlotState } {
+    return this.engine.slotStates();
+  }
+
   async preflight(): Promise<{ success: boolean; errors: string[]; detail: Record<string, unknown> }> {
     const r = await this.engine.preflight();
     this.preflightPassed = r.ok;
@@ -72,6 +128,47 @@ export class MatchSetupUI {
       map: snap.map,
       allReady: Boolean(snap.packages.A && snap.packages.B && this.preflightPassed),
     };
+  }
+
+  /**
+   * 算法槽位面板（规范 §33）。
+   *
+   * 展示的是**槽位实际状态**而不是上传记录：哈希来自槽位目录本身，
+   * Preflight 结论来自安装记录，因此手工改过槽位就会立刻显示为 INVALID。
+   */
+  renderSlotPanel(): string {
+    const slots = this.slotStates();
+    const lines: string[] = [BOX_TOP];
+    for (const team of ['A', 'B'] as const) {
+      const s = slots[team];
+      const label = team === 'A' ? this.teamAName : this.teamBName;
+      lines.push(boxLine(`TEAM ${team} ALGORITHM — ${label}`));
+      lines.push(boxLine(`  Status       ${s.status}`));
+      lines.push(boxLine(`  Slot         ${shorten(s.dir, 44)}`));
+      if (s.status === 'READY') {
+        lines.push(boxLine(`  Entrypoint   ${s.entry}`));
+        lines.push(boxLine(`  Package Hash ${(s.hash ?? '').substring(0, 32)}…`));
+        lines.push(boxLine(`  Files        ${s.files}  (${s.totalBytes} bytes)`));
+        const pf = s.record?.preflight;
+        lines.push(boxLine(`  Preflight    ${pf ? (pf.ok ? 'PASS' : `FAIL — ${pf.error ?? ''}`) : 'N/A（未通过本平台安装）'}`));
+      } else if (s.status === 'INVALID') {
+        for (const err of s.errors.slice(0, 3)) lines.push(boxLine(`  ✕ ${err}`));
+      }
+      lines.push(boxLine(''));
+    }
+    lines.push(boxLine(`Runtime  ${describeRuntime()}`));
+    lines.push(boxLine('[ REPLACE ALGORITHM ]  ← CLI: --a <dir> / --b <dir>'));
+    lines.push(BOX_BOTTOM);
+    return lines.join('\n');
+  }
+
+  /** 宿主 Runtime 与冻结清单的比对结果（规范 §5） */
+  renderRuntimePanel(): string {
+    const check = checkRuntime();
+    const lines = [`  冻结: ${describeRuntime()}`, `  实测: ${FROZEN_RUNTIME.implementation} ${check.detected.python ?? '未知'}`];
+    if (check.ok) lines.push('  核对: ✓ 与冻结清单一致');
+    else for (const m of check.mismatches) lines.push(`  核对: ✕ ${m}`);
+    return lines.join('\n');
   }
 
   renderStatusTable(): string {

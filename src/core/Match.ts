@@ -41,7 +41,21 @@ import {
 } from './InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from './Rules';
 import { generateMapOrNull, GeneratedMap } from '../map/MapGenerator';
+import { ENTRY_FILENAME } from '../submission/Manifest';
+import { checkRuntime, describeRuntime } from '../submission/Runtime';
 import { SealedPackage, inspectPackage, sealPackage, verifySeal } from '../submission/Package';
+import {
+  DEFAULT_SLOT_ROOT,
+  SlotState,
+  StagedSlot,
+  TeamSlot,
+  commitSlot,
+  discardSlot,
+  readSlot,
+  slotDir,
+  stageSlot,
+  writeSlotRecord,
+} from '../submission/Slot';
 import {
   runDuel,
   RunnerInput,
@@ -94,6 +108,8 @@ export interface MatchOptions {
   memoryLimitMb?: number;
   sandboxRoot?: string;
   artifactRoot?: string;
+  /** 固定算法槽位根目录（规范 §2/§41），默认 `<PLATFORM_ROOT>/algorithms` */
+  slotRoot?: string;
 }
 
 export interface PointState {
@@ -142,6 +158,20 @@ export class MatchEngineError extends Error {}
 
 const TIE_EPS_MS = 0.05;
 
+/**
+ * 允许替换算法槽位的阶段（规范 §32）。
+ *
+ * 一旦进入选点/回合流程就冻结槽位：比赛中途换算法等于换了一场比赛，
+ * 密封副本也早已与槽位脱钩，换与不换都会让审计对不上。
+ */
+const SLOT_INSTALL_PHASES: ReadonlySet<MatchPhase> = new Set<MatchPhase>([
+  'SETUP',
+  'UPLOAD_A',
+  'UPLOAD_B',
+  'PREFLIGHT',
+  'READY',
+]);
+
 export class MatchEngine {
   readonly matchId: string;
   private phase: MatchPhase = 'SETUP';
@@ -153,6 +183,8 @@ export class MatchEngine {
   private memoryLimitMb: number;
   private sandboxRoot: string;
   private artifactRoot: string;
+  /** 固定算法槽位根目录（规范 §2） */
+  private slotRoot: string;
   private teamAName: string;
   private teamBName: string;
 
@@ -194,6 +226,7 @@ export class MatchEngine {
     this.memoryLimitMb = opts.memoryLimitMb ?? MEMORY_LIMIT_MB;
     this.sandboxRoot = opts.sandboxRoot ?? defaultSandboxRoot();
     this.artifactRoot = opts.artifactRoot ?? path.join(process.cwd(), 'artifacts');
+    this.slotRoot = opts.slotRoot ?? path.join(PLATFORM_ROOT, DEFAULT_SLOT_ROOT);
     this.teamAName = opts.teamAName ?? 'Team A';
     this.teamBName = opts.teamBName ?? 'Team B';
     this.audit = new AuditRecorder(this.matchId);
@@ -234,6 +267,141 @@ export class MatchEngine {
     this.phase = team === 'A' ? 'UPLOAD_A' : 'UPLOAD_B';
     this.audit.log('PackageSealed', { hash: sealed.hash, files: sealed.files.length, entry: sealed.entry }, team);
     return { ok: true, hash: sealed.hash, errors: [] };
+  }
+
+  /** 两个槽位的当前状态（规范 §33 的 UI 数据源） */
+  slotStates(): { A: SlotState; B: SlotState } {
+    return { A: readSlot(this.slotRoot, 'A'), B: readSlot(this.slotRoot, 'B') };
+  }
+
+  /**
+   * 把算法安装进固定槽位（规范 §31/§32）。
+   *
+   *     staging → validate → preflight → hash → seal → replace
+   *
+   * 失败时**现有槽位一个字节都不变**（规范 §32）：坏包不会破坏当前可用算法。
+   * 每一步的失败都记 `SlotRejected` 审计事件并带上 stage，便于事后定位。
+   *
+   * preflight 走 decoy 世界（规范 §34/§35），对手固定为平台 `starter`：
+   * 这样验证一队的算法不依赖另一队槽位是否已就绪，也不与正式比赛共用世界。
+   */
+  async installAlgorithm(
+    team: TeamSlot,
+    sourceDir: string
+  ): Promise<{ ok: boolean; hash: string | null; errors: string[]; detail: Record<string, unknown> }> {
+    if (!SLOT_INSTALL_PHASES.has(this.phase)) {
+      const error = `当前阶段 ${this.phase} 不允许替换算法槽位（规范 §32：比赛中途冻结）`;
+      this.audit.log('SlotRejected', { stage: 'phase', errors: [error] }, team);
+      return { ok: false, hash: null, errors: [error], detail: { stage: 'phase' } };
+    }
+
+    // ---- staging + validate：只读源包、只写暂存目录 ----
+    const staged = stageSlot({ slotRoot: this.slotRoot, team, sourceDir });
+    if (!staged.ok) {
+      this.audit.log('SlotRejected', { stage: 'validate', errors: staged.errors }, team);
+      return { ok: false, hash: null, errors: staged.errors, detail: { stage: 'validate' } };
+    }
+
+    const detail: Record<string, unknown> = { stage: 'preflight', hash: staged.stage.hash, files: staged.stage.inspection.files.length };
+    try {
+      // ---- preflight：暂存副本真正跑一次（失败即丢弃暂存，槽位不动）----
+      const pre = await this.preflightStaged(staged.stage, detail);
+      if (!pre.ok) {
+        discardSlot(staged.stage);
+        this.audit.log('SlotRejected', { stage: 'preflight', errors: pre.errors, hash: staged.stage.hash }, team);
+        return { ok: false, hash: null, errors: pre.errors, detail };
+      }
+
+      // ---- seal + replace：备份旧槽位 → 换上新的 → 复验 → 删除备份 ----
+      const committed = commitSlot(staged.stage);
+      if (!committed.ok) {
+        discardSlot(staged.stage);
+        this.audit.log('SlotRejected', { stage: 'replace', errors: committed.errors }, team);
+        return { ok: false, hash: null, errors: committed.errors, detail };
+      }
+    } catch (e) {
+      // 任何未预期的异常都不得留下暂存副本
+      discardSlot(staged.stage);
+      throw e;
+    }
+
+    const at = new Date().toISOString();
+    writeSlotRecord(this.slotRoot, team, {
+      schema_version: '1.1',
+      team,
+      hash: staged.stage.hash,
+      entry: ENTRY_FILENAME,
+      installed_at: at,
+      source: path.resolve(sourceDir),
+      preflight: { ok: true, at, matchId: this.slotPreflightMatchId(), error: null },
+    });
+
+    const dir = slotDir(this.slotRoot, team);
+    this.audit.log('SlotInstalled', { slot: dir, hash: staged.stage.hash, files: staged.stage.inspection.files.length }, team);
+    return { ok: true, hash: staged.stage.hash, errors: [], detail: { ...detail, slot: dir } };
+  }
+
+  private slotPreflightMatchId(): string {
+    return `${this.matchId}-slot-preflight`;
+  }
+
+  /**
+   * 槽位候选包的 decoy preflight（规范 §34/§35）。
+   *
+   * 对手固定为平台 starter，且只校验**被安装方**的输出 —— 平台对每一方
+   * 的 DSL 都用该方自己的 Shooter 校验，用错点会误判 NOT_THROUGH_SHOOTER。
+   */
+  private async preflightStaged(
+    stage: StagedSlot,
+    detail: Record<string, unknown>
+  ): Promise<{ ok: boolean; errors: string[] }> {
+    const baselineDir = path.join(PLATFORM_ROOT, 'starter');
+    const baseline = inspectPackage(baselineDir);
+    if (!baseline.valid) {
+      return { ok: false, errors: [`平台 starter 不可用: ${baseline.errors.join('; ')}`] };
+    }
+
+    const decoy = this.decoyMap();
+    if (!decoy) return { ok: false, errors: ['无法生成 Preflight 地图'] };
+
+    const matchId = this.slotPreflightMatchId();
+    const input = this.buildRunnerInput({
+      matchId,
+      round: 0,
+      map: decoy.map,
+      idA: 'A1',
+      idB: 'B1',
+    });
+    const stagedPkg = { packageDir: stage.stagingDir, entry: ENTRY_FILENAME };
+    const basePkg = { packageDir: baselineDir, entry: ENTRY_FILENAME };
+
+    const duel = await runDuel({
+      matchId,
+      roundNumber: 0,
+      sandboxRoot: this.sandboxRoot,
+      input,
+      teamA: stage.team === 'A' ? stagedPkg : basePkg,
+      teamB: stage.team === 'B' ? stagedPkg : basePkg,
+      denyReadPaths: this.sandboxDenyReadPaths(),
+      timeoutMs: this.timeoutMs,
+      memoryLimitMb: this.memoryLimitMb,
+    });
+
+    const outcome = stage.team === 'A' ? duel.a : duel.b;
+    const shooterPos = stage.team === 'A' ? decoy.map.teamA[0] : decoy.map.teamB[0];
+    const check = this.validateOutcome(outcome, decoy.map, shooterPos, stage.team);
+
+    detail.decoySeed = decoy.requestedSeed;
+    detail.decoyMapSeed = decoy.map.seed;
+    detail.matchSeed = this.seed;
+    detail.success = outcome.success;
+    detail.errorCode = outcome.errorCode;
+    detail.computeTimeMs = outcome.computeTimeMs;
+    detail.valid = check.ok;
+
+    if (!outcome.success) return { ok: false, errors: [`算法无法正常运行: ${outcome.error}`] };
+    if (!check.ok) return { ok: false, errors: [`算法输出不合法: ${check.errors.join('; ')}`] };
+    return { ok: true, errors: [] };
   }
 
   /**
@@ -346,6 +514,14 @@ export class MatchEngine {
     this.roundNumber = 0;
     this.startedAt = new Date();
     this.audit.log('MatchStarted', { seed: map.seed, mapHash: map.stateHash, points: map.teamA.length });
+    // 规范 §5：把「双方环境完全相同」落成可审计的证据 —— 冻结清单 + 宿主实测差异。
+    // 差异不阻断比赛（选手机器上可能没有 numpy），但会如实留在审计日志里。
+    const runtime = checkRuntime();
+    this.audit.log('RuntimeFrozen', {
+      frozen: describeRuntime(),
+      detected: runtime.detected,
+      mismatches: runtime.mismatches,
+    });
     return { ok: true, errors: [] };
   }
 
@@ -926,7 +1102,9 @@ export class MatchEngine {
    * （`/private/tmp`、`/private/var/tmp` 由 SandboxRunner 无条件拒绝。）
    */
   private sandboxDenyReadPaths(): string[] {
-    const paths = [this.sealedRoot, this.artifactRoot, PLATFORM_ROOT];
+    // slotRoot 一并拒绝：算法只应看到自己沙箱里的 app/ 副本，
+    // 而不是对手槽位的源码（`--slots` 指向仓库外时尤其重要）。
+    const paths = [this.sealedRoot, this.artifactRoot, PLATFORM_ROOT, this.slotRoot];
     for (const team of ['A', 'B'] as const) {
       const pkg = this.packages[team];
       if (pkg) paths.push(pkg.sourceDir);

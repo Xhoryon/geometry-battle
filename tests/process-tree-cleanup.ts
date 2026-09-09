@@ -16,6 +16,7 @@ import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { cleanupSandbox, prepareSandbox, spawnRunner } from '../src/runner/SandboxRunner';
+import { THREAD_ENV } from '../src/submission/Runtime';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 import {
   PROBE_REPORT_PREFIX,
@@ -245,6 +246,8 @@ emit({"type": "number", "value": y0})
   //   SDKROOT/CPATH/LIBRARY_PATH/MANPATH/__CF_USER_TEXT_ENCODING
   //   来自 macOS 的 /usr/bin/python3 启动器（Xcode CLT 工具链）。
   // 宿主里没有任何 TOKEN / 密钥 / 用户数据被带进来。
+  //   线程数限制（OMP_NUM_THREADS 等）由平台主动注入（规范 §5），
+  //   同样不是宿主环境泄漏 —— 它们是「双方环境完全相同」的一部分。
   const OS_INJECTED = new Set([
     'PWD',
     'SHLVL',
@@ -253,6 +256,7 @@ emit({"type": "number", "value": y0})
     'CPATH',
     'LIBRARY_PATH',
     'MANPATH',
+    ...Object.keys(THREAD_ENV),
   ]);
   const leaked = Object.keys(env).filter(
     (k) => !/^(PATH|HOME|TMPDIR|LANG|LC_ALL|PYTHON|GB_TEAM)/.test(k) && !OS_INJECTED.has(k)
@@ -265,6 +269,10 @@ emit({"type": "number", "value": y0})
   assertEqual(env.HOME, sandbox.dir, 'HOME 必须指向沙箱目录');
   assertEqual(env.TMPDIR, path.join(sandbox.dir, 'work'), 'TMPDIR 必须指向沙箱 work 目录');
   assertEqual(env.PATH, '/usr/bin:/bin:/usr/sbin:/sbin', 'PATH 必须是固定白名单');
+  // 规范 §5：线程上限冻结为 1，双方一致 —— 否则「谁的机器核多」会变成计时优势
+  for (const [key, value] of Object.entries(THREAD_ENV)) {
+    assertEqual(env[key], value, `${key} 必须被钉死为 ${value}（规范 §5）`);
+  }
   cleanupSandbox(sandbox.dir);
 });
 

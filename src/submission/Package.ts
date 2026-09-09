@@ -149,13 +149,14 @@ export function inspectPackage(dir: string): PackageInspection {
   };
 }
 
-function copyDir(src: string, dest: string): void {
+/** 复制算法包目录（跳过符号链接；调用前应已通过 inspectPackage） */
+export function copyPackageDir(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) copyDir(s, d);
+    if (entry.isDirectory()) copyPackageDir(s, d);
     else fs.copyFileSync(s, d);
   }
 }
@@ -179,7 +180,7 @@ export function sealPackage(opts: {
 
   const sealedDir = path.join(opts.sealRoot, opts.matchId, opts.team);
   fs.rmSync(sealedDir, { recursive: true, force: true });
-  copyDir(opts.sourceDir, sealedDir);
+  copyPackageDir(opts.sourceDir, sealedDir);
 
   // 复制后重新计算哈希：必须与源一致
   const sealedInspection = inspectPackage(sealedDir);

@@ -116,19 +116,62 @@ export {
 } from './map/MapGenerator';
 
 // ---- 提交 / 密封 ----
-export { Manifest, ManifestValidation, parseManifest } from './submission/Manifest';
+export {
+  ENTRY_FILENAME,
+  Manifest,
+  ManifestValidation,
+  defaultManifest,
+  parseManifest,
+} from './submission/Manifest';
 export {
   PackageFile,
   PackageInspection,
   SealedPackage,
+  copyPackageDir,
   hashFileList,
   inspectPackage,
   sealPackage,
   verifySeal,
 } from './submission/Package';
 
+// ---- 固定算法槽位（V1.1 §2/§31/§32/§33）----
+export {
+  DEFAULT_SLOT_ROOT,
+  SLOT_DIRS,
+  SlotPreflightRecord,
+  SlotRecord,
+  SlotState,
+  SlotStatus,
+  StagedSlot,
+  TeamSlot,
+  commitSlot,
+  describeSlot,
+  discardSlot,
+  readSlot,
+  readSlotRecord,
+  readSlots,
+  slotDir,
+  stageSlot,
+  writeSlotRecord,
+} from './submission/Slot';
+
+// ---- 固定 Runtime（V1.1 §5）----
+export {
+  FROZEN_RUNTIME,
+  FrozenPackage,
+  FrozenRuntime,
+  RuntimeCheck,
+  THREAD_ENV,
+  checkRuntime,
+  describeRuntime,
+  detectRuntime,
+} from './submission/Runtime';
+
 // ---- 隔离运行器 ----
 export {
+  RESULT_FILENAME,
+  ResultParse,
+  parseResultFile,
   RunnerErrorCode,
   IsolationReport,
   RunnerOutcome,

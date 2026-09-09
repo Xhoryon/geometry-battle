@@ -274,6 +274,10 @@ test('hostile-input: 正式操作台在中止前已逐回合落盘（P0-A + P1-A
       'ts-node', 'src/operator/cli.ts',
       '--a', hostile,
       '--b', harmless,
+      // 必须显式指定槽位根目录：默认槽位是**仓库里的** algorithms/，
+      // 而 CLI 的 --a/--b 会真的把包安装进槽位（规范 §31/§32）。
+      // 测试绝不能改写工作区，否则一次运行就会把恶意包留在版本库里。
+      '--slots', path.join(root, 'slots'),
       '--seed', '20260909',
       '--points', '6',
       '--difficulty', 'easy',
