@@ -12,18 +12,22 @@
 
 | 项目 | 值 |
 |------|-----|
-| 上一正式基线 | [`Plans/Re-Gate Cycle 1 Result.md`](Re-Gate%20Cycle%201%20Result.md) → **FAIL** |
-| 更早基线 | [`Plans/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
+| 上一正式基线 | [`Plans/Re-Gate Cycle 2 Result.md`](Re-Gate%20Cycle%202%20Result.md) → **FAIL** |
+| 更早基线 | [`Plans/Re-Gate Cycle 1 Result.md`](Re-Gate%20Cycle%201%20Result.md) → **FAIL**；[`Plans/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
 | 起点提交 | `9a3e5b9` *baseline: pre-remediation snapshot (Plan 1 Gate FAIL)* |
 | Cycle 1 修复提交 | `0db2dbe09d16e386ddcdc81ca518461d6e25bc74` |
-| **Cycle 2 修复提交** | `5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21` |
+| Cycle 2 修复提交 | `5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21` |
+| **Cycle 3 修复提交** | `19602b4` |
 | 分支 | `main` |
 | 工作区状态 | 由 `git status --short` 验证为 **clean** |
 | 运行时 | Node v22 / TypeScript 5 / Python 3.9.6 / macOS Darwin 25.5.0 arm64 |
 
-> **本轮（Cycle 2）修复的是 `Plans/Re-Gate Cycle 1 Result.md` 判定的 FAIL。**
-> Cycle 1 修复的 39 条 Finding 见第 2 节；Cycle 1 审计新发现的阻塞项见
-> 第 2 节末尾的「Cycle 2 修复矩阵」。
+> **本轮（Cycle 3）修复的是 `Plans/Re-Gate Cycle 2 Result.md` 判定的 FAIL。**
+> Cycle 1 修复的 39 条 Finding 见第 2 节；Cycle 1 / Cycle 2 审计新发现的阻塞项
+> 分别见第 2 节末尾的「Cycle 2 修复矩阵」与「Cycle 3 修复矩阵」。
+>
+> Cycle 2 审计的结论是：**解除条件 (a)(b)(c)(d) 全部达成、其余核验项全部通过**，
+> 仅 1 条 P1（D-1，`/tmp` 隔离缺口）与 2 条 P3（D-2、D-3）。本轮即针对这三条。
 
 本轮允许修改代码。本轮**未**进行任何视觉优化（无新主题、新动画、新函数、新障碍、V2 gameplay、排行榜、AI 集成）。
 
@@ -167,7 +171,7 @@ Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。
 
 | Finding | Root Cause | Affected Files | Fix | Regression Test | Status |
 |---|---|---|---|---|---|
-| **P0-A** 超深 AST 使宿主崩溃且零落盘 | 深度守卫在递归下降**之后**才生效；`JSON.parse`/`JSON.stringify` 的 `RangeError` 被同一个 `catch` 吞掉并误归因为「缺少 dsl 字段」 | `src/core/Ast.ts`, `src/runner/SandboxRunner.ts` | ① 深度/节点上限在**递归前**判定，超限直接返回 `INVALID_OUTPUT`；② `parseAlgorithmOutput` 拆分 parse/stringify，`stringify` 抛错单独归因为「嵌套过深，无法序列化」，不再伪装成格式错误；③ 解析异常不得逃逸到操作台 | `hostile-input`（5 tests：6000 层 / 40 层确定性触发 / 100k 层巨型 JSON / 归因正确 / 中止前逐回合落盘） | FIXED |
+| **P0-A** 超深 AST 使宿主崩溃且零落盘 | 深度守卫在递归下降**之后**才生效；`JSON.parse`/`JSON.stringify` 的 `RangeError` 被同一个 `catch` 吞掉并误归因为「缺少 dsl 字段」 | `src/core/Ast.ts`, `src/runner/SandboxRunner.ts` | ① 深度/节点上限在**递归前**判定，超限直接返回 `INVALID_OUTPUT`；② `parseAlgorithmOutput` 拆分 parse/stringify，`stringify` 抛错单独归因为「嵌套过深，无法序列化」，不再伪装成格式错误；③ 解析异常不得逃逸到操作台 | `hostile-input`（当时 5 tests：6000 层 / 40 层确定性触发 / 100k 层巨型 JSON / 归因正确 / 中止前逐回合落盘；Cycle 3 追加 D-2/D-3 后为 6 tests） | FIXED |
 | **P0-B** 沙箱可读对手源包、上一场密封包、任意 `/tmp` | `denyReadPaths` 只含 `sealedRoot`，未含双方 `sourceDir` 与 `artifactRoot`；`/tmp` 与 `/var/tmp` 无兜底拒绝 | `src/runner/SandboxRunner.ts`, `src/core/Match.ts` | `denyReadPaths` 覆盖双方 `sourceDir` + `sealedRoot` + `artifactRoot`；新增系统兜底 `/private/tmp`、`/private/var/tmp`；realpath 归一 + 去重 + **剔除会拒绝沙箱自身的条目** | `runner-isolation`（`preflightProbe` 正向 + `outside_dir` 反向对照） | FIXED |
 | **P1-A** 产物只在赛末落盘，中止即全丢 | `persistArtifacts` 仅在 `MATCH_END` 调用 | `src/core/Match.ts` | 每回合结束后落盘一次；异常/取消路径同样落盘 | `hostile-input`（中止前逐回合落盘）、`replay` | FIXED |
 | **P1-B** 后释放方被多计交付延迟 | 双方共用 `min(releaseNs)` 作为计时基准 | `src/runner/SandboxRunner.ts` | 每方以**自己** `release()` 返回的 GO 时刻起算；`releaseSkewUs` 降级为诊断量 | `timing-fairness`（新增「两次 GO 间隔 40ms 被如实记录 + `release()` 幂等」结构性用例） | FIXED |
@@ -177,6 +181,29 @@ Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。
 | **P3-B** `Package.ts` 含 2 个裸 NUL 字节 | 源码里直接写入 `\0`，`grep` 判为二进制而静默跳过 | `src/submission/Package.ts`, `tests/package-tamper.ts` | 运行期用 `String.fromCharCode(0)` 构造分隔符，源码保持纯 ASCII；新增断言「`Package.ts` 不含裸 NUL」 | `package-tamper`（「哈希字段分隔符与源码可检索性」用例） | FIXED |
 | **P3-D** 沙箱根遗留空目录 | `cleanupSandbox` 只删回合目录 | `src/runner/SandboxRunner.ts` | 同时移除 `<matchId>` 目录，保留 `sandboxRoot` 本身；回合后 `readdirSync(sandboxRoot)` 为空 | `cross-round-cheat` | FIXED |
 | **P3-C** `obstacleInField` 拒绝率高（hard 60.92%） | 障碍取心范围与「完全落在场内」约束冲突，靠整种子重采样 | `src/map/MapGenerator.ts` | **未修**：无正确性影响（300k 张 0 违规，74k 张/s），属实现冗余；按用户约束 P3 不阻碍 V1 | 300k 压力（0 invalid） | DEFERRED (P3) |
+
+### Cycle 3 — 针对 `Plans/Re-Gate Cycle 2 Result.md`（判定 FAIL）的修复矩阵
+
+Cycle 2 独立审计判 **FAIL**：解除条件 (a)(b)(c)(d) 全部达成，其余核验项全部通过，
+阻塞项仅 **D-1**（P1），另有 **D-2 / D-3** 两条 P3。下表逐条对应，每条都有常驻回归测试，
+且 D-1 / D-2 已做**突变承重验证**（把修复改回缺陷形态，测试必须失败）。
+
+| Finding | Root Cause | Affected Files | Fix | Regression Test | Status |
+|---|---|---|---|---|---|
+| **D-1**（P1）`sandboxRoot` 位于 `/tmp` 下时，`/tmp` 兜底拒绝被静默丢弃 → 算法可读任意未被显式 deny 的 `/tmp` 文件（含**其他场次的密封包**） | 自保护过滤的判定对象是 `sandboxRoot`：当 `sandboxRoot` 落在 `/tmp` 之下时，`covers('/private/tmp', sandboxRoot)` 为真，于是**系统兜底 deny 也被当作「会阻断沙箱自身」而整条丢弃** | `src/runner/SandboxRunner.ts` | ① 自保护判定对象收窄为 `sandboxDir` / `work`（不再含 `sandboxRoot`）；② `SYSTEM_DENIES = ['/private/tmp','/private/var/tmp']` **永不参与过滤**（命中即短路保留）。二者均为承重点：突变任一处，D-1 回归用例即失败 | `runner-isolation`（新增「`sandboxRoot` 位于 `/tmp` 下时，任意 `/tmp` 读取仍被拒绝（D-1 回归）」：结构性断言 profile 保留 `(deny file-read* (subpath "/private/tmp"))` + 行为断言读 `/tmp` 文件、列举 `/tmp` 均被拒 + 反向对照 `LEAK:ctrl_dir`） | FIXED |
+| **D-2**（P3）解析失败原因在集成层被抹平：删掉 AST 深度守卫后集成回归仍会通过 | `tryParseAst` 只返回 AST，把解析失败一律压成「输出不是合法 DSL」，于是「深度超限」这一关键诊断在 `MatchEngine` 层消失（随后必然被 Shooter 校验拒绝，文案相同） | `src/core/Match.ts` | 新增 `parseAstDetailed()` 保留失败原因（`parseCanonicalDSL` 的 `code: message` 列表），`validateOutcome` 如实透出 | `hostile-input`（40 层确定性用例改为承重断言：必须匹配 `/在第 \d+ 层拒绝/`，且不得出现 Shooter 校验文案 `/相差/`） | FIXED |
+| **D-3**（P3）日志自相矛盾：`result = INVALID_A` 而 `aErrorCode = null` | 运行器**成功**、但输出构不成合法 DSL（如使用被禁算子）时，运行器自身没有错误码可回填 | `src/core/Match.ts` | 新增 `errorCodeFor()`：`outcome.errorCode ?? (success && !final ? 'INVALID_DSL' : null)`；失败/取消路径仍保留运行器自己的错误码 | `hostile-input`（新增「输出可解析但非法时，错误码与回合结果一致（D-3 回归）」：round 0 合法过 Preflight、round 1 输出被禁算子 `floor`，断言 `INVALID_A` ⇔ `INVALID_DSL`） | FIXED |
+
+> **D-1 的审计要求与实现对应关系**（逐条）：
+> ① 「自保护过滤只允许丢弃会阻断 `sandboxDir`/`work` 自身的 deny」→ `selfPaths = [sandboxDir, work]`；
+> ② 「系统兜底 deny 永不参与过滤」→ `if (SYSTEM_DENIES.includes(p)) return true;` 短路；
+> ③ 「新增常驻回归测试」→ `runner-isolation` 第 6 个用例。
+>
+> 保留这些兜底条目不会伤到沙箱自身：末尾的 `(allow file-read* (subpath sandboxDir))`
+> 按 SBPL「后匹配者胜」重新放行；模板中无条件存在的
+> `(deny file-read* (subpath sandboxRoot))` 与它同理，且一直工作正常。
+> 换句话说：**兜底 deny 与沙箱自读权限的冲突，本来就由「后匹配者胜」解决，
+> 不需要靠丢弃 deny 来解决** —— 这正是 D-1 的根因。
 
 ---
 
@@ -193,8 +220,12 @@ Restart → Load Replay。全程只用正式入口，不修改生产代码 / 内
 `npx ts-node src/operator/cli.ts` 驱动；Shooter 由模拟人类操作员通过 CLI 的
 公开提示符逐个输入（`Team A 选择 Shooter (点 id):`）。
 
-> 以下为 **Cycle 2 在冻结候选树上重跑**的现场记录（产物目录 `artifacts-cycle2`）。
-> Cycle 1 审计看到的旧记录取自修复前的树，已作废。
+> 以下为 **Cycle 3 在冻结候选树上重跑**的现场记录（产物目录 `artifacts-cycle3`）。
+> Cycle 1 / Cycle 2 审计看到的旧记录取自修复前的树，已作废。
+>
+> 算法包沿用本会话在 `/tmp` 现场创建、**不属于本仓库**的同一对
+> （`/tmp/gb-e2e/team-alpha`、`/tmp/gb-e2e/team-beta`；内容未变，故哈希与 Cycle 2 相同），
+> 以便与上一轮在同一输入、同一 `seed` 下逐轮对照。
 
 ```text
 ═══ 1. 上传与密封 ═══
@@ -205,7 +236,7 @@ Restart → Load Replay。全程只用正式入口，不修改生产代码 / 内
   ✓ PASSED
 
 ═══ 3. 开始比赛 ═══
-│ Match ID      MATCH-MTTQJW66-7YD5J5
+│ Match ID      MATCH-MTTU393K-BXZUQX
 │ Seed          20260909
 │ Map           seed=20260909 8v8 obstacles=2
 │ ALL READY     ✓ YES
@@ -213,51 +244,52 @@ Restart → Load Replay。全程只用正式入口，不修改生产代码 / 内
 ── ROUND 1 RESULT ──   先解: B   A: A1 (被取消)   B: B1 命中=[A1]   取消: A=true
 ── ROUND 2 RESULT ──   先解: A   A: A2 命中=[B6]  B: B1 命中=[A2]   击杀: [B6,A2]
 ── ROUND 3 RESULT ──   先解: B   A: A3 (被取消)   B: B1 命中=[A3]   取消: A=true
-── ROUND 4 RESULT ──   先解: A   A: A4 命中=[B5]  B: B1 命中=[A4]   击杀: [B5,A4]
-── ROUND 5 RESULT ──   先解: A   A: A5 命中=[B3]  B: B1 命中=[A5]   击杀: [B3,A5]
-── ROUND 6 RESULT ──   先解: A   A: A6 命中=[B4]  B: B1 命中=[A6]   击杀: [B4,A6]
-── ROUND 7 RESULT ──   先解: B   A: A7 (被取消)   B: B2 命中=[A7]   取消: A=true
+── ROUND 4 RESULT ──   先解: B   A: A4 (被取消)   B: B1 命中=[A4]   取消: A=true
+── ROUND 5 RESULT ──   先解: B   A: A5 (被取消)   B: B1 命中=[A5]   取消: A=true
+── ROUND 6 RESULT ──   先解: B   A: A6 (被取消)   B: B1 命中=[A6]   取消: A=true
+── ROUND 7 RESULT ──   先解: A   A: A7 命中=[B3]  B: B2 命中=[A7]   击杀: [B3,A7]
 ── ROUND 8 RESULT ──   先解: B   A: A8 (被取消)   B: B2 命中=[A8]   取消: A=true
-                         存活: A=0  B=4
+                         存活: A=0  B=6
 
   WINNER: B
-  Rounds: 8   Kills: A=4 B=8
-  Artifacts: /tmp/gb-e2e/artifacts-cycle2/matches/MATCH-MTTQJW66-7YD5J5
+  Rounds: 8   Kills: A=2 B=8
+  Artifacts: /tmp/gb-e2e/artifacts-cycle3/matches/MATCH-MTTU393K-BXZUQX
 ```
 
 该场次验证到的语义：
 - **Seal**：A/B 包哈希不同且完整 64 位十六进制；
 - **Preflight** 在真实沙箱内执行；
 - **Reveal / Compute**：每轮双方拿到同一 `stateHash`（回放帧与 MatchLog 逐轮一致）；
-- **First solver shot**：第 2/4/5/6 轮 A 先解，第 1/3/7/8 轮 B 先解（**两个方向都出现**）；
-- **Shot cancellation**：第 1/3/7/8 轮 A 的 Shooter 被先解的 B 击杀 → A 的攻击被取消
+- **First solver shot**：第 2/7 轮 A 先解，第 1/3/4/5/6/8 轮 B 先解（**两个方向都出现**）；
+- **Shot cancellation**：第 1/3/4/5/6/8 轮 A 的 Shooter 被先解的 B 击杀 → A 的攻击被取消
   （`取消: A=true`，结果码 `CANCELLED_A`，不是 `INVALID_A`）；
 - **Alive propagation**：A 侧 `7→6→5→4→3→2→1→0` 严格单调递减；
 - **Winner**：一方 `alive = 0` 时比赛结束，且只在结算后出现。
 
-**落盘产物**（`MATCH-MTTQJW66-7YD5J5/`）：
+**落盘产物**（`MATCH-MTTU393K-BXZUQX/`）：
 
 ```text
-audit.json    82 事件：MatchCreated → PackageSealed×2 → Preflight → MatchStarted →
+audit.json    84 事件：MatchCreated → PackageSealed×2 → Preflight → MatchStarted →
               ShooterSelected×16 → ShooterLocked×16 → BothLocked×8 → JudgeStartRound×8 →
-              RoundComputeStart×8 → ShotCancelled×4 → RoundComputeEnd×8 → RoundResult×8 →
+              RoundComputeStart×8 → ShotCancelled×6 → RoundComputeEnd×8 → RoundResult×8 →
               MatchEnded；seq 严格递增（已断言），时间戳可解析
 match.json    schemaVersion=1, teamAPackageHash/teamBPackageHash 均为真实哈希,
-              winner=B, 8 个 round 记录, finalAlive={A:0,B:4}
+              winner=B, 8 个 round 记录, finalAlive={A:0,B:6}
 replay.json   8 帧，含地图障碍物快照、存活链、轨迹、取消/超时字段
+              （grep `solver.py|manifest.json|__gb_bootstrap|__gb_profile|sandboxes` = 0 命中）
 ```
 
 **Shutdown → Restart → Load Replay**（新进程，算法包与沙箱均已不在）：
 
 ```text
-$ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/MATCH-MTTQJW66-7YD5J5
-═══ REPLAY MATCH-MTTQJW66-7YD5J5 — winner B (8 rounds) ═══
+$ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle3/matches/MATCH-MTTU393K-BXZUQX
+═══ REPLAY MATCH-MTTU393K-BXZUQX — winner B (8 rounds) ═══
 
 ── ROUND 1 ──
   Shooter A=A1  B=B1
   f_A(x) = (invalid)
   f_B(x) = 1.9342497736215591 + (0.2722202017962749 * (x - 17.925887423101813) + ...)
-  t_A=-ms  t_B=5.478ms  first=B
+  t_A=-ms  t_B=5.564ms  first=B
   hits A=[] B=[A1]
   killed=[A1] cancelled A=true B=false
   alive after: A2,A3,A4,A5,A6,A7,A8,B1,B2,B3,B4,B5,B6,B7,B8
@@ -284,7 +316,8 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 
 **僵局（stalemate）—— 规范缺口，不是实现缺陷**：`Plan V1 §28` 只定义"一方全部点死亡则比赛结束"，
 **没有定义双方都无法命中时的终止条件**。实测：使用不做避障的朴素算法包时，比赛可持续
-668 回合而不终止（见第 8 节 Known Limitations）。
+668 回合而不终止；**Cycle 3** 用另外两份会绕障的算法包在同一张地图上复现，跑到第 790 回合
+仍无胜者（见第 8 节 Known Limitations）。
 
 **关于平台在长僵局下的行为，只能作如下有限声明**（Cycle 1 审计曾判定此处表述失实，故改为可复现口径）：
 
@@ -299,8 +332,8 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 
 ## 5. Runner Isolation Evidence
 
-`tests/runner-isolation.ts`（5 tests）+ `tests/cross-round-cheat.ts`（5 tests）+
-`tests/process-tree-cleanup.ts`（3 tests）+ `tests/hostile-input.ts`（5 tests）。
+`tests/runner-isolation.ts`（**6 tests**）+ `tests/cross-round-cheat.ts`（5 tests）+
+`tests/process-tree-cleanup.ts`（3 tests）+ `tests/hostile-input.ts`（**6 tests**）。
 所有探针都是**真实发起的攻击**，判定标准是 `BLOCKED`，不是"算法自己选择不做"。
 
 沙箱策略（SBPL，`sandbox-exec`）：`(deny default)` + `(deny network*)` + `(deny process-fork)`，
@@ -310,11 +343,13 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 2. 调用方传入的 `denyReadPaths`（正式路径下为**双方 `sourceDir`、`sealedRoot` 与 `artifactRoot`**）
    与系统兜底 `/private/tmp`、`/private/var/tmp`；
 3. 上述条目先经 **realpath 归一 + 去重**，再剔除**会拒绝沙箱自身**的条目
-   （`covers()`：若某条 deny 是 `sandboxDir`/`sandboxRoot`/`work` 的祖先则丢弃 —— 否则
-   算法连自己的入口文件都读不到，整场比赛全挂）；
+   （`covers()`：若某条 deny 是 `sandboxDir` / `work` 的祖先则丢弃 —— 否则
+   算法连自己的入口文件都读不到，整场比赛全挂）。
+   **系统兜底 deny 永不参与该过滤**（命中即短路保留，Cycle 3 修复 D-1）；
+   `sandboxRoot` 也不在判定对象内 —— 它被模板无条件 deny，并由末尾的 allow 放行；
 4. 最后重新 `(allow file-read* (subpath sandboxDir))`（SBPL 后匹配者胜）。
 
-> **两处真实漏洞（均已修复并固化）**：
+> **三处真实漏洞（均已修复并固化）**：
 > ① Cycle 1 审计发现：原先的 `denyReadPaths` 只含 `sealedRoot`，**对手的源包目录**
 > 与 **`artifactRoot`（含历史场次的密封包与产物）** 仍在 `(allow file-read*)` 的默认放行范围内，
 > 且当 `artifactRoot` 落在 `/Users` 之外时连 `sealedRoot` 都不在拒绝列表中 —— 算法可读对手包。
@@ -322,6 +357,11 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 > `runner-isolation` 的 `preflightProbe` 反向对照用例固化（对照项证明探针确实执行了）。
 > ② 修复 ① 时我自己引入了**过宽 deny**（无条件拒绝 `/private/var/folders`，而 macOS 默认
 > 沙箱根恰在其下），会让算法读不到自己的包；已用第 3 步的自我剔除修正，同一套件覆盖。
+> ③ **Cycle 2 审计 D-1**：第 ② 步引入的自我剔除**把 `sandboxRoot` 也算进了判定对象**，
+> 于是当 `sandboxRoot` 位于 `/tmp` 之下时，系统兜底 `/private/tmp` 这条 deny
+> 反被判定为「会阻断沙箱自身」而**整条丢弃** —— 算法可读任意未被显式 deny 的 `/tmp` 文件
+> （含其他场次的密封包）。现已把判定对象收窄为 `sandboxDir`/`work`，并让系统兜底 deny
+> **永不参与过滤**。该路径由 `runner-isolation` 新增的 D-1 用例覆盖，且已做突变承重验证。
 
 | 攻击 | 期望 | 实测 |
 |---|---|---|
@@ -330,6 +370,7 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 | 列出对手密封包目录 | BLOCKED | `blocked:PermissionError` |
 | **读取/列出对手源包目录（`sourceDir`）** | BLOCKED | 探针未报 `LEAK` |
 | **读取/列出 `artifactRoot`（含历史场次产物）** | BLOCKED | 探针未报 `LEAK` |
+| **读取任意 `/tmp` 文件 / 列举 `/tmp`（`sandboxRoot` 位于 `/tmp` 下时）** | BLOCKED | 探针未报 `LEAK`；profile 中 `(deny file-read* (subpath "/private/tmp"))` 必须存在（D-1 回归） |
 | 列出沙箱根目录 | BLOCKED | `blocked:PermissionError` |
 | 写项目目录 | BLOCKED | `blocked:PermissionError` |
 | 写 `$HOME` | BLOCKED | `blocked:PermissionError` |
@@ -361,15 +402,15 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/
 **批次 1 —— 相同算法对相同算法，300 轮：**
 
 ```text
-releaseSkewUs  median=26.792  p95=41.083  max=101.959
-readySkewMs    median=180.990 p95=358.062 max=774.048
-timeDiffMs     median=0.003   p95=0.558
-medianTimeA=5.60ms  medianTimeB=5.55ms
-aFasterRate=0.497          ← 同算法下"A 更快"的比例，0.5 附近
+releaseSkewUs  median=22.584  p95=33.417  max=55.208
+readySkewMs    median=248.064 p95=379.349 max=1438.031
+timeDiffMs     median=-0.016  p95=0.400
+medianTimeA=5.08ms  medianTimeB=5.06ms
+aFasterRate=0.527          ← 同算法下"A 更快"的比例，0.5 附近
 ```
 
-（以上为 P1-B 修复**之后**重测的数据；Cycle 1 审计看到的 0.480 属于修复前且与同节
-另一处 0.510 自相矛盾的旧数据，已作废。）
+（以上为 **Cycle 3 修复树上**重测的数据；Cycle 1 审计看到的 0.480 属于修复前
+且与同节另一处 0.510 自相矛盾的旧数据，已作废。每轮样本数 300。）
 
 - `releaseSkewUs` 是**两次 GO 写入之间的实际间隔**（|releaseNsA − releaseNsB|，微秒），
   中位数 ~20 µs。它是**宿主交付延迟的度量**，不是任何一方的计时基准。
@@ -385,7 +426,7 @@ aFasterRate=0.497          ← 同算法下"A 更快"的比例，0.5 附近
 
 ```text
 X胜率(当A)=0.497   X胜率(当B)=0.510   Δ=0.013
-medianTimeX(A)=15.52ms   medianTimeX(B)=15.30ms
+medianTimeX(A)=14.03ms   medianTimeX(B)=14.25ms
 ```
 
 同一张地图上换序，胜率差 Δ = 0.013（< 0.05），**不存在由 array order /
@@ -413,27 +454,29 @@ RESULT: PASS — generator 输出 0 张非法地图
 `npm test` → `tests/run-all.ts` → **18 个套件**，各自独立进程，退出码非 0 表示失败。
 
 ```text
-  ✓ dsl-contract             0.5s
+  ✓ dsl-contract             0.6s
   ✓ convexity-aliasing       0.5s
-  ✓ official-starter         2.1s
-  ✓ map-fairness             0.6s
+  ✓ official-starter         1.8s
+  ✓ map-fairness             0.5s
   ✓ obstacle-block           0.5s
-  ✓ dual-shooter-selection   6.6s
+  ✓ dual-shooter-selection   7.8s
   ✓ shooter-cancel           9.8s
-  ✓ alive-kill              12.9s
-  ✓ roundstate-equality      0.6s
-  ✓ full-match-e2e          14.8s
-  ✓ runner-isolation         6.9s
-  ✓ cross-round-cheat        9.3s
-  ✓ package-tamper           3.2s
-  ✓ timeout-boundary         7.4s
-  ✓ process-tree-cleanup    11.9s
-  ✓ hostile-input            6.7s
-  ✓ timing-fairness        304.5s
-  ✓ replay                  21.1s
+  ✓ alive-kill              13.1s
+  ✓ roundstate-equality      0.7s
+  ✓ full-match-e2e          19.7s
+  ✓ runner-isolation         9.4s
+  ✓ cross-round-cheat       10.9s
+  ✓ package-tamper           3.6s
+  ✓ timeout-boundary         7.1s
+  ✓ process-tree-cleanup    12.2s
+  ✓ hostile-input            7.6s
+  ✓ timing-fairness        375.8s
+  ✓ replay                  21.7s
 
 18/18 套件通过
 ```
+
+（以上为 **Cycle 3 修复树上**的全量运行记录。）
 
 用户点名的套件与文件对应关系：
 
@@ -459,7 +502,13 @@ RESULT: PASS — generator 输出 0 张非法地图
 | （额外）`hostile-input` | [tests/hostile-input.ts](../tests/hostile-input.ts) |
 
 `hostile-input` 是 Cycle 2 为 P0-A 新增的套件（用户点名的 16 个套件之外），
-覆盖超深 AST、巨型嵌套 JSON、诊断归因与中止前落盘。
+覆盖超深 AST、巨型嵌套 JSON、诊断归因与中止前落盘；Cycle 3 追加 D-2 / D-3 用例后为 6 tests。
+`runner-isolation` 在 Cycle 3 追加 D-1 用例后为 6 tests。
+
+**每个 P0/P1 都至少保留一条常驻测试**；Cycle 3 的 D-1（P1）对应
+`runner-isolation` 的「`sandboxRoot` 位于 `/tmp` 下时，任意 `/tmp` 读取仍被拒绝」，
+D-2 / D-3（P3）对应 `hostile-input` 的两个用例。三者均已做**突变承重验证**：
+把修复改回缺陷形态后，对应用例必须失败（否则该用例不承重）。
 
 放大验证命令：
 
@@ -480,7 +529,12 @@ npx ts-node tests/run-all.ts dsl-contract replay hostile-input            # 只�
 1. **僵局规则缺失（规范层，最高优先级）**
    `Plan V1 §28` 未定义 stalemate。若双方算法都无法命中，比赛在规范上不终止。
    实测：朴素（不避障）算法包在 `seed=20260909 / 8v8 / easy` 下持续 **668 回合**仍无胜者；
-   换用会绕障的算法后同一张地图 8 回合结束。平台在长僵局下的行为仅限于第 4 节所述的三条
+   换用会绕障的算法后同一张地图 8 回合结束。
+   **Cycle 3 复现**：另两份现场新建、**会绕障**的算法包（三次鼓包 / 抛物线鼓包）在同一张地图上
+   跑到第 **790 回合**仍无胜者（`A=1 B=2`）—— 可见僵局并非只出现在"不会绕障"的算法上，
+   而是剩余点位与障碍物的几何关系可能使这类**有限幅度搜索**构造不出可命中的轨迹。
+   （本平台**不**对僵局做任何自动终止或判胜 —— 这正是规范缺口。）
+   平台在长僵局下的行为仅限于第 4 节所述的三条
    有限声明（不误判胜负 / 每回合落盘 / 病态载荷记为 `INVALID_OUTPUT`），
    **不构成"任意输入都不崩溃"的保证**。需要 Plan 补充规则后才能实现自动终止。
    **Re-Gate 前请确认这是否属于可接受的"赛事异常需人工介入"。**
@@ -528,12 +582,14 @@ Branch:         main
 Baseline:       9a3e5b9  baseline: pre-remediation snapshot (Plan 1 Gate FAIL)
 Cycle 1 fix:    0db2dbe09d16e386ddcdc81ca518461d6e25bc74
 Cycle 2 fix:    5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21
+Cycle 3 fix:    19602b4  remediation(cycle 3): fix Re-Gate Cycle 2 FAIL (D-1 P1, D-2/D-3 P3)
 Freeze HEAD:    本文档所在提交（唯一改动就是本文档，故用 git log -1 读取即可）
 Working tree:   clean
 ```
 
-Cycle 2 修复提交与冻结提交之间**只差本文档**：`git diff --stat 5a7f0c3..HEAD` 应当只有
-`Plans/V1 Remediation Handoff.md` 一个文件。
+Cycle 3 修复提交与冻结提交之间**只差文档**：`git diff --stat 19602b4..HEAD` 应当只有
+`Plans/V1 Remediation Handoff.md` 与 `Plans/Re-Gate Cycle 2 Result.md`（上一轮审计报告，
+作为本轮基线的引用对象）两个文件。
 
 `git status --short` 为空即视为冻结成立。审计 Agent 应以 **Freeze HEAD** 为唯一审计对象，
 并在开始前自行执行 `git status --short` 确认工作区未被改动。
