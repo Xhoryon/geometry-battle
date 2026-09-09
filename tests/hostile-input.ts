@@ -57,11 +57,19 @@ function writeRoundGatedPackage(dir: string, name: string, payloadExpr: string):
   writeManifest(dir, name);
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import json, sys
-state = json.loads(sys.stdin.readline())
-team = state["team_id"]
-y0 = state["shooters"][team]["position"]["y"]
-if state.get("round", 0) == 0:
+    `import argparse, json, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
+if public.get("round", 0) == 0:
     sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}}) + "\\n")
 else:
     sys.stdout.write(${payloadExpr} + "\\n")
@@ -75,7 +83,6 @@ function writeAlwaysDeepPackage(dir: string, depth: number): void {
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
     `import sys
-sys.stdin.readline()
 N = ${depth}
 sys.stdout.write('{"dsl":' + '{"type":"neg","args":[' * N + '{"type":"number","value":1}' + ']}' * N + "}\\n")
 `
@@ -87,10 +94,18 @@ function writeHarmlessPackage(dir: string): void {
   writeManifest(dir, 'harmless');
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import json, sys
-state = json.loads(sys.stdin.readline())
-team = state["team_id"]
-y0 = state["shooters"][team]["position"]["y"]
+    `import argparse, json, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}}) + "\\n")
 `
   );

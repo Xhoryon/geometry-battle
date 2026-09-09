@@ -14,7 +14,9 @@ import {
   parseCanonicalDSL,
   toMathString,
 } from '../src/core/Ast';
+import { buildPublicState, buildRevealState } from '../src/core/InputProtocol';
 import { assert, assertClose, assertEqual, runAll, test } from './harness';
+import { runSolver } from './protocol-fixture';
 
 const num = (v: number) => ({ type: 'number', value: v });
 const x = () => ({ type: 'variable', value: 'x' });
@@ -114,18 +116,25 @@ test('dsl-contract: canonicalJson 与 toMathString 是确定性的', () => {
 });
 
 test('dsl-contract: 官方 Starter 输出的是合法 DSL（P0-3 回归）', async () => {
-  const { execFileSync } = await import('child_process');
   const path = await import('path');
   const starter = path.join(__dirname, '..', 'starter', 'solver.py');
-  const payload = JSON.stringify({
-    team_id: 'A',
-    shooters: { A: { id: 'A1', position: { x: -12, y: 3 } }, B: { id: 'B1', position: { x: 12, y: -3 } } },
+  // V1.1：走两阶段协议（两份 JSON 文件 + --team），不再喂 stdin 载荷
+  const pub = buildPublicState({
+    matchId: 'DSL-CONTRACT',
+    round: 1,
     points: [
-      { id: 'A1', team: 'A', position: { x: -12, y: 3 } },
-      { id: 'B1', team: 'B', position: { x: 12, y: -3 } },
+      { id: 'A1', team: 'A', x: -12, y: 3, alive: true },
+      { id: 'B1', team: 'B', x: 12, y: -3, alive: true },
     ],
   });
-  const out = execFileSync('/usr/bin/python3', [starter], { input: payload, encoding: 'utf-8' });
+  const rev = buildRevealState({
+    matchId: 'DSL-CONTRACT',
+    round: 1,
+    publicStateSha256: pub.sha256,
+    shooters: { A: 'A1', B: 'B1' },
+    obstacles: [],
+  });
+  const out = runSolver(starter, 'A', { publicJson: pub.json, revealJson: rev.json });
   const parsed = JSON.parse(out);
   const r = parseCanonicalDSL(typeof parsed.dsl === 'string' ? parsed.dsl : JSON.stringify(parsed.dsl));
   assert(r.ok, `官方 Starter 的 DSL 必须合法: ${r.issues.map((i) => i.message).join('; ')}`);

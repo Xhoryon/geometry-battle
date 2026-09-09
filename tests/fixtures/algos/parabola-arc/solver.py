@@ -1,16 +1,20 @@
 """
-Parabola Arc —— E2E 验证用算法包（此前未被正式流程硬编码）
+Parabola Arc —— E2E 验证用算法包
 
 策略：经过自己的 Shooter，画一条指向「弹道畅通」敌人的抛物线。
 DSL: f(x) = y_s + m*(x - x_s) + K*(x - x_s)^2
-其中 K 依次尝试 (K0, K0/2, 0)，m 由「经过目标」解出：
+其中 K 依次尝试 (K0, K0/2, 0, 正曲率若干)，m 由「经过目标」解出：
     ty = sy + m*dx + K*dx^2  ⇒  m = (ty - sy)/dx - K*dx
 
 抛物线是 C^∞ 的，二阶导恒为常数，凸性变号次数为 0。
 可见性判定与 Canonical Judge 的 penetration 语义一致（见 precision-line/solver.py），
 因此「算法认为可见」⇒「Judge 一定判定 HIT」。
+
+V1.1 输入契约：--team / --public / --reveal；障碍物只在 reveal 里。
 """
 
+import argparse
+import hashlib
 import json
 import math
 import sys
@@ -23,6 +27,39 @@ MARGIN = 0.03
 FINE_STEP = 0.004
 COARSE_MAX_SAMPLES = 2000
 FINE_MAX_SAMPLES = 20000
+
+
+def load_input():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--team", required=True, choices=["A", "B"])
+    ap.add_argument("--public", required=True)
+    ap.add_argument("--reveal", required=True)
+    args = ap.parse_args()
+
+    with open(args.public, "rb") as f:
+        public_bytes = f.read()
+    public = json.loads(public_bytes.decode("utf-8"))
+    with open(args.reveal, "r") as f:
+        reveal = json.load(f)
+
+    if reveal.get("public_state_sha256") != hashlib.sha256(public_bytes).hexdigest():
+        sys.stderr.write("input binding mismatch\n")
+        raise SystemExit(2)
+    return args.team, public, reveal
+
+
+def shooter_of(public, reveal, team):
+    by_id = {p["id"]: p for p in public["points"]}
+    return by_id[reveal["shooters"][team]]
+
+
+def enemies_of(public, team):
+    return [p for p in public["points"] if p["team"] != team and p.get("alive", True)]
+
+
+def field_of(public):
+    m = public["map"]
+    return {"y_min": m["ymin"], "y_max": m["ymax"]}
 
 
 def num(v):
@@ -56,11 +93,10 @@ def _in_poly(px, py, vs):
 
 
 def penetration(px, py, ob):
-    """与 Canonical Judge 的 penetration() 逐条对齐。"""
+    """与 Canonical Judge 的 penetration() 逐条对齐（V1.1 字段形态）。"""
     t = ob.get("type")
     if t == "circle":
-        cx, cy = ob["center"]
-        return max(0.0, math.hypot(px - cx, py - cy) - ob["radius"])
+        return max(0.0, math.hypot(px - ob["cx"], py - ob["cy"]) - ob["radius"])
     if t == "rectangle":
         dx = max(ob["xmin"] - px, 0.0, px - ob["xmax"])
         dy = max(ob["ymin"] - py, 0.0, py - ob["ymax"])
@@ -123,13 +159,12 @@ def build(sx, sy, tx, ty, k):
 
 
 def main():
-    state = json.loads(sys.stdin.read().strip())
-    team = state["team_id"]
-    me = state["shooters"][team]["position"]
+    team, public, reveal = load_input()
+    me = shooter_of(public, reveal, team)
     sx, sy = me["x"], me["y"]
-    obstacles = state.get("obstacles") or []
-    field = state.get("field") or {"y_min": -12, "y_max": 12}
-    enemies = [p for p in state["points"] if p["team"] != team and p.get("position")]
+    obstacles = reveal.get("obstacles") or []
+    field = field_of(public)
+    enemies = enemies_of(public, team)
 
     if not enemies:
         dsl, _ = build(sx, sy, sx, sy, 0.0)
@@ -138,12 +173,12 @@ def main():
 
     ranked = sorted(
         enemies,
-        key=lambda p: (abs(p["position"]["y"] - sy), (p["position"]["x"] - sx) ** 2),
+        key=lambda p: (abs(p["y"] - sy), (p["x"] - sx) ** 2),
     )
 
     best = None  # (clearance, dsl)
     for tgt in ranked:
-        tx, ty = tgt["position"]["x"], tgt["position"]["y"]
+        tx, ty = tgt["x"], tgt["y"]
         for k in KS:
             dsl, f = build(sx, sy, tx, ty, k)
             c = visibility(f, sx, tx, obstacles, field)

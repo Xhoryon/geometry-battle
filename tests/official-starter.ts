@@ -8,15 +8,15 @@
  *       通过 Canonical Validator 的 DSL，且严格经过自己的 Shooter。
  */
 
-import { execFileSync } from 'child_process';
 import * as path from 'path';
 import { parseCanonicalDSL } from '../src/core/Ast';
 import { firingDomain } from '../src/core/Rules';
 import { validateAttackFunction } from '../src/core/Validator';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { inspectPackage } from '../src/submission/Package';
 import { assert, assertClose, assertEqual, runAll, test } from './harness';
+import { runSolver, runnerInputFromCore } from './protocol-fixture';
 
 const STARTER_DIR = path.join(__dirname, '..', 'starter');
 const STARTER_ENTRY = path.join(STARTER_DIR, 'solver.py');
@@ -42,8 +42,9 @@ function coreFor(seed: number, pointCount: number, difficulty: 'easy' | 'medium'
   };
 }
 
-function runStarter(payloadJson: string): string {
-  return execFileSync('python3', [STARTER_ENTRY], { input: payloadJson, encoding: 'utf8' });
+/** 以 V1.1 契约跑一次 starter（两份 JSON 文件 + --team） */
+function runStarter(core: RoundStateCore, team: 'A' | 'B'): string {
+  return runSolver(STARTER_ENTRY, team, runnerInputFromCore(core, 'STARTER-TEST'));
 }
 
 test('official-starter: 包结构与 manifest 合法', () => {
@@ -60,7 +61,7 @@ test('official-starter: 在所有难度 / 多个种子上输出合法且经过 S
     for (let seed = 1; seed <= 12; seed++) {
       const core = coreFor(seed * 977 + 13, 8, difficulty);
       for (const team of ['A', 'B'] as const) {
-        const out = runStarter(runnerPayloadJson(core, team));
+        const out = runStarter(core, team);
         const parsed = JSON.parse(out);
         assert(parsed && parsed.dsl, `${team} 输出必须含 dsl 字段`);
 
@@ -92,7 +93,7 @@ test('official-starter: 在所有难度 / 多个种子上输出合法且经过 S
 test('official-starter: 对手全灭时仍然输出合法 DSL（退化路径）', () => {
   const core = coreFor(4242, 6, 'easy');
   const solo: RoundStateCore = { ...core, points: core.points.filter((p) => p.team === 'A') };
-  const out = runStarter(runnerPayloadJson(solo, 'A'));
+  const out = runStarter(solo, 'A');
   const ast = parseCanonicalDSL(JSON.parse(out).dsl);
   assert(ast.ok && ast.ast, '无敌人时也必须输出合法 DSL');
   const shooter = core.shooters.A.position;
@@ -102,9 +103,8 @@ test('official-starter: 对手全灭时仍然输出合法 DSL（退化路径）'
 
 test('official-starter: 相同输入产生字节级一致的输出（可复现）', () => {
   const core = coreFor(20260909, 8, 'medium');
-  const payload = runnerPayloadJson(core, 'A');
-  const a = runStarter(payload);
-  const b = runStarter(payload);
+  const a = runStarter(core, 'A');
+  const b = runStarter(core, 'A');
   assertEqual(a, b, 'starter 必须是确定性的');
 });
 

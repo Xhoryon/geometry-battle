@@ -16,8 +16,16 @@
  *   sandbox-exec 专用 profile + 独立进程组 + RLIMIT_AS + 最小环境变量
  *
  * 公平性手段：
- *   双方进程先完成启动握手（READY），再由宿主写入 GO 释放；
- *   计时从同一个共享的 release 时刻开始，与进程创建顺序无关。
+ *   双方进程先完成启动握手（READY），再由宿主**先后**写入 GO 释放；
+ *   每方的计时与超时预算都从**它自己的 GO 写入时刻**起算，
+ *   因此释放顺序不再产生方向固定的偏置（P1-B）。
+ *
+ * V1.1 输入协议（Plans/Input/V1.1 — Algorithm Input Protocol.md）：
+ *   沙箱是三区布局 —— input/（只读输入）· app/（只读算法包）· work/（唯一可写）。
+ *   输入不再走 stdin，而是两份**对 A/B 字节级完全相同**的文件：
+ *     input/public_state.json   · input/reveal_state.json
+ *   队别只经 Runner Context（`--team A|B`）传递，绝不写进 JSON（规范 §11/§12）。
+ *   bootstrap 在收到 GO 之前**绝不执行参赛代码**（规范 §14/§15）。
  */
 
 import { spawn, execFile } from 'child_process';
@@ -61,7 +69,7 @@ export interface RunnerOutcome {
   stderr: string;
   error: string | null;
   errorCode: RunnerErrorCode | null;
-  /** 相对共享 release 时刻的耗时（ms） */
+  /** 相对**本队自己的** GO 写入时刻的耗时（ms） */
   computeTimeMs: number;
   sandboxDir: string;
   isolation: IsolationReport;
@@ -69,12 +77,27 @@ export interface RunnerOutcome {
   cancelled: boolean;
 }
 
+/**
+ * 一轮的算法输入字节（V1.1）。
+ *
+ * 提升到 `DuelOptions` 顶层而非放在 teamA/teamB 里，是**结构性保证**：
+ * 双方拿到的是同一份字节，队别不可能从输入里分化出去（规范 §11/§12）。
+ */
+export interface RunnerInput {
+  /** public_state.json 的确切字节 */
+  publicJson: string;
+  /** reveal_state.json 的确切字节（内含 public_state_sha256 绑定） */
+  revealJson: string;
+}
+
 export interface DuelOptions {
   matchId: string;
   roundNumber: number;
   sandboxRoot: string;
-  teamA: { packageDir: string; entry: string; payloadJson: string };
-  teamB: { packageDir: string; entry: string; payloadJson: string };
+  /** 双方完全相同的输入字节 */
+  input: RunnerInput;
+  teamA: { packageDir: string; entry: string };
+  teamB: { packageDir: string; entry: string };
   /** 除 /Users 与 sandboxRoot 外，额外禁止读取的路径（如密封包目录） */
   denyReadPaths?: string[];
   timeoutMs?: number;
@@ -94,22 +117,53 @@ export interface DuelResult {
   isolation: IsolationReport;
 }
 
+/**
+ * 平台注入的启动壳（V1.1）。
+ *
+ * 关键性质：**在收到 GO 之前绝不执行参赛代码**（规范 §14/§15）。
+ * 它只做三件平台自己的事 —— 校验输入绑定、完成 READY 握手、等待 GO ——
+ * 然后才 `runpy` 参赛入口。
+ *
+ * 输入绑定由**平台独立复核**（不依赖宿主已经查过）：
+ * `sha256(public_state.json 的字节) == reveal_state.json 的 public_state_sha256`。
+ * 不匹配即退出码 4，进程在 READY 之前退出 → 宿主侧 ready 被 reject → 本轮双方取消。
+ */
 const BOOTSTRAP_SOURCE = `# Geometry Battle official bootstrap (platform-provided)
-import sys, io, runpy
+import sys, runpy, json, hashlib
+
+def check_binding(argv):
+    try:
+        pub_path = argv[argv.index('--public') + 1]
+        rev_path = argv[argv.index('--reveal') + 1]
+        with open(pub_path, 'rb') as f:
+            pub_bytes = f.read()
+        with open(rev_path, 'rb') as f:
+            rev = json.loads(f.read().decode('utf-8'))
+        expected = rev.get('public_state_sha256')
+        actual = hashlib.sha256(pub_bytes).hexdigest()
+        if not expected or expected != actual:
+            sys.stderr.write('bootstrap: public_state_sha256 mismatch\\n')
+            return False
+    except Exception as e:
+        sys.stderr.write('bootstrap: input binding check failed: %s\\n' % e)
+        return False
+    return True
 
 def main():
     if len(sys.argv) < 2:
         sys.stderr.write("bootstrap: missing entry\\n")
         return 2
     entry = sys.argv[1]
-    data = sys.stdin.readline()
+    solver_argv = sys.argv[2:]
+    if not check_binding(solver_argv):
+        return 4
     sys.stdout.write('{"gb":"ready"}\\n')
     sys.stdout.flush()
     line = sys.stdin.readline()
     if not line or line.strip() != 'GO':
         sys.stderr.write("bootstrap: no GO signal\\n")
         return 3
-    sys.stdin = io.StringIO(data)
+    sys.argv = [entry] + solver_argv
     sys.setrecursionlimit(10000)
     try:
         runpy.run_path(entry, run_name='__main__')
@@ -240,7 +294,15 @@ function copyDir(src: string, dest: string): void {
 
 export interface PreparedSandbox {
   dir: string;
+  /** 只读算法包目录（规范 §23 的 `/app`） */
+  appDir: string;
+  /** 只读输入目录（规范 §23 的 `/input`） */
+  inputDir: string;
+  /** 唯一可写目录（规范 §23 的 `/work`） */
+  workDir: string;
   entry: string;
+  publicPath: string;
+  revealPath: string;
   profilePath: string;
   launcherPath: string;
   isolation: IsolationReport;
@@ -254,6 +316,8 @@ export function prepareSandbox(opts: {
   team: 'A' | 'B';
   packageDir: string;
   entry: string;
+  /** 双方字节级相同的两份输入文件（V1.1） */
+  input: RunnerInput;
   memoryLimitMb: number;
   denyReadPaths?: string[];
 }): PreparedSandbox {
@@ -266,10 +330,23 @@ export function prepareSandbox(opts: {
   );
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
-  fs.mkdirSync(path.join(dir, 'work'), { recursive: true });
+
+  const appDir = path.join(dir, 'app');
+  const inputDir = path.join(dir, 'input');
+  const workDir = path.join(dir, 'work');
+  fs.mkdirSync(inputDir, { recursive: true });
+  fs.mkdirSync(workDir, { recursive: true });
 
   // 只复制该队自己的包
-  copyDir(opts.packageDir, path.join(dir, 'pkg'));
+  copyDir(opts.packageDir, appDir);
+
+  // 输入文件在**进程创建之前**就写好（规范 §15 允许 JSON 提前存在；
+  // 不可提前的只有「执行参赛代码」这一件事，由 bootstrap 的 GO 门控保证）。
+  // 0444 只是纵深防御 —— SBPL 的写权限本来就只放开 work/。
+  const publicPath = path.join(inputDir, 'public_state.json');
+  const revealPath = path.join(inputDir, 'reveal_state.json');
+  fs.writeFileSync(publicPath, opts.input.publicJson, { mode: 0o444 });
+  fs.writeFileSync(revealPath, opts.input.revealJson, { mode: 0o444 });
 
   const bootstrapPath = path.join(dir, '__gb_bootstrap.py');
   fs.writeFileSync(bootstrapPath, BOOTSTRAP_SOURCE, { mode: 0o444 });
@@ -284,7 +361,12 @@ export function prepareSandbox(opts: {
 
   return {
     dir,
-    entry: path.join(dir, 'pkg', opts.entry),
+    appDir,
+    inputDir,
+    workDir,
+    entry: path.join(appDir, opts.entry),
+    publicPath,
+    revealPath,
     profilePath,
     launcherPath,
     isolation: {
@@ -381,25 +463,33 @@ export interface SpawnedRunner {
 export function spawnRunner(opts: {
   team: 'A' | 'B';
   sandbox: PreparedSandbox;
-  payloadJson: string;
   timeoutMs: number;
   memoryLimitMb: number;
 }): SpawnedRunner {
   const { team, sandbox } = opts;
+
+  // 参赛入口的 argv：队别只经 Runner Context 传递（规范 §12），输入只经文件（规范 §13）。
+  const solverArgv = [
+    '--team', team,
+    '--public', sandbox.publicPath,
+    '--reveal', sandbox.revealPath,
+  ];
+  const bootstrapPath = path.join(sandbox.dir, '__gb_bootstrap.py');
 
   const useSandbox = sandboxExecAvailable();
   const inner = [
     sandbox.launcherPath,
     String(opts.memoryLimitMb * 1024),
     '/usr/bin/python3',
-    path.join(sandbox.dir, '__gb_bootstrap.py'),
+    bootstrapPath,
     sandbox.entry,
+    ...solverArgv,
   ];
 
   const cmd = useSandbox ? '/usr/bin/sandbox-exec' : '/usr/bin/python3';
   const args = useSandbox
     ? ['-f', sandbox.profilePath, ...inner]
-    : [path.join(sandbox.dir, '__gb_bootstrap.py'), sandbox.entry];
+    : [bootstrapPath, sandbox.entry, ...solverArgv];
 
   const startedNs = process.hrtime.bigint();
 
@@ -603,8 +693,8 @@ export function spawnRunner(opts: {
     finish({ success: true, stdout, stderr, error: null, errorCode: null, computeTimeMs });
   });
 
-  // 写入输入（单行 JSON + 换行作为帧边界）
-  proc.stdin?.write(opts.payloadJson + '\n');
+  // 输入不再走 stdin —— 两份 JSON 已由 prepareSandbox 写入 input/，
+  // 参赛入口从 argv 拿到路径自己读（规范 §13）。stdin 现在只承载 GO 信号。
 
   return {
     team,
@@ -661,6 +751,7 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   const timeoutMs = opts.timeoutMs ?? COMPUTE_TIMEOUT_MS;
   const memoryLimitMb = opts.memoryLimitMb ?? MEMORY_LIMIT_MB;
 
+  // 同一份字节写进两个沙箱 —— 队别只能经 argv 分化（规范 §11/§12）。
   const sandboxA = prepareSandbox({
     sandboxRoot: opts.sandboxRoot,
     matchId: opts.matchId,
@@ -668,6 +759,7 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     team: 'A',
     packageDir: opts.teamA.packageDir,
     entry: opts.teamA.entry,
+    input: opts.input,
     memoryLimitMb,
     denyReadPaths: opts.denyReadPaths,
   });
@@ -678,12 +770,13 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     team: 'B',
     packageDir: opts.teamB.packageDir,
     entry: opts.teamB.entry,
+    input: opts.input,
     memoryLimitMb,
     denyReadPaths: opts.denyReadPaths,
   });
 
-  const runnerA = spawnRunner({ team: 'A', sandbox: sandboxA, payloadJson: opts.teamA.payloadJson, timeoutMs, memoryLimitMb });
-  const runnerB = spawnRunner({ team: 'B', sandbox: sandboxB, payloadJson: opts.teamB.payloadJson, timeoutMs, memoryLimitMb });
+  const runnerA = spawnRunner({ team: 'A', sandbox: sandboxA, timeoutMs, memoryLimitMb });
+  const runnerB = spawnRunner({ team: 'B', sandbox: sandboxB, timeoutMs, memoryLimitMb });
 
   let a: RunnerOutcome | null = null;
   let b: RunnerOutcome | null = null;

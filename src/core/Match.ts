@@ -29,11 +29,22 @@ import { CanonicalNode, hashNode, parseCanonicalDSL, toMathString } from './Ast'
 import { validateAttackFunction } from './Validator';
 import { judgeShot, ShotOutcome } from './Judge';
 import { RoundMachine, RoundPhase } from './Round';
-import { AlivePoint, RoundStateCore, computeStateHash, runnerPayloadJson } from './RoundState';
+import { AlivePoint, RoundStateCore, computeStateHash } from './RoundState';
+import {
+  PublicStatePoint,
+  buildPublicState,
+  buildRevealState,
+} from './InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from './Rules';
 import { generateMapOrNull, GeneratedMap } from '../map/MapGenerator';
 import { SealedPackage, inspectPackage, sealPackage, verifySeal } from '../submission/Package';
-import { runDuel, RunnerOutcome, defaultSandboxRoot, IsolationReport } from '../runner/SandboxRunner';
+import {
+  runDuel,
+  RunnerInput,
+  RunnerOutcome,
+  defaultSandboxRoot,
+  IsolationReport,
+} from '../runner/SandboxRunner';
 import {
   AuditRecorder,
   MatchArtifacts,
@@ -223,14 +234,22 @@ export class MatchEngine {
       this.phase = 'UPLOAD_B';
       return { ok: false, errors: ['无法生成 Preflight 地图'], detail: {} };
     }
-    const core = this.buildCoreFor(sampleMap, 0, sampleMap.teamA[0], sampleMap.teamB[0]);
+    // preflight 同样走两阶段协议 —— 既是冒烟测试，也是新契约的端到端自检
+    const input = this.buildRunnerInput({
+      matchId: `${this.matchId}-preflight`,
+      round: 0,
+      map: sampleMap,
+      idA: 'A1',
+      idB: 'B1',
+    });
 
     const duel = await runDuel({
       matchId: `${this.matchId}-preflight`,
       roundNumber: 0,
       sandboxRoot: this.sandboxRoot,
-      teamA: { packageDir: a.sealedDir, entry: a.entry, payloadJson: runnerPayloadJson(core, 'A') },
-      teamB: { packageDir: b.sealedDir, entry: b.entry, payloadJson: runnerPayloadJson(core, 'B') },
+      input,
+      teamA: { packageDir: a.sealedDir, entry: a.entry },
+      teamB: { packageDir: b.sealedDir, entry: b.entry },
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
@@ -386,19 +405,26 @@ export class MatchEngine {
 
     // ---- 运行双方算法 ----
     const cancelled: { A: boolean; B: boolean } = { A: false, B: false };
+    // 一份字节，两个沙箱 —— 队别只经 --team argv 分化（规范 §11/§12）
+    const input = this.buildRunnerInput({
+      matchId: this.matchId,
+      round,
+      map: this.map!,
+      idA: shooterA.id,
+      idB: shooterB.id,
+    });
     const duel = await runDuel({
       matchId: this.matchId,
       roundNumber: round,
       sandboxRoot: this.sandboxRoot,
+      input,
       teamA: {
         packageDir: this.packages.A.sealedDir,
         entry: this.packages.A.entry,
-        payloadJson: runnerPayloadJson(core, 'A'),
       },
       teamB: {
         packageDir: this.packages.B.sealedDir,
         entry: this.packages.B.entry,
-        payloadJson: runnerPayloadJson(core, 'B'),
       },
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
@@ -740,6 +766,48 @@ export class MatchEngine {
 
   private buildCore(round: number, shooterA: PointState, shooterB: PointState): RoundStateCore {
     return this.buildCoreFor(this.map!, round, shooterA.position, shooterB.position, shooterA.id, shooterB.id);
+  }
+
+  /**
+   * 构造本轮的两阶段输入字节（V1.1 规范 §4-§10）。
+   *
+   * 只产出**字节**，不落盘 —— 落盘是 `prepareSandbox` 的事，两份字节
+   * 由 `runDuel` 分别写进两个沙箱，因此对 A/B 必然逐字节相同（规范 §11）。
+   *
+   * `round === 0` 是 preflight 的 decoy 世界：点集取自地图本身、全部存活，
+   * 障碍物与 seed 也都是 decoy 的（规范 §14/§15）。
+   */
+  private buildRunnerInput(o: {
+    matchId: string;
+    round: number;
+    map: GeneratedMap;
+    idA: string;
+    idB: string;
+  }): RunnerInput {
+    const points: PublicStatePoint[] =
+      o.round === 0
+        ? [
+            ...o.map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, x: p.x, y: p.y, alive: true })),
+            ...o.map.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, x: p.x, y: p.y, alive: true })),
+          ]
+        : // 正式回合：**完整名单含死点**（规范 §5），死点 alive=false
+          this.points.map((p) => ({
+            id: p.id,
+            team: p.team,
+            x: p.position.x,
+            y: p.position.y,
+            alive: p.alive,
+          }));
+
+    const publicState = buildPublicState({ matchId: o.matchId, round: o.round, points });
+    const revealState = buildRevealState({
+      matchId: o.matchId,
+      round: o.round,
+      publicStateSha256: publicState.sha256,
+      shooters: { A: o.idA, B: o.idB },
+      obstacles: o.map.obstacles,
+    });
+    return { publicJson: publicState.json, revealJson: revealState.json };
   }
 
   private buildCoreFor(

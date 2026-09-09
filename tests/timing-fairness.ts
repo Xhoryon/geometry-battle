@@ -15,7 +15,7 @@ import * as path from 'path';
 import { CanonicalNode, parseCanonicalDSL } from '../src/core/Ast';
 import { judgeShot } from '../src/core/Judge';
 import { PLATFORM_ROOT } from '../src/core/Match';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { GeneratedMap, generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import {
@@ -26,6 +26,7 @@ import {
   spawnRunner,
 } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 const ALGO_X = path.join(__dirname, 'fixtures', 'algos', 'arc-sweep');
@@ -135,16 +136,9 @@ async function orderBatch(n: number): Promise<Batch> {
       matchId: 'FAIR-ORDER',
       roundNumber: i + 1,
       sandboxRoot,
-      teamA: {
-        packageDir: seal.sealed!.sealedDir,
-        entry: 'solver.py',
-        payloadJson: runnerPayloadJson(core, 'A'),
-      },
-      teamB: {
-        packageDir: seal.sealed!.sealedDir,
-        entry: 'solver.py',
-        payloadJson: runnerPayloadJson(core, 'B'),
-      },
+      input: runnerInputFromCore(core, 'FAIR-ORDER'),
+      teamA: { packageDir: seal.sealed!.sealedDir, entry: 'solver.py' },
+      teamB: { packageDir: seal.sealed!.sealedDir, entry: 'solver.py' },
       denyReadPaths: [sealedRoot, PLATFORM_ROOT],
       timeoutMs: 3000,
     });
@@ -188,8 +182,9 @@ async function swapBatch(n: number): Promise<SwapResult> {
       matchId: 'FAIR-SWAP',
       roundNumber: i * 2 + 1,
       sandboxRoot,
-      teamA: { ...pkgX, payloadJson: runnerPayloadJson(core, 'A') },
-      teamB: { ...pkgY, payloadJson: runnerPayloadJson(core, 'B') },
+      input: runnerInputFromCore(core, 'FAIR-SWAP'),
+      teamA: pkgX,
+      teamB: pkgY,
       denyReadPaths: [sealedRoot, PLATFORM_ROOT],
       timeoutMs: 3000,
     });
@@ -197,8 +192,9 @@ async function swapBatch(n: number): Promise<SwapResult> {
       matchId: 'FAIR-SWAP',
       roundNumber: i * 2 + 2,
       sandboxRoot,
-      teamA: { ...pkgY, payloadJson: runnerPayloadJson(core, 'A') },
-      teamB: { ...pkgX, payloadJson: runnerPayloadJson(core, 'B') },
+      input: runnerInputFromCore(core, 'FAIR-SWAP'),
+      teamA: pkgY,
+      teamB: pkgX,
       denyReadPaths: [sealedRoot, PLATFORM_ROOT],
       timeoutMs: 3000,
     });
@@ -301,13 +297,13 @@ test('timing-fairness: 每方 release() 记录自己的 GO 时刻（P1-B 回归�
       team,
       packageDir: seal.sealed!.sealedDir,
       entry: 'solver.py',
+      input: runnerInputFromCore(core, 'FAIR-OWN-GO'),
       memoryLimitMb: 512,
       denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     });
     return spawnRunner({
       team,
       sandbox,
-      payloadJson: runnerPayloadJson(core, team),
       timeoutMs: 5000,
       memoryLimitMb: 512,
     });

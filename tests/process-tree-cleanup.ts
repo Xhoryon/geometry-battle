@@ -12,11 +12,12 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PLATFORM_ROOT } from '../src/core/Match';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { cleanupSandbox, prepareSandbox, spawnRunner } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 
@@ -67,7 +68,7 @@ function sleepPkg(dir: string): string {
     path.join(dir, 'manifest.json'),
     JSON.stringify({ name: 'sleeper', version: '1.0.0', entry: 'solver.py', language: 'python' })
   );
-  fs.writeFileSync(path.join(dir, 'solver.py'), 'import sys, time\nsys.stdin.readline()\ntime.sleep(120)\n');
+  fs.writeFileSync(path.join(dir, 'solver.py'), 'import time\ntime.sleep(120)\n');
   return dir;
 }
 
@@ -90,13 +91,13 @@ test('process-tree-cleanup: 算法运行在独立进程组中', async () => {
     team: 'A',
     packageDir: seal.sealed!.sealedDir,
     entry: 'solver.py',
+    input: runnerInputFromCore(coreFor(11), 'PTREE-GROUP'),
     memoryLimitMb: 512,
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
   });
   const runner = spawnRunner({
     team: 'A',
     sandbox,
-    payloadJson: runnerPayloadJson(coreFor(11), 'A'),
     timeoutMs: 60_000,
     memoryLimitMb: 512,
   });
@@ -128,10 +129,18 @@ test('process-tree-cleanup: 算法无法 fork / spawn 子进程', async () => {
   );
   fs.writeFileSync(
     path.join(src, 'solver.py'),
-    `import json, os, subprocess, sys
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+    `import argparse, json, os, subprocess, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 report = {}
 try:
     os.fork()
@@ -160,13 +169,13 @@ sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
     team: 'A',
     packageDir: seal.sealed!.sealedDir,
     entry: 'solver.py',
+    input: runnerInputFromCore(coreFor(12), 'PTREE-FORK'),
     memoryLimitMb: 512,
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
   });
   const runner = spawnRunner({
     team: 'A',
     sandbox,
-    payloadJson: runnerPayloadJson(coreFor(12), 'A'),
     timeoutMs: 10_000,
     memoryLimitMb: 512,
   });
@@ -195,10 +204,18 @@ test('process-tree-cleanup: 沙箱环境变量被清理（P1-13）', async () =>
   );
   fs.writeFileSync(
     path.join(src, 'solver.py'),
-    `import json, os, sys
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+    `import argparse, json, os, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 env = {k: v for k, v in os.environ.items()}
 sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}, "env": env}) + "\\n")
 `
@@ -211,13 +228,13 @@ sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}, "env": env}
     team: 'A',
     packageDir: seal.sealed!.sealedDir,
     entry: 'solver.py',
+    input: runnerInputFromCore(coreFor(13), 'PTREE-ENV'),
     memoryLimitMb: 512,
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
   });
   const runner = spawnRunner({
     team: 'A',
     sandbox,
-    payloadJson: runnerPayloadJson(coreFor(13), 'A'),
     timeoutMs: 10_000,
     memoryLimitMb: 512,
   });

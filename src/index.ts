@@ -140,6 +140,7 @@ export {
   RunnerErrorCode,
   IsolationReport,
   RunnerOutcome,
+  RunnerInput,
   DuelOptions,
   DuelResult,
   SpawnedRunner,

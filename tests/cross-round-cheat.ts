@@ -12,11 +12,12 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PLATFORM_ROOT } from '../src/core/Match';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { runDuel, RunnerOutcome } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 
@@ -43,10 +44,18 @@ function coreFor(seed: number): RoundStateCore {
 
 /** 第一轮：写入标记文件、尝试留 socket、尝试留 daemon */
 function roundOneSource(): string {
-  return `import json, os, socket, subprocess, sys
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+  return `import argparse, json, os, socket, subprocess, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 work = os.environ.get("TMPDIR", "/tmp")
 report = {}
 
@@ -84,10 +93,18 @@ sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
 
 /** 第二轮：检查上一轮与自己的工作目录里是否还残留任何东西 */
 function roundTwoSource(prevDir: string): string {
-  return `import json, os, socket, sys
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+  return `import argparse, json, os, socket, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 work = os.environ.get("TMPDIR", "/tmp")
 PREV = ${JSON.stringify(prevDir)}
 report = {}
@@ -168,8 +185,9 @@ async function runTwoRounds(matchId: string): Promise<TwoRounds> {
     matchId,
     roundNumber: 1,
     sandboxRoot,
-    teamA: { packageDir: seal1.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'A') },
-    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'B') },
+    input: runnerInputFromCore(core, matchId),
+    teamA: { packageDir: seal1.sealed!.sealedDir, entry: 'solver.py' },
+    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py' },
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     timeoutMs: 4000,
   });
@@ -184,8 +202,9 @@ async function runTwoRounds(matchId: string): Promise<TwoRounds> {
     matchId,
     roundNumber: 2,
     sandboxRoot,
-    teamA: { packageDir: seal2.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'A') },
-    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'B') },
+    input: runnerInputFromCore(core, matchId),
+    teamA: { packageDir: seal2.sealed!.sealedDir, entry: 'solver.py' },
+    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py' },
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     timeoutMs: 4000,
   });

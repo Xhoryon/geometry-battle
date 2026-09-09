@@ -1,18 +1,23 @@
 """
-Precision Line —— E2E 验证用算法包（此前未被正式流程硬编码）
+Precision Line —— E2E 验证用算法包
 
 策略：在所有存活敌人中按「y 距离最近」排序，选第一个**弹道畅通**的目标，
 画直线 f(x) = y_s + m * (x - x_s)。
 
-为什么要做可见性判定：平台会把本轮障碍物信息一起发给算法（payload.obstacles）。
-不做判定的直线会被障碍物挡下（Plan V1 §22：第一次接触之后不再造成伤害），
-比赛就永远打不完。可见性判定使用与 Canonical Judge 完全一致的 penetration
-语义（src/core/Judge.ts: penetration()），采样步长 0.01，保留 0.02 安全边界，
+为什么要做可见性判定：障碍物在 reveal 阶段才公开，不做判定的直线会被挡下
+（Plan V1 §22：第一次接触之后不再造成伤害），比赛就永远打不完。
+可见性判定使用与 Canonical Judge 完全一致的 penetration 语义
+（src/core/Judge.ts: penetration()），采样步长 0.01，保留 0.02 安全边界，
 因此「算法认为可见」⇒「Judge 一定判定 HIT」。
+
+V1.1 输入契约：--team / --public / --reveal 三个参数，障碍物只在 reveal 里，
+圆形的字段是扁平的 cx / cy / radius（规范 §8）。
 
 DSL: f(x) = y_s + m * (x - x_s)
 """
 
+import argparse
+import hashlib
 import json
 import math
 import sys
@@ -20,6 +25,39 @@ import sys
 MARGIN = 0.02
 STEP = 0.01
 MAX_SAMPLES = 20000
+
+
+def load_input():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--team", required=True, choices=["A", "B"])
+    ap.add_argument("--public", required=True)
+    ap.add_argument("--reveal", required=True)
+    args = ap.parse_args()
+
+    with open(args.public, "rb") as f:
+        public_bytes = f.read()
+    public = json.loads(public_bytes.decode("utf-8"))
+    with open(args.reveal, "r") as f:
+        reveal = json.load(f)
+
+    if reveal.get("public_state_sha256") != hashlib.sha256(public_bytes).hexdigest():
+        sys.stderr.write("input binding mismatch\n")
+        raise SystemExit(2)
+    return args.team, public, reveal
+
+
+def shooter_of(public, reveal, team):
+    by_id = {p["id"]: p for p in public["points"]}
+    return by_id[reveal["shooters"][team]]
+
+
+def enemies_of(public, team):
+    return [p for p in public["points"] if p["team"] != team and p.get("alive", True)]
+
+
+def field_of(public):
+    m = public["map"]
+    return {"y_min": m["ymin"], "y_max": m["ymax"]}
 
 
 def num(v):
@@ -49,11 +87,10 @@ def _in_poly(px, py, vs):
 
 
 def penetration(px, py, ob):
-    """与 Canonical Judge 的 penetration() 逐条对齐。"""
+    """与 Canonical Judge 的 penetration() 逐条对齐（V1.1 字段形态）。"""
     t = ob.get("type")
     if t == "circle":
-        cx, cy = ob["center"]
-        return max(0.0, math.hypot(px - cx, py - cy) - ob["radius"])
+        return max(0.0, math.hypot(px - ob["cx"], py - ob["cy"]) - ob["radius"])
     if t == "rectangle":
         dx = max(ob["xmin"] - px, 0.0, px - ob["xmax"])
         dy = max(ob["ymin"] - py, 0.0, py - ob["ymax"])
@@ -112,13 +149,12 @@ def build(sx, sy, tx, ty):
 
 
 def main():
-    state = json.loads(sys.stdin.read().strip())
-    team = state["team_id"]
-    me = state["shooters"][team]["position"]
+    team, public, reveal = load_input()
+    me = shooter_of(public, reveal, team)
     sx, sy = me["x"], me["y"]
-    obstacles = state.get("obstacles") or []
-    field = state.get("field") or {"y_min": -12, "y_max": 12}
-    enemies = [p for p in state["points"] if p["team"] != team and p.get("position")]
+    obstacles = reveal.get("obstacles") or []
+    field = field_of(public)
+    enemies = enemies_of(public, team)
 
     if not enemies:
         dsl, _ = build(sx, sy, sx, sy)
@@ -127,12 +163,12 @@ def main():
 
     ranked = sorted(
         enemies,
-        key=lambda p: (abs(p["position"]["y"] - sy), (p["position"]["x"] - sx) ** 2),
+        key=lambda p: (abs(p["y"] - sy), (p["x"] - sx) ** 2),
     )
 
     best = None  # (clearance, dsl) —— 全被挡时的兜底
     for tgt in ranked:
-        tx, ty = tgt["position"]["x"], tgt["position"]["y"]
+        tx, ty = tgt["x"], tgt["y"]
         dsl, f = build(sx, sy, tx, ty)
         c = clearance(f, sx, tx, obstacles, field)
         if c >= MARGIN:

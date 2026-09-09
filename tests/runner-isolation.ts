@@ -14,7 +14,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import {
@@ -25,6 +25,7 @@ import {
   sandboxExecAvailable,
 } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 const SHARED_TMP = '/tmp/gb-cheat-shared.txt';
@@ -50,14 +51,24 @@ function writeCheatPackage(dir: string, paths: CheatPaths): void {
 
 function cheatSource(p: CheatPaths): string {
   return `# 恶意算法包（仅用于隔离回归测试）
-import json, os, socket, subprocess, sys
+import argparse, json, os, socket, subprocess, sys
 
 PATHS = ${JSON.stringify(p)}
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-sh = payload["shooters"][team]
-x0 = sh["position"]["x"]
-y0 = sh["position"]["y"]
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+team = args.team
+by_id = {pt["id"]: pt for pt in public["points"]}
+me = by_id[reveal["shooters"][team]]
+x0 = me["x"]
+y0 = me["y"]
 
 report = {}
 
@@ -82,10 +93,24 @@ def net_probe():
     finally:
         s.close()
 
+def round_dir():
+    # --public 指向 <sandboxDir>/input/public_state.json，
+    # 因此上三级就是 <sandboxRoot>/<matchId>/round-N ——
+    # 对手沙箱目录名（含 nonce）只可能从这里泄漏。
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(args.public))))
+
+def read_opponent_input():
+    for entry in os.listdir(round_dir()):
+        if entry.startswith("B-"):
+            return read_text(os.path.join(round_dir(), entry, "input", "public_state.json"))
+    raise FileNotFoundError("opponent sandbox not listed")
+
 attempt("read_judge_source", lambda: read_text(PATHS["judgeSource"]))
 attempt("read_opponent_package", lambda: read_text(os.path.join(PATHS["opponentSealed"], "manifest.json")))
 attempt("list_opponent_package", lambda: os.listdir(PATHS["opponentSealed"]))
 attempt("list_sandbox_root", lambda: os.listdir(PATHS["sandboxRoot"]))
+attempt("list_round_dir", lambda: os.listdir(round_dir()))
+attempt("read_opponent_input", lambda: read_opponent_input())
 attempt("write_project", lambda: open(PATHS["projectWrite"], "w").write("pwned"))
 attempt("write_home", lambda: open(os.path.join(os.environ.get("HOME", "/"), "gb-cheat-home.txt"), "w").write("pwned"))
 attempt("write_shared_tmp", lambda: open(PATHS["sharedTmp"], "w").write("pwned"))
@@ -164,8 +189,9 @@ async function runCheatDuel(matchId: string, timeoutMs = 4000): Promise<DuelRun>
     matchId,
     roundNumber: 1,
     sandboxRoot,
-    teamA: { packageDir: cheatSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'A') },
-    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'B') },
+    input: runnerInputFromCore(core, matchId),
+    teamA: { packageDir: cheatSeal.sealed!.sealedDir, entry: 'solver.py' },
+    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py' },
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     timeoutMs,
   });
@@ -192,6 +218,9 @@ test('runner-isolation: 所有越界尝试全部 BLOCKED', async () => {
     'read_opponent_package',
     'list_opponent_package',
     'list_sandbox_root',
+    // V1.1：对手的 input/public_state.json 与自己的沙箱是同级目录，必须同样不可达
+    'list_round_dir',
+    'read_opponent_input',
     'write_project',
     'write_home',
     'write_shared_tmp',
@@ -250,10 +279,18 @@ function writeProbePackage(dir: string, targets: Record<string, { path: string; 
   );
   fs.writeFileSync(
     path.join(dir, 'solver.py'),
-    `import json, os, sys
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+    `import argparse, json, os, sys
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 TARGETS = ${JSON.stringify(targets)}
 
 for name, spec in TARGETS.items():
@@ -359,6 +396,7 @@ test('runner-isolation: sandboxRoot 位于 /tmp 下时，任意 /tmp 读取仍�
       team: 'A',
       packageDir: STARTER,
       entry: 'solver.py',
+      input: runnerInputFromCore(coreFor(11), 'ISO-TMPROOT-PROFILE'),
       memoryLimitMb: 512,
       denyReadPaths: [],
     });
@@ -411,7 +449,7 @@ test('runner-isolation: 洪泛 stdout 被限长（P2-25）', async () => {
   );
   fs.writeFileSync(
     path.join(floodDir, 'solver.py'),
-    'import sys\nsys.stdin.readline()\nsys.stdout.write("A" * 5_000_000)\nsys.stdout.flush()\n'
+    'import sys\nsys.stdout.write("A" * 5_000_000)\nsys.stdout.flush()\n'
   );
 
   const oppSeal = sealPackage({ team: 'B', sourceDir: STARTER, sealRoot: sealedRoot, matchId: 'FLOOD' });
@@ -423,8 +461,9 @@ test('runner-isolation: 洪泛 stdout 被限长（P2-25）', async () => {
     matchId: 'FLOOD',
     roundNumber: 1,
     sandboxRoot,
-    teamA: { packageDir: floodSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'A') },
-    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'B') },
+    input: runnerInputFromCore(core, 'FLOOD'),
+    teamA: { packageDir: floodSeal.sealed!.sealedDir, entry: 'solver.py' },
+    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py' },
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     timeoutMs: 4000,
   });

@@ -3,7 +3,7 @@
  *
  * 覆盖 Finding: P1-19（超时预算与规范不符）、P2-25（标准输出无上限的邻居问题）
  *
- * 契约：计时从共享的 GO 时刻起算，与进程创建顺序无关；
+ * 契约：计时从**每方自己的** GO 时刻起算（Re-Gate Cycle 1 P1-B），与进程创建顺序无关；
  *       恰好低于预算 → 成功，超过预算 → TIMEOUT；
  *       超时后进程必须被杀掉、沙箱必须被销毁。
  */
@@ -12,11 +12,12 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PLATFORM_ROOT } from '../src/core/Match';
-import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
+import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
 import { runDuel } from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
+import { runnerInputFromCore } from './protocol-fixture';
 
 const STARTER = path.join(__dirname, '..', 'starter');
 const TIMEOUT_MS = 1200;
@@ -44,10 +45,18 @@ function coreFor(seed: number): RoundStateCore {
 
 /** 睡眠 sleepSec 秒后输出合法 DSL 的算法 */
 function sleeperSource(sleepSec: number): string {
-  return `import json, sys, time
-payload = json.loads(sys.stdin.readline())
-team = payload["team_id"]
-y0 = payload["shooters"][team]["position"]["y"]
+  return `import argparse, json, sys, time
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True)
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+args = ap.parse_args()
+with open(args.public, "r") as f:
+    public = json.load(f)
+with open(args.reveal, "r") as f:
+    reveal = json.load(f)
+by_id = {pt["id"]: pt for pt in public["points"]}
+y0 = by_id[reveal["shooters"][args.team]]["y"]
 time.sleep(${sleepSec})
 dsl = {"type": "add", "args": [
     {"type": "number", "value": y0},
@@ -89,16 +98,9 @@ async function duelWithSleeper(
     matchId,
     roundNumber: 1,
     sandboxRoot,
-    teamA: {
-      packageDir: slowSeal.sealed!.sealedDir,
-      entry: 'solver.py',
-      payloadJson: runnerPayloadJson(core, 'A'),
-    },
-    teamB: {
-      packageDir: oppSeal.sealed!.sealedDir,
-      entry: 'solver.py',
-      payloadJson: runnerPayloadJson(core, 'B'),
-    },
+    input: runnerInputFromCore(core, matchId),
+    teamA: { packageDir: slowSeal.sealed!.sealedDir, entry: 'solver.py' },
+    teamB: { packageDir: oppSeal.sealed!.sealedDir, entry: 'solver.py' },
     denyReadPaths: [sealedRoot, PLATFORM_ROOT],
     timeoutMs: TIMEOUT_MS,
   });
