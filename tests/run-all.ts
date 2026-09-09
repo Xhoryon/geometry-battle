@@ -22,6 +22,7 @@ const SUITES = [
   'shooter-cancel',
   'alive-kill',
   'roundstate-equality',
+  'input-protocol',
   'full-match-e2e',
   'runner-isolation',
   'cross-round-cheat',

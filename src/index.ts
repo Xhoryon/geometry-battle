@@ -95,6 +95,20 @@ export {
 } from './core/RoundState';
 export { RoundPhase, PhaseTransition, RoundMachine } from './core/Round';
 
+// ---- V1.1 两阶段输入协议 ----
+export {
+  PROTOCOL_VERSION,
+  PublicStatePoint,
+  BuiltInputFile,
+  sha256Hex,
+  buildPublicState,
+  buildRevealState,
+  roundStateHash,
+  verifyRevealBinding,
+  verifyPublicState,
+  derivePreflightSeed,
+} from './core/InputProtocol';
+
 // ---- 地图 ----
 export {
   GeneratedMap,
