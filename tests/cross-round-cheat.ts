@@ -207,6 +207,20 @@ test('cross-round-cheat: 上一轮的沙箱目录在轮次结束后被销毁', a
   assertEqual(t.round2Report.prev_dir_exists, 'False', '第二轮不应再看到上一轮的沙箱目录');
 });
 
+test('cross-round-cheat: 沙箱目录树不留空壳（P3-D 回归）', async () => {
+  const t = await runTwoRounds('XR-SHELL');
+  const roundDir = path.dirname(t.round1.sandboxDir);
+  assert(!fs.existsSync(roundDir), `回合目录必须被移除: ${roundDir}`);
+  assert(
+    !fs.existsSync(path.dirname(roundDir)),
+    `matchId 目录必须被移除: ${path.dirname(roundDir)}`
+  );
+  // sandboxRoot 本身必须保留 —— 后续轮次还要在里面建沙箱
+  assert(fs.existsSync(t.sandboxRoot), `sandboxRoot 本身不应被删除: ${t.sandboxRoot}`);
+  const leftovers = fs.readdirSync(t.sandboxRoot);
+  assertEqual(leftovers, [], `沙箱根目录下不得残留任何空壳，实际 ${leftovers.join(', ')}`);
+});
+
 test('cross-round-cheat: 文件无法跨轮持久化', async () => {
   const t = await runTwoRounds('XR-FILE');
   assertEqual(t.round1Report.write_work_file, 'allowed', '沙箱内必须能写自己的 work 目录');

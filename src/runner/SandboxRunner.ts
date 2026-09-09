@@ -86,9 +86,9 @@ export interface DuelOptions {
 export interface DuelResult {
   a: RunnerOutcome;
   b: RunnerOutcome;
-  /** 写入 GO 的时刻（单调时钟，ns） */
+  /** 较早的那个 GO 写入时刻（单调时钟，ns）；仅用于记录 */
   releaseNs: bigint;
-  /** 两次 GO 写入之间的偏差（µs） */
+  /** 两次 GO 写入之间的偏差（µs）；计时不依赖它（P1-B） */
   releaseSkewUs: number;
   readySkewMs: number;
   isolation: IsolationReport;
@@ -161,9 +161,26 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
   // 对手的密封包会落在 (allow file-read*) 的默认放行范围内。
   // 注：即使某个 deny 路径恰好是沙箱目录的祖先也没关系 —— 下面的
   // `(allow file-read* (subpath sandboxDir))` 写在后面，SBPL 是「后匹配者胜」。
-  const extraDenies = denyReadPaths
+  // 系统级兜底拒绝：/tmp 与 /var/tmp 是操作员暂存对手包、历史产物、
+  // 运维脚本的常见位置，算法没有任何理由读取（注意 /tmp 是 /private/tmp
+  // 的符号链接，realpath 后二者相同）。
+  //
+  // 但这些是**粗粒度**路径，可能恰好把沙箱自己也罩进去 —— 例如 macOS 的
+  // 默认沙箱根就在 /private/var/folders/<user>/T/ 下。因此下面还要剔除
+  // 「会拒绝沙箱自身」的条目（Re-Gate Cycle 2：此前无条件拒绝
+  // /private/var/folders 会让算法连自己的入口文件都读不到，整场比赛全挂）。
+  const SYSTEM_DENIES = ['/private/tmp', '/private/var/tmp'];
+
+  /** p 是否等于 self 或是 self 的祖先 */
+  const covers = (p: string, self: string): boolean => p === self || self.startsWith(p + path.sep);
+
+  const selfPaths = [sandboxDir, sandboxRoot, work];
+
+  const extraDenies = [...denyReadPaths, ...SYSTEM_DENIES]
     .map((p) => real(p))
-    .filter((p) => p.length > 0 && p !== path.sep)
+    .filter((p, i, arr) => p.length > 0 && p !== path.sep && arr.indexOf(p) === i)
+    // 会拒绝沙箱自身的 deny 必须剔除，否则算法连自己的包和 bootstrap 都读不到
+    .filter((p) => !selfPaths.some((self) => covers(p, self)))
     .map((p) => `(deny file-read* (subpath ${JSON.stringify(p)}))`)
     .join('\n');
 
@@ -292,19 +309,29 @@ function parseAlgorithmOutput(raw: string): { dslText: string | null; error: str
   const text = raw.trim();
   if (!text) return { dslText: null, error: '算法没有输出' };
 
+  // JSON.parse 与 JSON.stringify 都是递归实现：超深载荷会在**序列化**阶段
+  // 抛出 RangeError。若把它与「缺少 dsl 字段」混为一谈，恶意包就会被误报成
+  // 格式错误而不是「嵌套过深」（P0-A 家族，Re-Gate Cycle 2）。
+  let sawDslUnserializable = false;
+
   const tryParse = (s: string): string | null => {
+    let obj: unknown;
     try {
-      const obj = JSON.parse(s);
-      if (obj && typeof obj === 'object') {
-        const dsl = obj.dsl ?? obj.function ?? obj.f ?? null;
-        if (dsl !== null && dsl !== undefined) {
-          return typeof dsl === 'string' ? dsl : JSON.stringify(dsl);
-        }
-      }
+      obj = JSON.parse(s);
     } catch {
-      /* fallthrough */
+      return null; // 非法 JSON，或 JSON.parse 自身在超深载荷上抛 RangeError
     }
-    return null;
+    if (!obj || typeof obj !== 'object') return null;
+    const record = obj as Record<string, unknown>;
+    const dsl = record.dsl ?? record.function ?? record.f ?? null;
+    if (dsl === null || dsl === undefined) return null;
+    if (typeof dsl === 'string') return dsl;
+    try {
+      return JSON.stringify(dsl);
+    } catch {
+      sawDslUnserializable = true;
+      return null;
+    }
   };
 
   const whole = tryParse(text);
@@ -315,7 +342,12 @@ function parseAlgorithmOutput(raw: string): { dslText: string | null; error: str
     const parsed = tryParse(lines[i]);
     if (parsed) return { dslText: parsed, error: null };
   }
-  return { dslText: null, error: '算法输出缺少 dsl 字段或不是合法 JSON' };
+  return {
+    dslText: null,
+    error: sawDslUnserializable
+      ? '算法输出的 DSL 嵌套过深，无法序列化（超出深度上限）'
+      : '算法输出缺少 dsl 字段或不是合法 JSON',
+  };
 }
 
 export interface SpawnedRunner {
@@ -323,8 +355,15 @@ export interface SpawnedRunner {
   proc: ReturnType<typeof spawn>;
   sandbox: PreparedSandbox;
   ready: Promise<{ readyNs: bigint }>;
-  /** 写入 GO 并返回 release 时刻 */
-  release: (releaseNs: bigint) => void;
+  /**
+   * 写入 GO，返回**本队自己的**释放时刻（单调 ns）。
+   *
+   * 计时必须以本队 GO 的写入时刻为基准：宿主先写 A 的 GO、再写 B 的 GO，
+   * 两次写入之间有约 20µs 的交付延迟。若双方共用同一个 releaseNs，
+   * 后释放方就会被多计这段延迟（Re-Gate Cycle 1 P1-B）。
+   * 各自起算后，双方都拿到完整的 timeoutMs 预算，释放顺序不再产生偏置。
+   */
+  release: () => bigint;
   /** 等待结束 */
   done: Promise<RunnerOutcome>;
   cancel: () => void;
@@ -390,7 +429,15 @@ export function spawnRunner(opts: {
     };
     if (!readySettled) { readySettled = true; rejectReady(new Error(outcome.error!)); }
     resolveDone(outcome);
-    return { team, proc: undefined as any, sandbox, ready, release: () => {}, done, cancel: () => {} };
+    return {
+      team,
+      proc: undefined as any,
+      sandbox,
+      ready,
+      release: () => 0n,
+      done,
+      cancel: () => {},
+    };
   }
 
   let stdout = '';
@@ -556,10 +603,11 @@ export function spawnRunner(opts: {
     proc,
     sandbox,
     ready,
-    release: (rNs: bigint) => {
-      if (released) return;
+    release: (): bigint => {
+      if (released) return releaseNs ?? process.hrtime.bigint();
       released = true;
-      releaseNs = rNs;
+      // 本队自己的 GO 时刻 —— 计时基准（P1-B）
+      releaseNs = process.hrtime.bigint();
       try {
         proc.stdin?.write('GO\n');
         proc.stdin?.end();
@@ -577,6 +625,7 @@ export function spawnRunner(opts: {
           computeTimeMs: opts.timeoutMs,
         });
       }, opts.timeoutMs);
+      return releaseNs;
     },
     done,
     cancel: () => {
@@ -593,9 +642,12 @@ export function spawnRunner(opts: {
 /**
  * 同时运行双方算法。
  *
- * 公平性：两个进程都完成 READY 握手后，在同一个共享 release 时刻释放；
- * 双方 computeTimeMs 都相对同一个 releaseNs 计算，因此不存在
- * 「谁先被 spawn 谁吃亏」的系统性偏差（P1-10）。
+ * 公平性（P1-10 + Re-Gate Cycle 1 P1-B）：
+ *   两个进程都完成 READY 握手后，宿主先后写入 GO（约 20µs 交付延迟）。
+ *   **每方的 computeTimeMs 与超时预算都从它自己的 GO 时刻起算**，
+ *   因此双方拿到等长的计算预算，释放顺序不再产生方向固定的偏置。
+ *   早期版本让双方共用同一个 releaseNs，等于把「后写 GO 的那一方」的
+ *   交付延迟计进了它的耗时，恒对 B 不利。
  */
 export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   const timeoutMs = opts.timeoutMs ?? COMPUTE_TIMEOUT_MS;
@@ -663,13 +715,12 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     };
   }
 
-  // ---- 共享 release 时刻 ----
-  const releaseNs = process.hrtime.bigint();
-  const t0 = process.hrtime.bigint();
-  runnerA.release(releaseNs);
-  const t1 = process.hrtime.bigint();
-  runnerB.release(releaseNs);
-  const releaseSkewUs = Number(t1 - t0) / 1000;
+  // ---- 释放双方：各自记录自己的 GO 时刻（P1-B）----
+  const releaseNsA = runnerA.release();
+  const releaseNsB = runnerB.release();
+  const releaseNs = releaseNsA < releaseNsB ? releaseNsA : releaseNsB;
+  const releaseSkewUs =
+    Number(releaseNsA > releaseNsB ? releaseNsA - releaseNsB : releaseNsB - releaseNsA) / 1000;
 
   const [outcomeA, outcomeB] = await Promise.all([runnerA.done, runnerB.done]);
 
@@ -695,8 +746,13 @@ export function cleanupSandbox(dir: string): void {
     /* ignore */
   }
   try {
-    // 若同回合的两个沙箱都已删除，移除空目录
-    if (fs.existsSync(parent) && fs.readdirSync(parent).length === 0) fs.rmdirSync(parent);
+    // 若同回合的两个沙箱都已删除，移除空目录；
+    // 再向上移除空的 <matchId> 目录（Re-Gate Cycle 1 P3-D：此前会留下空壳）
+    if (fs.existsSync(parent) && fs.readdirSync(parent).length === 0) {
+      fs.rmdirSync(parent);
+      const grand = path.dirname(parent);
+      if (fs.existsSync(grand) && fs.readdirSync(grand).length === 0) fs.rmdirSync(grand);
+    }
   } catch {
     /* ignore */
   }

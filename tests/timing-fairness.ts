@@ -18,7 +18,13 @@ import { PLATFORM_ROOT } from '../src/core/Match';
 import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
 import { GeneratedMap, generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
-import { runDuel, RunnerOutcome } from '../src/runner/SandboxRunner';
+import {
+  cleanupSandbox,
+  prepareSandbox,
+  runDuel,
+  RunnerOutcome,
+  spawnRunner,
+} from '../src/runner/SandboxRunner';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const STARTER = path.join(__dirname, '..', 'starter');
@@ -274,34 +280,59 @@ test(`timing-fairness: 配对换序 ${ROUNDS_SWAP}×2 轮 —— 胜率无顺序
   );
 });
 
-test('timing-fairness: 双方 computeTimeMs 都相对同一个 release 时刻', async () => {
-  // 结构性断言：runDuel 返回的 releaseSkewUs 是两个 GO 写入之间的偏差，
-  // 若它远小于单次计算耗时，则说明计时基准是共享的（P1-10）。
-  const root = tmpDir('fairness-shared');
+test('timing-fairness: 每方 release() 记录自己的 GO 时刻（P1-B 回归）', async () => {
+  // 结构性断言：宿主先后写入两个 GO，每一方都必须以**自己**的 GO 时刻为计时基准。
+  // 早期实现把 min(releaseNs) 共享给双方，后释放的一方被多计了交付延迟。
+  // 这里故意在两次 release() 之间插入 40ms，断言两个时刻确实相差 40ms ——
+  // 若回归成共享时刻，差值会塌缩到 0。
+  const root = tmpDir('fairness-own-go');
   const sealedRoot = path.join(root, 'artifacts', 'sealed');
   const sandboxRoot = path.join(root, 'sandboxes');
-  const seal = sealPackage({ team: 'A', sourceDir: STARTER, sealRoot: sealedRoot, matchId: 'FAIR-SHARED' });
+  const seal = sealPackage({ team: 'A', sourceDir: STARTER, sealRoot: sealedRoot, matchId: 'FAIR-OWN-GO' });
   const map = generateMapOrNull({ seed: 424_242, pointCount: 8, difficulty: 'medium' });
   assert(map && seal.sealed, '前置条件应满足');
   const core = coreFor(map!);
 
-  const duel = await runDuel({
-    matchId: 'FAIR-SHARED',
-    roundNumber: 1,
-    sandboxRoot,
-    teamA: { packageDir: seal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'A') },
-    teamB: { packageDir: seal.sealed!.sealedDir, entry: 'solver.py', payloadJson: runnerPayloadJson(core, 'B') },
-    denyReadPaths: [sealedRoot, PLATFORM_ROOT],
-    timeoutMs: 3000,
-  });
-  assert(duel.a.success && duel.b.success, '双方应成功');
-  assert(duel.releaseSkewUs < 5000, `释放偏差 ${duel.releaseSkewUs.toFixed(1)}µs 应远小于计算耗时`);
-  assert(duel.readySkewMs >= 0, 'readySkewMs 应可测量');
-  assertEqual(
-    Math.abs(duel.a.computeTimeMs - duel.b.computeTimeMs) < 200,
-    true,
-    '同一算法的两侧耗时差应在 200ms 内'
-  );
+  const mkRunner = (team: 'A' | 'B') => {
+    const sandbox = prepareSandbox({
+      sandboxRoot,
+      matchId: 'FAIR-OWN-GO',
+      roundNumber: 1,
+      team,
+      packageDir: seal.sealed!.sealedDir,
+      entry: 'solver.py',
+      memoryLimitMb: 512,
+      denyReadPaths: [sealedRoot, PLATFORM_ROOT],
+    });
+    return spawnRunner({
+      team,
+      sandbox,
+      payloadJson: runnerPayloadJson(core, team),
+      timeoutMs: 5000,
+      memoryLimitMb: 512,
+    });
+  };
+
+  const runnerA = mkRunner('A');
+  const runnerB = mkRunner('B');
+  await Promise.all([runnerA.ready, runnerB.ready]);
+
+  const nsA = runnerA.release();
+  await new Promise((r) => setTimeout(r, 40));
+  const nsB = runnerB.release();
+
+  const gapMs = Number(nsB - nsA) / 1e6;
+  assert(gapMs >= 30, `两次 GO 的间隔应被如实记录，实际 ${gapMs.toFixed(1)}ms（疑似共享了同一个 release 时刻）`);
+  assert(gapMs < 400, `GO 间隔不应异常膨胀，实际 ${gapMs.toFixed(1)}ms`);
+  assert(runnerA.release() === nsA, 'release() 必须幂等：重复调用不得重置本方的计时基准');
+
+  const [outA, outB] = await Promise.all([runnerA.done, runnerB.done]);
+  assert(outA.success && outB.success, `双方应正常完成: ${outA.errorCode} / ${outB.errorCode}`);
+  // 各自起算后，双方耗时都应落在合理的量级内（不是被共享基准扭曲出来的负值/巨值）
+  assert(outA.computeTimeMs > 0 && outA.computeTimeMs < 5000, `A 耗时异常: ${outA.computeTimeMs}`);
+  assert(outB.computeTimeMs > 0 && outB.computeTimeMs < 5000, `B 耗时异常: ${outB.computeTimeMs}`);
+  cleanupSandbox(runnerA.sandbox.dir);
+  cleanupSandbox(runnerB.sandbox.dir);
 });
 
 void runAll('timing-fairness');

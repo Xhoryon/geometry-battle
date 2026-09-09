@@ -171,7 +171,7 @@ sys.stdout.write(json.dumps({"dsl": dsl, "cheat": report}) + "\\n")
     memoryLimitMb: 512,
   });
   await runner.ready;
-  runner.release(process.hrtime.bigint());
+  runner.release(); // P1-B：不再传入共享 releaseNs
   const outcome = await runner.done;
 
   const report = JSON.parse(outcome.stdout.trim()).cheat as Record<string, string>;
@@ -222,7 +222,7 @@ sys.stdout.write(json.dumps({"dsl": {"type": "number", "value": y0}, "env": env}
     memoryLimitMb: 512,
   });
   await runner.ready;
-  runner.release(process.hrtime.bigint());
+  runner.release(); // P1-B：不再传入共享 releaseNs
   const outcome = await runner.done;
 
   const env = JSON.parse(outcome.stdout.trim()).env as Record<string, string>;

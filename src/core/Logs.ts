@@ -44,7 +44,16 @@ export interface RoundLog {
   bErrorCode: string | null;
   aliveAAfter: number;
   aliveBAfter: number;
-  result: 'COMPLETE' | 'TIMEOUT_A' | 'TIMEOUT_B' | 'INVALID_A' | 'INVALID_B' | 'TECHNICAL_INVALID';
+  result:
+    | 'COMPLETE'
+    | 'TIMEOUT_A'
+    | 'TIMEOUT_B'
+    | 'INVALID_A'
+    | 'INVALID_B'
+    /** Shooter 被先手方击杀，本轮攻击被取消（Plan V1 §25）—— 与 INVALID 语义不同 */
+    | 'CANCELLED_A'
+    | 'CANCELLED_B'
+    | 'TECHNICAL_INVALID';
   firstSolver: 'A' | 'B' | 'tie' | 'none';
 }
 

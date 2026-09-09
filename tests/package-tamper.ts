@@ -8,11 +8,22 @@
  *       删文件）都必须被 verifySeal 检出，并让引擎在轮次开始前拒绝开赛。
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MatchEngine } from '../src/core/Match';
-import { SealedPackage, inspectPackage, sealPackage, verifySeal } from '../src/submission/Package';
+import {
+  PackageFile,
+  SealedPackage,
+  hashFileList,
+  inspectPackage,
+  sealPackage,
+  verifySeal,
+} from '../src/submission/Package';
 import { assert, assertEqual, assertRejects, runAll, test, tmpDir } from './harness';
+
+/** 字段分隔符：真正的 NUL（用 fromCharCode 构造，源码保持纯 ASCII） */
+const NUL = String.fromCharCode(0);
 
 const STARTER = path.join(__dirname, '..', 'starter');
 
@@ -38,6 +49,26 @@ function makeWritable(p: string): void {
     fs.chmodSync(p, 0o644);
   }
 }
+
+test('package-tamper: 哈希字段分隔符与源码可检索性（P3-B 回归）', () => {
+  // 1) 哈希必须用真正的 NUL 分隔字段 —— 用独立实现对照，
+  //    避免「实现与测试同源」导致的假阳性。
+  const files: PackageFile[] = [
+    { relPath: 'b.py', size: 2, sha256: 'bb' },
+    { relPath: 'a.py', size: 1, sha256: 'aa' },
+  ];
+  const expected = crypto
+    .createHash('sha256')
+    .update([`a.py${NUL}1${NUL}aa`, `b.py${NUL}2${NUL}bb`].join('\n'))
+    .digest('hex');
+  assertEqual(hashFileList(files), expected, '哈希必须与「按 relPath 排序 + NUL 分隔」一致');
+  assertEqual(hashFileList([...files].reverse()), expected, '哈希必须与文件顺序无关');
+
+  // 2) 源码不得含裸 NUL 字节 —— 否则 grep / diff / 审计工具会把整份文件判为二进制，
+  //    静态检索会静默漏掉这个文件（P3-B 的原始症状）。
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'submission', 'Package.ts'));
+  assert(!source.includes(0), 'Package.ts 不得包含裸 NUL 字节（会让 grep 判定为二进制）');
+});
 
 test('package-tamper: 密封副本是只读的', () => {
   const { sealed } = sealStarter('TAMPER-RO');

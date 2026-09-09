@@ -12,7 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PLATFORM_ROOT } from '../src/core/Match';
+import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
 import { RoundStateCore, runnerPayloadJson } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
@@ -230,6 +230,110 @@ test('runner-isolation: 密封包目录在 /Users 之外时同样不可读', asy
   assert(
     run.report.list_opponent_package.startsWith('blocked:PermissionError'),
     `对手密封包目录必须不可列举，实际 ${run.report.list_opponent_package}`
+  );
+});
+
+/**
+ * 生成一个「只做读取探测」的算法包：
+ *   - 全部目标读取都被拒（PermissionError）→ 输出合法 DSL，正常运行；
+ *   - 任一处读取成功 → 向 stderr 打出 LEAK:<名字> 并以非 0 退出。
+ * 因此「Preflight 通过」等价于「所有目标读取都被平台拒绝」。
+ */
+function writeProbePackage(dir: string, targets: Record<string, { path: string; kind: 'file' | 'dir' }>): void {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'manifest.json'),
+    JSON.stringify({ name: 'probe', version: '1.0.0', entry: 'solver.py', language: 'python' })
+  );
+  fs.writeFileSync(
+    path.join(dir, 'solver.py'),
+    `import json, os, sys
+payload = json.loads(sys.stdin.readline())
+team = payload["team_id"]
+y0 = payload["shooters"][team]["position"]["y"]
+TARGETS = ${JSON.stringify(targets)}
+
+for name, spec in TARGETS.items():
+    try:
+        if spec["kind"] == "dir":
+            os.listdir(spec["path"])
+        else:
+            with open(spec["path"], "r") as f:
+                f.read(64)
+    except PermissionError:
+        continue
+    except Exception as e:
+        sys.stderr.write("UNEXPECTED:" + name + ":" + type(e).__name__ + ":" + spec["path"] + "\\n")
+        sys.exit(1)
+    sys.stderr.write("LEAK:" + name + ":" + spec["path"] + "\\n")
+    sys.exit(1)
+
+dsl = {"type": "add", "args": [
+    {"type": "number", "value": y0},
+    {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},
+]}
+sys.stdout.write(json.dumps({"dsl": dsl}) + "\\n")
+`
+  );
+}
+
+async function preflightProbe(
+  matchId: string,
+  root: string,
+  targets: Record<string, { path: string; kind: 'file' | 'dir' }>
+) {
+  const artifactRoot = path.join(root, 'artifacts');
+  const sandboxRoot = path.join(root, 'sandboxes');
+  const srcA = path.join(root, 'probe-src');
+  const srcB = path.join(root, 'opp-src');
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  fs.mkdirSync(srcB, { recursive: true });
+  fs.cpSync(STARTER, srcB, { recursive: true });
+  writeProbePackage(srcA, targets);
+
+  const engine = new MatchEngine({
+    matchId,
+    seed: 20260909,
+    pointCount: 6,
+    difficulty: 'easy',
+    artifactRoot,
+    sandboxRoot,
+  });
+  assert(engine.upload('A', srcA).ok, 'A 上传应成功');
+  assert(engine.upload('B', srcB).ok, 'B 上传应成功');
+  const pre = await engine.preflight();
+  return { pre, artifactRoot, srcA, srcB, sealedDir: path.join(artifactRoot, 'sealed', matchId) };
+}
+
+test('runner-isolation: 官方 MatchEngine 路径下双方源包与产物目录不可读（P0-B 回归）', async () => {
+  const root = tmpDir('iso-engine');
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside, { recursive: true });
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'host-only');
+
+  const srcA = path.join(root, 'probe-src');
+  const srcB = path.join(root, 'opp-src');
+  const artifactRoot = path.join(root, 'artifacts');
+
+  const { pre } = await preflightProbe('ISO-ENGINE-BLOCK', root, {
+    own_source_dir: { path: srcA, kind: 'dir' },
+    opp_source_dir: { path: srcB, kind: 'dir' },
+    artifact_dir: { path: artifactRoot, kind: 'dir' },
+  });
+  assert(
+    pre.ok,
+    `官方路径必须拒绝算法读取双方源包与产物目录；Preflight 失败说明有读取未被阻止:\n${pre.errors.join('\n')}`
+  );
+
+  // 反向对照：把目标换成未被 deny 的目录时，探测包必须能读到并报 LEAK，
+  // 否则本用例只是「探测包根本没跑」的假阳性（也会抓出过宽的 deny）。
+  const { pre: leak } = await preflightProbe('ISO-ENGINE-LEAK', root, {
+    outside_dir: { path: outside, kind: 'dir' },
+  });
+  assert(!leak.ok, '对照用例：读取未被 deny 的目录必须被探测到（否则断言无效）');
+  assert(
+    leak.errors.some((e) => e.includes('LEAK:outside_dir')),
+    `对照用例应报出 LEAK:outside_dir，实际: ${leak.errors.join('; ')}`
   );
 });
 

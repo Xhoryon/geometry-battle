@@ -7,6 +7,9 @@
  *   P1-23 缺少正式的裁判 START ROUND 入口
  *   P2-3  观众屏与真实引擎状态脱节
  *
+ * Re-Gate Cycle 1 追加修复：
+ *   P1-A  产物只在整场结束后一次性落盘 → 开赛后、每回合后、异常退出前都落盘
+ *
  * 工作人员只用本入口即可完成一整场比赛：
  *   上传 → Preflight → 开始比赛 → 选择 Shooter → 锁定 →
  *   裁判 START ROUND → 结算 → 下一轮 → 胜者 → 落盘
@@ -105,6 +108,25 @@ function replayOnly(dir: string): void {
   console.log('\n（回放为只读记录，未重新运行任何算法）');
 }
 
+/**
+ * 落盘当前产物（Re-Gate Cycle 1 P1-A）。
+ *
+ * 早期版本只在整场比赛结束后调用一次 persistArtifacts，任何中止
+ * （算法导致的崩溃、操作员 Ctrl-C、进程被杀）都会丢掉全部日志 ——
+ * 而最需要日志的恰恰是异常场景。现在每个回合结束即落盘。
+ * 落盘失败不中断比赛（产物是审计证据，不是比赛流程的一环）。
+ */
+function persistNow(engine: MatchEngine): void {
+  try {
+    persistArtifacts(engine.getArtifactDir(), engine.getArtifacts());
+  } catch (e) {
+    console.error(`  ⚠ 产物落盘失败（比赛继续）: ${(e as Error).message}`);
+  }
+}
+
+/** 供顶层 catch 使用的引擎引用：异常退出前也要把已有产物落盘 */
+let activeEngine: MatchEngine | null = null;
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
 
@@ -125,6 +147,7 @@ async function main(): Promise<void> {
     timeoutMs: opts.timeout,
   });
   const engine: MatchEngine = setup.getEngine();
+  activeEngine = engine;
   const audience = new AudienceScreenUI(engine);
   const judge = new JudgeControllerUI(engine);
   const controllers = {
@@ -153,6 +176,7 @@ async function main(): Promise<void> {
     const started = setup.startMatch();
     if (!started.success) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
     console.log(setup.renderStatusTable());
+    persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）
 
     while (engine.getWinner() === null) {
       console.log('\n' + audience.renderSnapshotBoard(engine.getSnapshot()));
@@ -187,10 +211,11 @@ async function main(): Promise<void> {
       console.log(`  B: ${result.shooterB}  t=${result.computeTimeMs.B?.toFixed(3) ?? '-'}ms  命中=[${result.hits.B.join(',')}]`);
       console.log(`  击杀: [${result.killed.join(',')}]  取消: A=${result.cancelled.A} B=${result.cancelled.B}`);
       console.log(`  存活: A=${result.aliveAfter.A}  B=${result.aliveAfter.B}`);
+      persistNow(engine); // 每回合落盘（P1-A）
     }
 
     const dir = engine.getArtifactDir();
-    persistArtifacts(dir, engine.getArtifacts());
+    persistNow(engine);
     const summary = audience.getResultSummary();
 
     console.log('\n═══════════════════════════════════════════════════');
@@ -206,5 +231,7 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   console.error(`\n操作台错误: ${(e as Error).message}`);
+  // 异常退出前也必须留下已有产物（P1-A）
+  if (activeEngine) persistNow(activeEngine);
   process.exit(1);
 });

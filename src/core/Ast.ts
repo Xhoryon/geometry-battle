@@ -122,6 +122,21 @@ function readType(node: Record<string, unknown>): string | null {
 }
 
 function parseNode(raw: unknown, issues: AstIssue[], depth: number): CanonicalNode | null {
+  // 深度守卫必须发生在递归**之前**（P0-A / Re-Gate Cycle 1）。
+  //
+  // 原实现把 MAX_DEPTH 检查放在 analyzeComplexity(ast) 之后 —— 那时递归下降
+  // 已经把整棵树建好，一个 6000 层的 `neg` 链（约 120 KB，远低于 stdout 上限）
+  // 会先把 V8 调用栈打爆，抛出的 RangeError 逃出 parseCanonicalDSL，
+  // 让整个操作台进程崩溃、整场比赛无法完成、产物为零。
+  // 在这里提前拒绝，递归深度被硬性限制在 MAX_DEPTH+1 帧以内。
+  if (depth > LIMITS.MAX_DEPTH) {
+    issues.push({
+      code: 'DEPTH_LIMIT',
+      message: `AST 深度超过限制 ${LIMITS.MAX_DEPTH}（在第 ${depth} 层拒绝，未展开）`,
+    });
+    return null;
+  }
+
   if (!isPlainObject(raw)) {
     issues.push({ code: 'NOT_AN_OBJECT', message: 'AST 节点必须是对象' });
     return null;
@@ -193,8 +208,25 @@ function parseNode(raw: unknown, issues: AstIssue[], depth: number): CanonicalNo
 
 /**
  * 解析并结构校验 DSL。数值/连续/凸性校验见 Validator.ts。
+ *
+ * 本函数是「绝不抛出」的边界（P0-A）：调用方（Preflight / runRound /
+ * onFirstResult / 回放）都不带 try/catch，任何逃逸的异常都会中止整场比赛
+ * 并丢掉全部产物。因此这里把一切未预期异常收敛成 PARSE_ERROR。
  */
 export function parseCanonicalDSL(input: string | unknown): ParseResult {
+  try {
+    return parseCanonicalDSLInner(input);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return {
+      ok: false,
+      ast: null,
+      issues: [{ code: 'PARSE_ERROR', message: `AST 解析异常（已收敛，不中断比赛）: ${msg}` }],
+    };
+  }
+}
+
+function parseCanonicalDSLInner(input: string | unknown): ParseResult {
   const issues: AstIssue[] = [];
   let raw: unknown;
 

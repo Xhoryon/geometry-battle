@@ -132,4 +132,46 @@ test('dsl-contract: 官方 Starter 输出的是合法 DSL（P0-3 回归）', asy
   assertClose(evaluateNode(r.ast!, -12), 3, 1e-9, 'Starter 函数必须经过自己的 Shooter');
 });
 
+test('dsl-contract: 超深嵌套必须被干净拒绝，绝不抛异常（P0-A 回归）', () => {
+  // 约 144 KB / 6000 层合法 JSON：远低于 256 KB stdout 上限。
+  // 早期实现把深度检查放在 analyzeComplexity(ast) 之后，递归下降会先把
+  // V8 调用栈打爆，RangeError 逃出 parseCanonicalDSL → 整个操作台崩溃。
+  const N = 6000;
+  const deep = '{"type":"neg","args":['.repeat(N) + '{"type":"number","value":1}' + ']}'.repeat(N);
+  assert(deep.length < 256 * 1024, `用例前提：载荷应低于 stdout 上限，实际 ${deep.length} 字节`);
+
+  let result: ReturnType<typeof parseCanonicalDSL>;
+  try {
+    result = parseCanonicalDSL(deep);
+  } catch (e) {
+    throw new Error(`解析不得抛出异常（P0-A）: ${(e as Error).message}`);
+  }
+  assert(!result.ok, '超深 AST 必须被拒绝');
+  assert(
+    result.issues.some((i) => i.code === 'DEPTH_LIMIT'),
+    `应报 DEPTH_LIMIT，实际 ${result.issues.map((i) => i.code).join(',') || '(无 issue)'}`
+  );
+
+  // 极端情况：20 万层嵌套的 JSON 也必须被收敛（JSON.parse 自身可能抛 RangeError）
+  const huge = '['.repeat(200_000) + ']'.repeat(200_000);
+  try {
+    const r2 = parseCanonicalDSL(huge);
+    assert(!r2.ok, '超长 JSON 必须被拒绝');
+  } catch (e) {
+    throw new Error(`超长 JSON 不得抛出异常（P0-A）: ${(e as Error).message}`);
+  }
+
+  // 上限之内的深度必须仍然通过（守卫不能误伤合法输入）
+  const chain = (n: number) =>
+    '{"type":"neg","args":['.repeat(n) + '{"type":"number","value":1}' + ']}'.repeat(n);
+  assert(
+    parseCanonicalDSL(chain(LIMITS.MAX_DEPTH - 1)).ok,
+    `深度 ${LIMITS.MAX_DEPTH} 的树必须被接受`
+  );
+  assert(
+    !parseCanonicalDSL(chain(LIMITS.MAX_DEPTH)).ok,
+    `深度 ${LIMITS.MAX_DEPTH + 1} 的树必须被拒绝`
+  );
+});
+
 void runAll('dsl-contract');

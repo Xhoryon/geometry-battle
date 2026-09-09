@@ -11,7 +11,7 @@
 import { spawnSync } from 'child_process';
 import * as path from 'path';
 
-/** 16 个必需套件（顺序按「规范 → 判定 → 流程 → 隔离 → 公平 → 可审计」排列） */
+/** 必需套件（顺序按「规范 → 判定 → 流程 → 隔离 → 公平 → 可审计」排列） */
 const SUITES = [
   'dsl-contract',
   'convexity-aliasing',
@@ -28,6 +28,7 @@ const SUITES = [
   'package-tamper',
   'timeout-boundary',
   'process-tree-cleanup',
+  'hostile-input',
   'timing-fairness',
   'replay',
 ];

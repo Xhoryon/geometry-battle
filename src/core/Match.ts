@@ -15,6 +15,11 @@
  *   P1-24 比赛结束前可能显示错误的获胜者
  *   P1-25 finishRound() 没有阶段守卫
  *   P2-19 死点仍可被选为 Shooter
+ *
+ * Re-Gate Cycle 1 追加修复：
+ *   P0-B  沙箱 denyReadPaths 未覆盖双方源包目录与 artifactRoot
+ *   P2-A  取消语义未独立编码（被取消的回合被记为 INVALID_*）
+ *   P2-B  射击循环内的 Shooter 存活守卫位于击杀应用之前，恒不可达
  */
 
 import * as path from 'path';
@@ -226,7 +231,7 @@ export class MatchEngine {
       sandboxRoot: this.sandboxRoot,
       teamA: { packageDir: a.sealedDir, entry: a.entry, payloadJson: runnerPayloadJson(core, 'A') },
       teamB: { packageDir: b.sealedDir, entry: b.entry, payloadJson: runnerPayloadJson(core, 'B') },
-      denyReadPaths: [this.sealedRoot, PLATFORM_ROOT],
+      denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
     });
@@ -395,7 +400,7 @@ export class MatchEngine {
         entry: this.packages.B.entry,
         payloadJson: runnerPayloadJson(core, 'B'),
       },
-      denyReadPaths: [this.sealedRoot, PLATFORM_ROOT],
+      denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
       onFirstResult: (team, outcome) => {
@@ -468,34 +473,21 @@ export class MatchEngine {
       order = ['B'];
     }
 
-    // 按顺序结算攻击（第二发只在 Shooter 仍存活时生效）
-    const shots: Record<'A' | 'B', ShotOutcome | null> = { A: null, B: null };
-    const killedSet = new Set<string>();
+    // 按顺序结算攻击（纯函数，见 resolveOrderedShots）
     const simultaneous = firstSolver === 'tie';
+    // 必须在结算**之前**取快照：resolveOrderedShots 会就地修改 alive 标记
     const snapshot = this.points.filter((p) => p.alive);
-
-    for (const team of order) {
-      const ast = team === 'A' ? finalA : finalB;
-      if (!ast) continue;
-      const shooter = this.shooters[team]!;
-      if (!simultaneous && !shooter.alive) {
-        cancelled[team] = true;
-        this.audit.log('ShotCancelled', { reason: 'shooter already dead', round }, team);
-        continue;
-      }
-      const enemies = (simultaneous ? snapshot : this.points.filter((p) => p.alive))
-        .filter((p) => p.team !== team)
-        .map((p) => ({ id: p.id, position: p.position }));
-      const outcome = judgeShot(ast, shooter.position, team, enemies, this.map.obstacles);
-      shots[team] = outcome;
-      for (const id of outcome.killed) killedSet.add(id);
-    }
-
-    // 应用击杀
-    for (const id of killedSet) {
-      const p = this.points.find((x) => x.id === id);
-      if (p) p.alive = false;
-    }
+    const { shots, killed } = resolveOrderedShots({
+      order,
+      simultaneous,
+      points: this.points,
+      shooters: { A: shooterA, B: shooterB },
+      ast: { A: finalA, B: finalB },
+      obstacles: this.map.obstacles,
+      cancelled,
+      onCancelled: (team, reason) => this.audit.log('ShotCancelled', { reason, round }, team),
+    });
+    const killedSet = new Set(killed);
 
     // 阶段推进（无解时走 noSolution，不伪造 FIRST_SOLUTION）
     if (finalA || finalB) {
@@ -516,6 +508,10 @@ export class MatchEngine {
 
     const aKills = shots.A ? shots.A.killed.filter((id) => id.startsWith('B')).length : 0;
     const bKills = shots.B ? shots.B.killed.filter((id) => id.startsWith('A')).length : 0;
+
+    // 取消是独立语义，不能与「算法非法」共用同一个 result 码（P2-A）
+    const cancelledA = cancelled.A || outcomeA.errorCode === 'CANCELLED';
+    const cancelledB = cancelled.B || outcomeB.errorCode === 'CANCELLED';
 
     const log: RoundLog = {
       round,
@@ -538,13 +534,13 @@ export class MatchEngine {
       bKills,
       aBlocked: Boolean(shots.A?.blocked),
       bBlocked: Boolean(shots.B?.blocked),
-      cancelledA: cancelled.A || outcomeA.errorCode === 'CANCELLED',
-      cancelledB: cancelled.B || outcomeB.errorCode === 'CANCELLED',
+      cancelledA,
+      cancelledB,
       aErrorCode: outcomeA.errorCode,
       bErrorCode: outcomeB.errorCode,
       aliveAAfter: aliveAfter.A,
       aliveBAfter: aliveAfter.B,
-      result: deriveRoundResult(outcomeA, outcomeB, finalA, finalB),
+      result: deriveRoundResult(outcomeA, outcomeB, finalA, finalB, cancelledA, cancelledB),
       firstSolver,
     };
 
@@ -708,6 +704,25 @@ export class MatchEngine {
   // 内部
   // ========================================================================
 
+  /**
+   * 沙箱必须拒绝读取的路径集合（P0-7 / Re-Gate Cycle 1 P0-B）。
+   *
+   * 早期版本只拒绝 `[sealedRoot, PLATFORM_ROOT]`，于是当双方源包位于
+   * sealedRoot 之外（正是 CLI 的常规用法 `--a <dir> --b <dir>`）时，
+   * 算法进程可以直接读取**对手的源码**；`artifactRoot` 换目录时，
+   * **上一场比赛的密封包与 match.json** 也可读。
+   * 现在把双方源包目录与整个 artifactRoot 一并拒绝。
+   * （`/private/tmp`、`/private/var/tmp` 由 SandboxRunner 无条件拒绝。）
+   */
+  private sandboxDenyReadPaths(): string[] {
+    const paths = [this.sealedRoot, this.artifactRoot, PLATFORM_ROOT];
+    for (const team of ['A', 'B'] as const) {
+      const pkg = this.packages[team];
+      if (pkg) paths.push(pkg.sourceDir);
+    }
+    return paths;
+  }
+
   private aliveEnemies(team: 'A' | 'B'): { id: string; position: Point }[] {
     return this.points
       .filter((p) => p.alive && p.team !== team)
@@ -801,16 +816,92 @@ function extractDsl(outcome: RunnerOutcome): string | null {
   return null;
 }
 
+/**
+ * 回合结果码。
+ *
+ * 取消优先（Re-Gate Cycle 1 P2-A）：Shooter 被先手方击杀导致攻击被取消，
+ * 与「算法输出非法」是完全不同的原因，必须有独立的 result 码 ——
+ * 否则计分、复盘、审计都会把「被取消」误读成「算法非法」。
+ */
 function deriveRoundResult(
   a: RunnerOutcome,
   b: RunnerOutcome,
   finalA: CanonicalNode | null,
-  finalB: CanonicalNode | null
+  finalB: CanonicalNode | null,
+  cancelledA: boolean,
+  cancelledB: boolean
 ): RoundLog['result'] {
+  if (cancelledA !== cancelledB) return cancelledA ? 'CANCELLED_A' : 'CANCELLED_B';
   if (finalA && finalB) return 'COMPLETE';
   if (!finalA && !finalB) return 'TECHNICAL_INVALID';
   if (!finalA) return a.errorCode === 'TIMEOUT' ? 'TIMEOUT_A' : 'INVALID_A';
   return b.errorCode === 'TIMEOUT' ? 'TIMEOUT_B' : 'INVALID_B';
+}
+
+export interface OrderedShotInput {
+  /** 射击顺序；并列先手时仍是 ['A','B']，但 simultaneous=true */
+  order: ('A' | 'B')[];
+  /** 并列先手：双方同时开火，都基于开战前快照，击杀在双方都结算后统一应用 */
+  simultaneous: boolean;
+  /** 会被就地修改 alive 标记 */
+  points: PointState[];
+  shooters: { A: PointState; B: PointState };
+  ast: { A: CanonicalNode | null; B: CanonicalNode | null };
+  obstacles: Obstacle[];
+  /** 被取消的队伍会被置为 true */
+  cancelled: { A: boolean; B: boolean };
+  onCancelled?: (team: 'A' | 'B', reason: string) => void;
+}
+
+export interface OrderedShotResult {
+  shots: Record<'A' | 'B', ShotOutcome | null>;
+  killed: string[];
+}
+
+/**
+ * 按先手顺序结算攻击（Plan V1 §23-§25）。
+ *
+ * 语义要点（Re-Gate Cycle 1 P2-B）：
+ *   - 非并列时严格串行：**先手方的击杀立即生效**，因此后手方的
+ *     `shooter.alive` 守卫是可达的。早期实现把守卫放在循环内、
+ *     把击杀应用放在循环之后，守卫恒为真，取消只能靠进程 kill。
+ *   - 并列先手时双方同时开火：都基于同一个开战前快照，
+ *     击杀在双方都结算完之后统一应用。
+ */
+export function resolveOrderedShots(input: OrderedShotInput): OrderedShotResult {
+  const { order, simultaneous, points, shooters, ast, obstacles, cancelled } = input;
+  const shots: Record<'A' | 'B', ShotOutcome | null> = { A: null, B: null };
+  const killedSet = new Set<string>();
+  const snapshot = points.filter((p) => p.alive);
+
+  const markDead = (ids: Iterable<string>): void => {
+    for (const id of ids) {
+      const p = points.find((x) => x.id === id);
+      if (p) p.alive = false;
+    }
+  };
+
+  for (const team of order) {
+    const fn = ast[team];
+    if (!fn) continue;
+    const shooter = shooters[team];
+    if (!shooter.alive) {
+      // 后手方 Shooter 已被先手方击杀 —— 攻击取消
+      cancelled[team] = true;
+      input.onCancelled?.(team, 'shooter eliminated before its shot');
+      continue;
+    }
+    const enemies = (simultaneous ? snapshot : points.filter((p) => p.alive))
+      .filter((p) => p.team !== team)
+      .map((p) => ({ id: p.id, position: p.position }));
+    const outcome = judgeShot(fn, shooter.position, team, enemies, obstacles);
+    shots[team] = outcome;
+    for (const id of outcome.killed) killedSet.add(id);
+    if (!simultaneous) markDead(outcome.killed);
+  }
+
+  if (simultaneous) markDead(killedSet);
+  return { shots, killed: [...killedSet] };
 }
 
 export function generateMatchId(): string {
