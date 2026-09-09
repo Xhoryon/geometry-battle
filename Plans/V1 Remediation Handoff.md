@@ -1,7 +1,12 @@
 # V1 Remediation Handoff
 
-**结论（仅此一句，不得外推）：REMEDIATION COMPLETE / READY FOR INDEPENDENT RE-GATE**
+**最终状态（Cycle 3 审计后，3 轮上限已用尽）：V1 REMAINS NOT COMPETITION READY**
 
+> Cycle 3 独立审计判定 **CONDITIONAL PASS**：实现层全部独立核验通过，
+> 但存在 4 条**纯文档失实**（E-1…E-4），按判据构成阻塞项。
+> 3 个 remediation/re-gate cycle 已用尽 → 流程在此终止。
+> 详见第 10 节与 [`Plans/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md)。
+>
 > 本文档由 DEVELOPMENT / REMEDIATION AGENT 编写。
 > 它不是审计结论。`PASS` / `COMPETITION READY` / `v1.0.0-competition` 只能由独立 Audit Agent 给出。
 > 独立审计必须自行设计探针、主动尝试推翻本文档中的每一条成功声明。
@@ -593,3 +598,49 @@ Cycle 3 修复提交与冻结提交之间**只差文档**：`git diff --stat 196
 
 `git status --short` 为空即视为冻结成立。审计 Agent 应以 **Freeze HEAD** 为唯一审计对象，
 并在开始前自行执行 `git status --short` 确认工作区未被改动。
+
+---
+
+## 10. 终局状态（Cycle 3 审计后 —— 流程终止）
+
+**流程在此终止。最终状态：`V1 REMAINS NOT COMPETITION READY`。**
+
+### 10.1 判定
+
+| 项目 | 值 |
+|---|---|
+| 审计对象 | 冻结树 `18c0562`（branch `main`，工作区 clean） |
+| Cycle 3 独立审计判定 | **CONDITIONAL PASS** |
+| 报告 | [`Plans/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md) |
+| 已用轮次 | 3 / 3（上限用尽） |
+
+审计的独立复核结论（非本文档自述）：
+
+- **实现层全部通过**：16 个点名套件存在且通过（18/18）、无测试后门、关键断言突变承重成立、
+  D-1 / D-2 / D-3 均已修复、作弊矩阵 **16/16 BLOCKED**、压力 **300,000 张 / 0 非法**、
+  正式 E2E 全链路（含停机重启回放）通过、计时公平性成立；
+- **不存在**影响竞赛完整性的可利用隔离 / 判定 / 计时 / 作弊漏洞、崩溃、数据丢失或可伪造结果。
+
+### 10.2 阻塞项（4 条，全部为纯文档失实，无代码缺陷）
+
+| 编号 | 阻塞项 | 解除条件 |
+|---|---|---|
+| **E-1** | §6 / §7 的公平性放大命令用了不存在的环境变量名 `ROUNDS_ORDER` / `ROUNDS_SWAP`，按文档执行会**静默按默认 300/150 轮运行** | 改为 `GB_FAIRNESS_ROUNDS` / `GB_FAIRNESS_SWAP_ROUNDS`（可选 `GB_FAIRNESS_MIN`） |
+| **E-2** | §2 Cycle 3 表 D-1 行称两个修复组件"突变任一处，用例即失败"；实测**仅**突变 `selfPaths` 时 `runner-isolation` 仍 6/6 通过（真正承重的是 `SYSTEM_DENIES` 短路） | 改写承重声明，或补一条只针对 `selfPaths` 的断言 |
+| **E-3** | §2 / §4 的 P3-14 行称"数值 oracle（30 AST × 13 点 × 390 次比对）已入常驻回归"；`tests/` 中不存在该 oracle（属 Plan 1 审计探针 `x19.ts`，不在仓库） | 把 oracle 落为常驻用例，或改为"未入常驻回归" |
+| **E-4** | `README.md` 第 130 / 198 行称计时"从共享 GO 时刻起算"，与实现及 §2 P1-10 / P1-19 直接矛盾 | 改为"每方以自己 `release()` 返回的 GO 时刻起算" |
+
+另有一条非阻塞项 **O-1（P3）**：§2 P2-15 行"83 事件"与 §3"84 事件"自相矛盾（陈旧数字）。
+
+### 10.3 本轮终止后**未**做的事（如实声明）
+
+- 上述 E-1…E-4 **未修复**。它们全部是文档更正、不涉及代码，但**流程上限已用尽**，
+  且按用户约束「只有独立 Audit Agent 才能宣布通过」，开发 Agent 不得在无审计的情况下
+  自行改文档并宣称阻塞解除 —— 那正是「修完 → 手工看一次 → 认为完成」被禁止的模式。
+- **未**启动第 4 轮审计（超出 3 轮上限）。
+- **未**打 tag `v1.0.0-competition`（只有 `PASS — COMPETITION READY` 才允许）。
+
+### 10.4 若后续被授权继续
+
+解除条件已在 §10.2 逐条给出，全部为文档更正，无需改动生产代码。
+完成后需要**新一轮独立审计**（新 Agent、自行设计探针）才能重新判定。
