@@ -2,7 +2,7 @@
 
 - 审计角色：独立审计代理（对抗性；**未编写本仓库任何一行代码**）
 - 审计日期：2026-09-09
-- 审计对象：`Plans/V1 Remediation Handoff.md` 的全部成功声明
+- 审计对象：`Plans/Output/V1 Remediation Handoff.md` 的全部成功声明
 - 仓库：`/Users/jiayihuang/Downloads/几何斗殴/`
 - 判定标准：**主动尝试推翻每一条声明**；只有全部尝试失败且无 P0/P1 才写 PASS。
 
@@ -37,7 +37,7 @@
 基线冻结成立，审计在冻结基线上进行。
 
 **审计纪律声明**：本次审计**未修改任何生产代码、测试、配置、脚本**。
-唯一的仓库内写入是本报告 `Plans/Re-Gate Cycle 2 Result.md`。
+唯一的仓库内写入是本报告 `Plans/Output/Re-Gate Cycle 2 Result.md`。
 所有探针脚本位于 `/tmp/gb-audit2/`。突变实验在 `/tmp/gb-audit2/mutant`（rsync 副本 + 软链
 `node_modules`）中进行，不触碰原仓库。
 

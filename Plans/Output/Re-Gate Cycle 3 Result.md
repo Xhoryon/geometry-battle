@@ -31,7 +31,7 @@ be3c4a5 docs: V1 Remediation Handoff (freeze baseline for independent re-gate)
 
 ## 2. 审计方法与自设计探针清单
 
-**原则**：`Plans/V1 Remediation Handoff.md` 是被推翻的对象，不是证据。Cycles 1/2 均在其中发现失实陈述，
+**原则**：`Plans/Output/V1 Remediation Handoff.md` 是被推翻的对象，不是证据。Cycles 1/2 均在其中发现失实陈述，
 故本轮对**每一条**成功声明重新独立验证，不抽样、不引用仓库自带测试作为结论依据
 （自带测试只作为"被审计对象"，另行做承重与突变验证）。
 
@@ -359,7 +359,7 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 | §6 | 300 轮 + 150 对；`aFasterRate≈0.5`；压力 300k/0；"可用 `ROUNDS_ORDER`/`ROUNDS_SWAP` 放大" | 数值属实；**环境变量名失实**（见 E-1） | 部分失实 |
 | §7 | 18/18 套件；套件-文件映射；"放大命令 `ROUNDS_ORDER=1000 ROUNDS_SWAP=500 …`" | 18/18 属实、映射属实；**命令无效**（见 E-1） | 部分失实 |
 | §8 | 8 条已知限制 | 逐条核验属实（`668/790` 回合为对方包的历史记录，未能逐位复现，但僵局现象已独立复现） | 属实 |
-| §9 | `git diff --stat 19602b4..HEAD` 只有 2 个文件 | 实测 `Plans/Re-Gate Cycle 2 Result.md` + `Plans/V1 Remediation Handoff.md`，共 2 files changed | 属实 |
+| §9 | `git diff --stat 19602b4..HEAD` 只有 2 个文件 | 实测 `Plans/Output/Re-Gate Cycle 2 Result.md` + `Plans/Output/V1 Remediation Handoff.md`，共 2 files changed | 属实 |
 
 ### 3.10 声明限制的评估（可接受边界 vs 阻塞）
 
@@ -380,7 +380,7 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 | **H-1** | §6 第 399 行、§7 第 519 行 | 可用 `ROUNDS_ORDER` / `ROUNDS_SWAP` 环境变量放大；`ROUNDS_ORDER=1000 ROUNDS_SWAP=500 npx ts-node tests/timing-fairness.ts` | 套件只读 `GB_FAIRNESS_ROUNDS` / `GB_FAIRNESS_SWAP_ROUNDS` / `GB_FAIRNESS_MIN`；`ROUNDS_ORDER`/`ROUNDS_SWAP` 被完全忽略 | 见下方 E-1 | **阻塞（E-1）** |
 | **H-2** | §2 Cycle 3 表 D-1 行（第 193 行） | "①…②…**二者均为承重点：突变任一处，D-1 回归用例即失败**" | 只突变 ①（`selfPaths` 加回 `sandboxRoot`、保留短路）时 `runner-isolation` **6/6 通过** | 见下方 E-2 | **阻塞（E-2）** |
 | **H-3** | §2 P3-14 行（第 165 行）、§4 P3-14 行（第 315 行） | "数值 oracle（30 AST × 13 点 × 390 次比对）**已入常驻回归**"，回归测试列 `dsl-contract` | `tests/` 中不存在该 oracle：全仓无 `390`/`oracle` 字样，`evaluateNode` 在测试中仅 3 处单点断言；390/390 oracle 属 Plan 1 审计探针 `x19.ts`（不在仓库） | 见下方 E-3 | **阻塞（E-3）** |
-| **H-4** | §2 P2-15 行（第 135 行） | "83 事件覆盖全流程" | 同一文档 §3 记 84 事件（8 轮）；本轮 6 轮对局为 61 事件。83 为陈旧数字 | `grep -n "83 事件\|84 事件" "Plans/V1 Remediation Handoff.md"` | 非阻塞（O-1） |
+| **H-4** | §2 P2-15 行（第 135 行） | "83 事件覆盖全流程" | 同一文档 §3 记 84 事件（8 轮）；本轮 6 轮对局为 61 事件。83 为陈旧数字 | `grep -n "83 事件\|84 事件" "Plans/Output/V1 Remediation Handoff.md"` | 非阻塞（O-1） |
 | **H-5** | `README.md` 第 130、198 行（非 Handoff，但属"既有文档"） | "单次计算超时 2000 ms（**从共享 GO 时刻起算**）"、"由宿主写入同一个 GO 时刻；**两侧计时相对同一时刻起算**" | 实现为每方以自己 `release()` 返回的 GO 时刻起算（`SandboxRunner.ts` 每 runner 独立 `releaseNs`；`releaseSkewUs` 仅为诊断量） | 见下方 E-4 | **阻塞（E-4）** |
 
 > 说明：H-1…H-3、H-5 均为"纯文档失实"，不改变代码行为，但会误导复现者/审计者与赛事操作员，
@@ -461,7 +461,7 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 
 - **实际输出**：`grep` 无任何命中；`evaluateNode` 在测试中仅出现于 `dsl-contract.ts`
   的 `x=3 / x=5 / x=-12` 三处点值断言。390/390 oracle 实为 Plan 1 审计探针
-  `Plans/Plan 1 Gate 工作日志.md` 中的 `x19.ts`（不在仓库、非常驻回归）。
+  `Plans/Output/Plan 1 Gate 工作日志.md` 中的 `x19.ts`（不在仓库、非常驻回归）。
 - **为何影响审计可信度**：把一次性审计探针声称为"常驻回归"，直接虚增了 P3-14 的覆盖度，
   使"数值正确性已纳入持续回归"这一结论不成立。
 - **建议解除条件**：要么把数值 oracle 真正落为 `tests/` 下的常驻用例（≥30 AST × ≥13 点与
@@ -538,7 +538,7 @@ $ npx ts-node -O '{"module":"commonjs"}' /tmp/gb-audit3/probes/timing_probe.ts
 **声明**：本次审计**未修改**仓库内任何生产代码、测试、构建脚本或既有文档。
 突变验证全部在逐字节相同的 `/tmp/gb-audit3/mut` 副本上进行（副本经 `diff -rq` 与仓库比对，
 唯一差异为 `.DS_Store`），因此**不存在需要 `git checkout --` 还原的仓库改动**。
-本文件 `Plans/Re-Gate Cycle 3 Result.md` 是唯一写入仓库的文件（审计报告本身）。
+本文件 `Plans/Output/Re-Gate Cycle 3 Result.md` 是唯一写入仓库的文件（审计报告本身）。
 
 **证据**：
 
@@ -555,3 +555,6 @@ Only in /Users/jiayihuang/Downloads/几何斗殴: .DS_Store
 $ git status --short
 ?? "Plans/Re-Gate Cycle 3 Result.md"      ← 仅审计报告本身（git 因路径含空格加引号）
 ```
+
+> 注：以上 `text` 块是**审计当时的终端输出原样记录**，其中的路径按当时结构（`Plans/` 直属）保留，
+> 不作改写。本文件现位于 `Plans/Output/`；其余正文中的路径引用已随目录重组更新。

@@ -5,7 +5,7 @@
 > Cycle 3 独立审计判定 **CONDITIONAL PASS**：实现层全部独立核验通过，
 > 但存在 4 条**纯文档失实**（E-1…E-4），按判据构成阻塞项。
 > 3 个 remediation/re-gate cycle 已用尽 → 流程在此终止。
-> 详见第 10 节与 [`Plans/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md)。
+> 详见第 10 节与 [`Plans/Output/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md)。
 >
 > 本文档由 DEVELOPMENT / REMEDIATION AGENT 编写。
 > 它不是审计结论。`PASS` / `COMPETITION READY` / `v1.0.0-competition` 只能由独立 Audit Agent 给出。
@@ -17,8 +17,8 @@
 
 | 项目 | 值 |
 |------|-----|
-| 上一正式基线 | [`Plans/Re-Gate Cycle 2 Result.md`](Re-Gate%20Cycle%202%20Result.md) → **FAIL** |
-| 更早基线 | [`Plans/Re-Gate Cycle 1 Result.md`](Re-Gate%20Cycle%201%20Result.md) → **FAIL**；[`Plans/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
+| 上一正式基线 | [`Plans/Output/Re-Gate Cycle 2 Result.md`](Re-Gate%20Cycle%202%20Result.md) → **FAIL** |
+| 更早基线 | [`Plans/Output/Re-Gate Cycle 1 Result.md`](Re-Gate%20Cycle%201%20Result.md) → **FAIL**；[`Plans/Output/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
 | 起点提交 | `9a3e5b9` *baseline: pre-remediation snapshot (Plan 1 Gate FAIL)* |
 | Cycle 1 修复提交 | `0db2dbe09d16e386ddcdc81ca518461d6e25bc74` |
 | Cycle 2 修复提交 | `5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21` |
@@ -27,7 +27,7 @@
 | 工作区状态 | 由 `git status --short` 验证为 **clean** |
 | 运行时 | Node v22 / TypeScript 5 / Python 3.9.6 / macOS Darwin 25.5.0 arm64 |
 
-> **本轮（Cycle 3）修复的是 `Plans/Re-Gate Cycle 2 Result.md` 判定的 FAIL。**
+> **本轮（Cycle 3）修复的是 `Plans/Output/Re-Gate Cycle 2 Result.md` 判定的 FAIL。**
 > Cycle 1 修复的 39 条 Finding 见第 2 节；Cycle 1 / Cycle 2 审计新发现的阻塞项
 > 分别见第 2 节末尾的「Cycle 2 修复矩阵」与「Cycle 3 修复矩阵」。
 >
@@ -169,7 +169,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P3-13 弱 LCG | 换成 `mulberry32`（确定性不变，分布改善） | `map-fairness` | FIXED |
 | P3-14 未覆盖领域 | 部分补测（数值 oracle 已入常驻回归）；其余见第 4 节 | `dsl-contract` | PARTIAL |
 
-### Cycle 2 — 针对 `Plans/Re-Gate Cycle 1 Result.md`（判定 FAIL）的修复矩阵
+### Cycle 2 — 针对 `Plans/Output/Re-Gate Cycle 1 Result.md`（判定 FAIL）的修复矩阵
 
 Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。**每一条 FIXED 都有常驻回归测试**，
 审计方可用同样探针复测。
@@ -182,12 +182,12 @@ Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。
 | **P1-B** 后释放方被多计交付延迟 | 双方共用 `min(releaseNs)` 作为计时基准 | `src/runner/SandboxRunner.ts` | 每方以**自己** `release()` 返回的 GO 时刻起算；`releaseSkewUs` 降级为诊断量 | `timing-fairness`（新增「两次 GO 间隔 40ms 被如实记录 + `release()` 幂等」结构性用例） | FIXED |
 | **P2-A** 攻击被取消记为 `INVALID` | 取消与非法共用同一结果码 | `src/core/Logs.ts`, `src/core/Match.ts` | 独立结果码 `CANCELLED_A` / `CANCELLED_B` + 独立 `cancelledA/cancelledB` 字段 | `shooter-cancel`（「取消独立编码」用例） | FIXED |
 | **P2-B** 取消守卫是死代码（后手仍开火） | 守卫置于结算循环内、`markDead` 置于循环之后，条件恒真 | `src/core/Match.ts` | 先解方结算 → `markDead` → 后手方按存活状态判定是否开火；并列先手基于同一快照同时开火 | `shooter-cancel`（「守卫可达」+「并列同时开火」两个用例，含反面对照组） | FIXED |
-| **P3-A** Handoff 自身 7 条失实 | 文档声明与实现脱节 | `Plans/V1 Remediation Handoff.md`, `src/submission/Package.ts` 注释 | 逐条更正：§4 僵局段（有限声明）、§5 表格（4096 字节截断 / 对手源包与 artifactRoot）、§6（`releaseSkewUs` 语义 / `aFasterRate` 自相矛盾）、§8 #2/#4（计时基准 / 每回合落盘）、`Package.ts` 注释（源包密封后不复验、无告警） | 本表即更正清单；`package-tamper` 固化 NUL 分隔符 | FIXED |
+| **P3-A** Handoff 自身 7 条失实 | 文档声明与实现脱节 | `Plans/Output/V1 Remediation Handoff.md`, `src/submission/Package.ts` 注释 | 逐条更正：§4 僵局段（有限声明）、§5 表格（4096 字节截断 / 对手源包与 artifactRoot）、§6（`releaseSkewUs` 语义 / `aFasterRate` 自相矛盾）、§8 #2/#4（计时基准 / 每回合落盘）、`Package.ts` 注释（源包密封后不复验、无告警） | 本表即更正清单；`package-tamper` 固化 NUL 分隔符 | FIXED |
 | **P3-B** `Package.ts` 含 2 个裸 NUL 字节 | 源码里直接写入 `\0`，`grep` 判为二进制而静默跳过 | `src/submission/Package.ts`, `tests/package-tamper.ts` | 运行期用 `String.fromCharCode(0)` 构造分隔符，源码保持纯 ASCII；新增断言「`Package.ts` 不含裸 NUL」 | `package-tamper`（「哈希字段分隔符与源码可检索性」用例） | FIXED |
 | **P3-D** 沙箱根遗留空目录 | `cleanupSandbox` 只删回合目录 | `src/runner/SandboxRunner.ts` | 同时移除 `<matchId>` 目录，保留 `sandboxRoot` 本身；回合后 `readdirSync(sandboxRoot)` 为空 | `cross-round-cheat` | FIXED |
 | **P3-C** `obstacleInField` 拒绝率高（hard 60.92%） | 障碍取心范围与「完全落在场内」约束冲突，靠整种子重采样 | `src/map/MapGenerator.ts` | **未修**：无正确性影响（300k 张 0 违规，74k 张/s），属实现冗余；按用户约束 P3 不阻碍 V1 | 300k 压力（0 invalid） | DEFERRED (P3) |
 
-### Cycle 3 — 针对 `Plans/Re-Gate Cycle 2 Result.md`（判定 FAIL）的修复矩阵
+### Cycle 3 — 针对 `Plans/Output/Re-Gate Cycle 2 Result.md`（判定 FAIL）的修复矩阵
 
 Cycle 2 独立审计判 **FAIL**：解除条件 (a)(b)(c)(d) 全部达成，其余核验项全部通过，
 阻塞项仅 **D-1**（P1），另有 **D-2 / D-3** 两条 P3。下表逐条对应，每条都有常驻回归测试，
@@ -487,24 +487,24 @@ RESULT: PASS — generator 输出 0 张非法地图
 
 | 要求的测试名 | 文件 |
 |---|---|
-| `official-starter` | [tests/official-starter.ts](../tests/official-starter.ts) |
-| `dual-shooter-selection` | [tests/dual-shooter-selection.ts](../tests/dual-shooter-selection.ts) |
-| `dsl-contract` | [tests/dsl-contract.ts](../tests/dsl-contract.ts) |
-| `alive-kill` | [tests/alive-kill.ts](../tests/alive-kill.ts) |
-| `obstacle-block` | [tests/obstacle-block.ts](../tests/obstacle-block.ts) |
-| `shooter-cancel` | [tests/shooter-cancel.ts](../tests/shooter-cancel.ts) |
-| `cross-round-cheat` | [tests/cross-round-cheat.ts](../tests/cross-round-cheat.ts) |
-| `runner-isolation` | [tests/runner-isolation.ts](../tests/runner-isolation.ts) |
-| `package-tamper` | [tests/package-tamper.ts](../tests/package-tamper.ts) |
-| `timeout-boundary` | [tests/timeout-boundary.ts](../tests/timeout-boundary.ts) |
-| `process-tree-cleanup` | [tests/process-tree-cleanup.ts](../tests/process-tree-cleanup.ts) |
-| `roundstate-equality` | [tests/roundstate-equality.ts](../tests/roundstate-equality.ts) |
-| `timing-fairness` | [tests/timing-fairness.ts](../tests/timing-fairness.ts) |
-| `convexity-aliasing` | [tests/convexity-aliasing.ts](../tests/convexity-aliasing.ts) |
-| `full-match-e2e` | [tests/full-match-e2e.ts](../tests/full-match-e2e.ts) |
-| `replay` | [tests/replay.ts](../tests/replay.ts) |
-| （额外）`map-fairness` | [tests/map-fairness.ts](../tests/map-fairness.ts) |
-| （额外）`hostile-input` | [tests/hostile-input.ts](../tests/hostile-input.ts) |
+| `official-starter` | [tests/official-starter.ts](../../tests/official-starter.ts) |
+| `dual-shooter-selection` | [tests/dual-shooter-selection.ts](../../tests/dual-shooter-selection.ts) |
+| `dsl-contract` | [tests/dsl-contract.ts](../../tests/dsl-contract.ts) |
+| `alive-kill` | [tests/alive-kill.ts](../../tests/alive-kill.ts) |
+| `obstacle-block` | [tests/obstacle-block.ts](../../tests/obstacle-block.ts) |
+| `shooter-cancel` | [tests/shooter-cancel.ts](../../tests/shooter-cancel.ts) |
+| `cross-round-cheat` | [tests/cross-round-cheat.ts](../../tests/cross-round-cheat.ts) |
+| `runner-isolation` | [tests/runner-isolation.ts](../../tests/runner-isolation.ts) |
+| `package-tamper` | [tests/package-tamper.ts](../../tests/package-tamper.ts) |
+| `timeout-boundary` | [tests/timeout-boundary.ts](../../tests/timeout-boundary.ts) |
+| `process-tree-cleanup` | [tests/process-tree-cleanup.ts](../../tests/process-tree-cleanup.ts) |
+| `roundstate-equality` | [tests/roundstate-equality.ts](../../tests/roundstate-equality.ts) |
+| `timing-fairness` | [tests/timing-fairness.ts](../../tests/timing-fairness.ts) |
+| `convexity-aliasing` | [tests/convexity-aliasing.ts](../../tests/convexity-aliasing.ts) |
+| `full-match-e2e` | [tests/full-match-e2e.ts](../../tests/full-match-e2e.ts) |
+| `replay` | [tests/replay.ts](../../tests/replay.ts) |
+| （额外）`map-fairness` | [tests/map-fairness.ts](../../tests/map-fairness.ts) |
+| （额外）`hostile-input` | [tests/hostile-input.ts](../../tests/hostile-input.ts) |
 
 `hostile-input` 是 Cycle 2 为 P0-A 新增的套件（用户点名的 16 个套件之外），
 覆盖超深 AST、巨型嵌套 JSON、诊断归因与中止前落盘；Cycle 3 追加 D-2 / D-3 用例后为 6 tests。
@@ -588,15 +588,29 @@ Baseline:       9a3e5b9  baseline: pre-remediation snapshot (Plan 1 Gate FAIL)
 Cycle 1 fix:    0db2dbe09d16e386ddcdc81ca518461d6e25bc74
 Cycle 2 fix:    5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21
 Cycle 3 fix:    19602b4  remediation(cycle 3): fix Re-Gate Cycle 2 FAIL (D-1 P1, D-2/D-3 P3)
-Freeze HEAD:    本文档所在提交（唯一改动就是本文档，故用 git log -1 读取即可）
+审计对象:       18c0562  ← Cycle 3 独立审计实际审计的冻结树
+终局记录:       a312180  ← 审计报告 + 终局状态（仅文档）
+目录重组:       60f920e  ← Plans/ 拆分为 Input/ 与 Output/（纯 git mv）
+                + 紧随其后的路径引用更新提交（仅文档路径文本）
 Working tree:   clean
 ```
 
-Cycle 3 修复提交与冻结提交之间**只差文档**：`git diff --stat 19602b4..HEAD` 应当只有
+Cycle 3 修复提交与**审计对象**之间只差文档：`git diff --stat 19602b4..18c0562` 只有
 `Plans/V1 Remediation Handoff.md` 与 `Plans/Re-Gate Cycle 2 Result.md`（上一轮审计报告，
-作为本轮基线的引用对象）两个文件。
+作为本轮基线的引用对象）两个文件 —— 与 Cycle 3 审计报告的实测一致。
+（这两个文件现已随目录重组移至 `Plans/Output/` 下，文件名不变；上句中的路径是
+**该 diff 发生时**的路径。）
 
-`git status --short` 为空即视为冻结成立。审计 Agent 应以 **Freeze HEAD** 为唯一审计对象，
+**`18c0562` 之后的所有提交均未改动任何生产代码**（`a312180` 终局记录、`60f920e` 目录重组
+及其后的路径引用更新，全部只涉及 `Plans/` 下的文档）。可用以下命令自证：
+
+```bash
+git diff --stat 18c0562..HEAD -- src tests starter package.json tsconfig.json   # 应为空
+```
+
+因此 Cycle 3 审计的结论对当前 HEAD 依然适用。
+
+`git status --short` 为空即视为冻结成立。后续审计应以**当前 HEAD** 为对象，
 并在开始前自行执行 `git status --short` 确认工作区未被改动。
 
 ---
@@ -611,7 +625,7 @@ Cycle 3 修复提交与冻结提交之间**只差文档**：`git diff --stat 196
 |---|---|
 | 审计对象 | 冻结树 `18c0562`（branch `main`，工作区 clean） |
 | Cycle 3 独立审计判定 | **CONDITIONAL PASS** |
-| 报告 | [`Plans/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md) |
+| 报告 | [`Plans/Output/Re-Gate Cycle 3 Result.md`](Re-Gate%20Cycle%203%20Result.md) |
 | 已用轮次 | 3 / 3（上限用尽） |
 
 审计的独立复核结论（非本文档自述）：
@@ -644,3 +658,20 @@ Cycle 3 修复提交与冻结提交之间**只差文档**：`git diff --stat 196
 
 解除条件已在 §10.2 逐条给出，全部为文档更正，无需改动生产代码。
 完成后需要**新一轮独立审计**（新 Agent、自行设计探针）才能重新判定。
+
+### 10.5 终局后的目录重组（与判定无关）
+
+流程终止后，按用户要求把 `Plans/` 拆分为两个子目录：
+
+```text
+Plans/Input/    ← 人输入的 Plan、规范与任务书
+Plans/Output/   ← Agent 产出的报告、工作日志与交接文档（含本文档）
+```
+
+- 移动由 `git mv` 完成（`60f920e`），**文件内容除路径引用外未作改动**；
+- 本文档与其余文档中的路径引用已随之更新；
+- 历史审计报告中**终端输出转录块保持原样**（记录的是当时的真实输出）；
+- 全仓 `grep` 确认：**没有任何代码、测试或构建配置**引用 `Plans/` 下的文件。
+- 目录与映射说明见 [`Plans/README.md`](../README.md)。
+
+该重组**不改变** §10.1 的判定，也**不解除** E-1…E-4。

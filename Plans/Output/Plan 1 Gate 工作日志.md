@@ -1,7 +1,7 @@
 # Plan 1 Gate — 工作日志
 
-> 本轮任务：依据 `Plans/Gate Plan1.md` 对 Geometry Battle V1 做只读竞赛就绪度复审。
-> 本文件记录**过程**与**证据留存方式**；结论见 `Plans/Plan 1 Gate Result.md`。
+> 本轮任务：依据 `Plans/Input/Gate Plan1.md` 对 Geometry Battle V1 做只读竞赛就绪度复审。
+> 本文件记录**过程**与**证据留存方式**；结论见 `Plans/Output/Plan 1 Gate Result.md`。
 
 ---
 
@@ -36,7 +36,7 @@
 采用「内联侦察 + 两阶段多智能体编排 + 独立复核」的混合方式，**所有结论以实际执行证据为准**，不以代码阅读推断代替运行验证。
 
 ### 阶段 A — 内联侦察
-列出仓库结构、读取 `Plans/Gate Plan1.md`（1198 行，32 节）、提取 `Plan V1.rtf` 的规则文本（经 `textutil` 转换），确定 24 行 Gate Matrix 与 32 节要求的对应关系。
+列出仓库结构、读取 `Plans/Input/Gate Plan1.md`（1198 行，32 节）、提取 `Plan V1.rtf` 的规则文本（经 `textutil` 转换），确定 24 行 Gate Matrix 与 32 节要求的对应关系。
 
 ### 阶段 B — 14 维度并行审计（工作流 #1）
 - 运行 ID：`wf_5afc43b9-7c9`
@@ -245,8 +245,8 @@ seed=1248124864, pointCount=6, difficulty=easy
 
 ```text
 保留：
-  Plans/Plan 1 Gate Result.md     ← 最终审计报告
-  Plans/Plan 1 Gate 工作日志.md    ← 本文件
+  Plans/Output/Plan 1 Gate Result.md     ← 最终审计报告
+  Plans/Output/Plan 1 Gate 工作日志.md    ← 本文件
 
 删除：
   _gate-audit/                     （前一个 agent 的 35 个文件 / 164K）
@@ -258,7 +258,7 @@ seed=1248124864, pointCount=6, difficulty=easy
   所有探针留下的孤儿进程（经查已无）
 
 清理后校验：
-  Plans/ 仅新增 Plan 1 Gate Result.md 与 Plan 1 Gate 工作日志.md
+  Plans/Output/ 仅新增 Plan 1 Gate Result.md 与 Plan 1 Gate 工作日志.md
   find src -type f -not -name "*.ts" → 空
   ps aux | grep solver.py|xcheck|crossround → 空
 ```
@@ -267,13 +267,13 @@ seed=1248124864, pointCount=6, difficulty=easy
 
 ### 7.4 未修改声明
 
-本轮全程未执行任何写入生产代码的操作。清理前后 `src/`、`dist/`、`package.json`、`tsconfig.json`、`README.md`、`starter/`、`Plans/Gate Plan1.md`、`Plans/Plan 2 — V1 Completion Plan.md`、`Plans/Plan V1.rtf` 的内容与修改时间均未变化。
+本轮全程未执行任何写入生产代码的操作。清理前后 `src/`、`dist/`、`package.json`、`tsconfig.json`、`README.md`、`starter/`、`Plans/Input/Gate Plan1.md`、`Plans/Input/Plan 2 — V1 Completion Plan.md`、`Plans/Input/Plan V1.rtf` 的内容与修改时间均未变化。
 
 ---
 
 ## 8. 结论
 
-**FAIL**（依据与完整证据见 `Plans/Plan 1 Gate Result.md`）。
+**FAIL**（依据与完整证据见 `Plans/Output/Plan 1 Gate Result.md`）。
 
 24 项 Gate 中：22 FAIL、1 CONDITIONAL PASS（Simultaneous Start）、1 PASS（Complexity）。
 （Map Generator 原判 PASS，经 C14 反驳复核后改为 FAIL，见第 6.1 节。）

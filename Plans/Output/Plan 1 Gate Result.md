@@ -1,6 +1,6 @@
 # Geometry Battle V1 Final Re-Gate
 
-> 本报告依据 `Plans/Gate Plan1.md` 第 31 节规定的格式撰写。
+> 本报告依据 `Plans/Input/Gate Plan1.md` 第 31 节规定的格式撰写。
 > 本轮为 **READ-ONLY AUDIT**：未修改任何生产代码、规则或配置。所有结论均以实际执行证据为准。
 
 ---
@@ -71,7 +71,7 @@ Runtime:       macOS 26.5.1 (Darwin 25.5.0) arm64，Node v22.23.2，ts-node v10.
 > **证据类型说明**：P0/P1 与 P2 的绝大多数条目基于**实际运行**（探针脚本或端到端驱动）；少数条目（如 Audience UI / Animation 的「不存在」判定、Clean Restart 的「无落盘/无加载器」）基于**全仓符号检索的否定性证据**，已在条目中如实标注。P1-7 / P1-15 / P1-21 涉及未被实例化的死代码（`RoundStateMachine`、`Competition`），属防御纵深风险而非官方路径缺陷，保留原编号但在此说明。
 >
 > 原始 105 条发现按主题合并为下列条目；每条末尾的括号内为原始 Finding ID，便于追溯。
-> 完整原始证据（含每个维度的复现命令与输出）见工作日志 `Plans/Plan 1 Gate 工作日志.md`。
+> 完整原始证据（含每个维度的复现命令与输出）见工作日志 `Plans/Output/Plan 1 Gate 工作日志.md`。
 
 ### P0 — Blocker
 

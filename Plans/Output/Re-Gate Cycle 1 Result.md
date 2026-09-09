@@ -2,7 +2,7 @@
 
 审计 Agent：独立审计（与修复编写者无共享上下文）
 审计日期：2026-09-09
-审计对象文档：`Plans/V1 Remediation Handoff.md`（**被审计对象，非事实来源**）
+审计对象文档：`Plans/Output/V1 Remediation Handoff.md`（**被审计对象，非事实来源**）
 
 ---
 
@@ -17,7 +17,7 @@
 | HEAD（结束） | `be3c4a5f61656a7a5d2756da35fbd27ecaa925f0` |
 | `git status --short`（结束） | 空（clean） |
 | 只读承诺 | 未修改任何被 git 跟踪的文件；未 commit/checkout/reset；全部探针在 `/tmp/gb-audit/` 下 |
-| 交叉验证 | `git diff --stat 0db2dbe..HEAD` = 仅 `Plans/V1 Remediation Handoff.md`（469 行）—— 冻结声明属实 |
+| 交叉验证 | `git diff --stat 0db2dbe..HEAD` = 仅 `Plans/Output/V1 Remediation Handoff.md`（469 行）—— 冻结声明属实 |
 
 `Package.ts` 含 2 个裸 NUL 字节（偏移 2854/2864），故 grep 视其为二进制文件；审计期间所有源码结论均以字节级读取为准。
 

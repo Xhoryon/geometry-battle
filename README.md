@@ -184,7 +184,9 @@ npm run stress
 │   └── visualizer/    # 函数与轨迹可视化
 ├── starter/           # 官方 Starter Algorithm
 ├── tests/             # 回归测试套件 + 算法 fixture
-└── Plans/             # 设计文档与 Gate 记录
+└── Plans/
+    ├── Input/         # 人输入的 Plan、规范与任务书
+    └── Output/        # 审计报告、工作日志与交接文档
 ```
 
 ---
