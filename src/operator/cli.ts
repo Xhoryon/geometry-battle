@@ -170,8 +170,9 @@ async function main(): Promise<void> {
     console.log(`  A hash: ${upA.hash}`);
     console.log(`  B hash: ${upB.hash}`);
 
-    console.log('\n═══ 2. Preflight（真实沙箱内跑一次算法）═══');
+    console.log('\n═══ 2. Preflight（decoy 世界 —— 与比赛种子无关，不泄漏本轮任何信息）═══');
     const pre = await setup.preflight();
+    console.log(`  decoy seed: ${pre.detail.decoySeed}   比赛 seed: ${opts.seed}`);
     console.log(`  ${pre.success ? '✓ PASSED' : '✕ FAILED'}`);
     if (!pre.success) throw new Error(`Preflight 失败: ${pre.errors.join('; ')}`);
 

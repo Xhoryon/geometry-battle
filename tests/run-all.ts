@@ -25,6 +25,7 @@ const SUITES = [
   'input-protocol',
   'stage-gating',
   'pre-start-execution',
+  'preflight-decoy',
   'full-match-e2e',
   'runner-isolation',
   'cross-round-cheat',

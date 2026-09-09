@@ -36,6 +36,7 @@ import {
   PublicStatePoint,
   buildPublicState,
   buildRevealState,
+  derivePreflightSeed,
   roundStateHash,
 } from './InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from './Rules';
@@ -249,11 +250,16 @@ export class MatchEngine {
     this.phase = 'PREFLIGHT';
     const errors: string[] = [];
 
-    const sampleMap = generateMapOrNull({ seed: this.seed, pointCount: this.pointCount, difficulty: this.difficulty });
-    if (!sampleMap) {
+    // decoy 世界（规范 §14/§15）：preflight 是参赛代码真正会跑的一个窗口，
+    // 因此它绝不能拿比赛种子生成地图 —— 否则算法可以在 START 之前
+    // 通过自己的运行环境反推出本轮障碍物。这里用与比赛无关的派生种子，
+    // 且保证 decoy 种子（含地图生成器的实际用种）与比赛种子不同。
+    const decoy = this.decoyMap();
+    if (!decoy) {
       this.phase = 'UPLOAD_B';
       return { ok: false, errors: ['无法生成 Preflight 地图'], detail: {} };
     }
+    const sampleMap = decoy.map;
     // preflight 同样走两阶段协议 —— 既是冒烟测试，也是新契约的端到端自检
     const input = this.buildRunnerInput({
       matchId: `${this.matchId}-preflight`,
@@ -275,7 +281,12 @@ export class MatchEngine {
       memoryLimitMb: this.memoryLimitMb,
     });
 
-    const detail: Record<string, unknown> = {};
+    const detail: Record<string, unknown> = {
+      decoySeed: decoy.requestedSeed,
+      decoyMapSeed: sampleMap.seed,
+      decoyMapHash: sampleMap.stateHash,
+      matchSeed: this.seed,
+    };
     for (const [team, outcome] of [['A', duel.a], ['B', duel.b]] as const) {
       // 每支队伍必须按自己的 Shooter 点校验 —— 用错点会误判 NOT_THROUGH_SHOOTER
       const shooterPos = team === 'A' ? sampleMap.teamA[0] : sampleMap.teamB[0];
@@ -292,7 +303,15 @@ export class MatchEngine {
     }
 
     this.preflightDone = errors.length === 0;
-    this.audit.log('Preflight', { ok: errors.length === 0, errors });
+    // 审计证据：decoy 种子与实际比赛种子不同（规范 §14/§15）
+    this.audit.log('Preflight', {
+      ok: errors.length === 0,
+      errors,
+      decoySeed: decoy.requestedSeed,
+      decoyMapSeed: sampleMap.seed,
+      decoyMapHash: sampleMap.stateHash,
+      matchSeed: this.seed,
+    });
     this.phase = 'UPLOAD_B';
     return { ok: errors.length === 0, errors, detail };
   }
@@ -921,6 +940,28 @@ export class MatchEngine {
       y: p.position.y,
       alive: p.alive,
     }));
+  }
+
+  /**
+   * Preflight 的 decoy 世界（规范 §14/§15）。
+   *
+   * 种子由 `matchId` 派生（`derivePreflightSeed`），与操作员 `--seed` 无关。
+   * 地图生成器为合法性可能微调种子，因此对**实际用种**也做撞车检查：
+   * decoy 与比赛世界必须落在不同的种子上，否则 preflight 就变成本轮障碍物的预览。
+   */
+  private decoyMap(): { map: GeneratedMap; requestedSeed: number } | null {
+    const gen = (seed: number) => generateMapOrNull({ seed, pointCount: this.pointCount, difficulty: this.difficulty });
+    // 比赛世界的实际种子（startMatch 用同一份确定性生成，结果必然一致）
+    const matchSeed = gen(this.seed)?.seed ?? this.seed;
+
+    let seed = derivePreflightSeed(this.matchId);
+    for (let attempt = 0; attempt < 8; attempt++, seed += 1) {
+      if (seed === matchSeed) continue;
+      const map = gen(seed);
+      if (!map || map.seed === matchSeed) continue;
+      return { map, requestedSeed: seed };
+    }
+    return null;
   }
 
   /**
