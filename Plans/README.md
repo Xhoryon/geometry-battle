@@ -9,7 +9,8 @@ Plans/
 │   ├── Plan 2 — V1 Completion Plan.md   # 阶段计划
 │   ├── Gate Plan1.md                    # Plan 1 Gate 的审核任务书（只读审计要求）
 │   ├── Geometry Battle V1 — Documentation Closure & Final Freeze Re-Gate.md  # Closure Round 任务书
-│   └── V1.1 — Algorithm Input Protocol.md  # V1.1 两阶段输入协议规范（28 节）
+│   ├── V1.1 — Algorithm Input Protocol.md  # V1.1 两阶段输入协议规范（28 节）
+│   └── V1.1 — Algorithm Slot, Startup & JSON IPC Protocol.md  # V1.1 槽位/启动/IPC 规范（42 节）
 └── Output/    # Agent 产出的报告、工作日志与交接文档
     ├── Plan 1 Gate Result.md            # Plan 1 Gate 审计报告（FAIL）
     ├── Plan 1 Gate 工作日志.md           # Plan 1 Gate 工作日志
@@ -18,7 +19,8 @@ Plans/
     ├── Re-Gate Cycle 3 Result.md        # 第 3 轮独立再审计（CONDITIONAL PASS）
     ├── V1 Documentation Closure Handoff.md  # Closure Round 交接（E-1～E-4 修正记录）
     ├── V1 Remediation Handoff.md        # 开发/修复交接文档（含终局状态 §10）
-    └── V1.1 Implementation Handoff.md   # V1.1 协议实现交接（分支 feature/v1.1-ui-protocol）
+    ├── V1.1 Implementation Handoff.md   # V1.1 协议实现交接（分支 feature/v1.1-ui-protocol）
+    └── V1.1 Slot & IPC Implementation Handoff.md  # V1.1 槽位/固定 Runtime/IPC 实现交接
 ```
 
 ## 当前结论
@@ -42,6 +44,22 @@ V1.0 冻结（tag `v1.0.0-competition` → `26d7970`）之后，按人输入的
 **V1.0 tag 未被触碰**；判定语义（DSL / AST / 命中 / 碰撞 / 先手）未改动，
 `timing-fairness` 的计时断言一条未改。实现细节、逐套件回归判定与验证记录见
 [Output/V1.1 Implementation Handoff.md](Output/V1.1%20Implementation%20Handoff.md)。
+
+### V1.1 第二份规范（同日）
+
+[`Input/V1.1 — Algorithm Slot, Startup & JSON IPC Protocol.md`](Input/V1.1%20%E2%80%94%20Algorithm%20Slot%2C%20Startup%20%26%20JSON%20IPC%20Protocol.md)
+（42 节）在同一分支上继续落地：固定算法槽位 `algorithms/team-a|team-b`、
+入口冻结为 `solver.py`、非破坏性上传流水线、固定 Runtime 清单与线程钉死、
+以及 `output/result.json` 的严格 IPC 契约。
+
+**V1.0 tag 仍未被触碰**。规范 §42 的十项冻结面逐条落地并各有回归；
+新增套件 `result-ipc`（9 例）与 `algorithm-slot`（8 例）。见
+[Output/V1.1 Slot & IPC Implementation Handoff.md](Output/V1.1%20Slot%20%26%20IPC%20Implementation%20Handoff.md)。
+
+> 施工事故与修正：`tests/hostile-input.ts` 的 CLI 冒烟用例原先没传 `--slots`，
+> 于是 CLI 默认的槽位根目录（仓库内 `algorithms/`）被安装流水线真的写入，
+> 两个测试包（含恶意载荷）一度被提交进槽位。已从历史中移除（`7fcb7f0` → `a81ea7f`），
+> 槽位恢复为 `starter/solver.py` 的逐字节副本，测试改为显式传 `--slots <tmp>`。
 
 ## 重组说明（2026-09-09）
 

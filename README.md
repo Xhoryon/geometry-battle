@@ -6,26 +6,38 @@
 
 ## 概述
 
-双方队伍各提交一个算法包。每个回合，平台分两阶段向双方注入**逐字节相同**的输入文件
+双方队伍各提交一个算法包，装进两个**固定槽位** `algorithms/team-a` 与 `algorithms/team-b`。
+每个回合，平台分两阶段向双方注入**逐字节相同**的输入文件
 （`public_state.json` → `reveal_state.json`），双方算法各自输出一条函数曲线 `y = f(x)`；
 曲线从自己的 Shooter 出发，在射程内**严格经过对方点**即构成击杀。
 
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
-**START 之前，参赛代码一行都不会运行** —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
+**START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
+stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
 
 ---
 
 ## 快速开始
 
-### 1. 算法包结构
+### 1. 算法包结构（固定槽位 + 固定入口）
+
+算法包投放进两个**永久存在**的槽位：
 
 ```
-my-team/
-├── manifest.json      # 必须
-└── solver.py          # entry 指向的入口文件
+algorithms/
+├── team-a/            → Team A Algorithm Slot
+│   └── solver.py      # 唯一正式入口（必须存在）
+└── team-b/            → Team B Algorithm Slot
+    └── solver.py
 ```
 
-**manifest.json：**
+- **入口被冻结为包根目录的 `solver.py`**：`main.py` / `run.py` / `my_solver.py`
+  都不再被接受，平台**不读取** `manifest.entry` 来决定执行什么。
+- 允许携带自己的内部模块与子目录（`optimizer.py`、`utils/`…）。
+- `manifest.json` 现在是**可选**元数据（名称 / 版本 / 语言）。若写了 `entry`，
+  只允许写 `solver.py`，写成别的会被明确拒绝（不静默忽略）。
+
+**manifest.json（可选）：**
 
 ```json
 {
@@ -44,26 +56,51 @@ my-team/
 | 文件数 | ≤ 256 |
 | 允许的扩展名 | `.py` `.json` `.txt` `.md` `.csv` `.yaml` `.yml` |
 | 符号链接 | 不允许 |
-| entry | 必须是包内存在的 `.py` 文件 |
+| 入口 | **固定为包根目录的 `solver.py`** |
+
+**上传与替换（非破坏性）：**
+
+```
+Upload → staging → validate → preflight → hash → seal → replace
+```
+
+赛事方**不会**把压缩包直接解压到槽位。任何一步失败（结构非法、跑不起来、
+输出不合法），现有槽位**一个字节都不会变**，坏包只停留在 `algorithms/.staging/`。
+槽位元数据（安装时间、包哈希、preflight 结论）写在 `algorithms/.slots/`，
+它**不属于算法包**，不进包哈希、也不会被复制进沙箱。
 
 ### 2. 算法协议（两阶段输入文件 + argv）
 
-平台不再把状态写进 stdin。每个回合，宿主以如下 argv 启动算法进程：
+平台不再把状态写进 stdin。每个回合，宿主以如下 argv 启动算法进程（**四个参数固定**）：
 
 ```
-python solver.py --team A \
+python3 solver.py --team A \
   --public  <sandbox>/input/public_state.json \
-  --reveal  <sandbox>/input/reveal_state.json
+  --reveal  <sandbox>/input/reveal_state.json \
+  --output  <sandbox>/output/result.json
 ```
 
 **队别只经 `--team A|B` 传递**；两份 JSON 对 A、B **逐字节相同**，双方可各自 `sha256` 复核。
-算法在 stdout 输出**一行 JSON**：
+除 `--team` 的取值外，文件名、参数顺序、Runtime、输入输出格式对双方完全一致。
+
+算法把结果**只写进 `--output` 指定的文件**：
 
 ```json
-{"dsl": {"type": "...", "args": [...]}}
+{"schema_version": "1.1", "dsl": {"type": "add", "args": [...]}}
 ```
 
-`dsl` 可以是 AST 对象，也可以是 AST 的 JSON 字符串。多输出的一律以最后一次可解析的 JSON 为准。
+`dsl` 可以是 AST 对象，也可以是 AST 的 JSON 字符串。结果文件的约束：
+
+| 约束 | 说明 |
+|------|------|
+| 只允许两个键 | `schema_version`（必须是 `"1.1"`）与 `dsl`；`hits` / `winner` / `computeTime` 之类一律非法 |
+| 原子写 | 先写 `result.json.tmp`，`flush` + `fsync` 后原子 `rename` 成 `result.json` |
+| deadline | 2000 ms 内形成完整合法文件 → 接收；否则 TIMEOUT |
+| ONE OUTPUT ONLY | 每回合只接收一次结果，不能重新提交 |
+| stdout | **不是**结果通道，仅被捕获/限长/留档 |
+| stderr | 允许有限 debug log，有大小限制，不参与判定 |
+
+SDK 模板见 [`starter/solver.py`](starter/solver.py)（含 `emit()` 原子写实现）。
 
 **输入分两次交付（V1.1 两阶段协议）：**
 
@@ -109,12 +146,13 @@ START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → �
 **最小可运行示例（官方 starter 的简化版）：**
 
 ```python
-import argparse, hashlib, json
+import argparse, hashlib, json, os
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--team", required=True, choices=["A", "B"])
 ap.add_argument("--public", required=True)
 ap.add_argument("--reveal", required=True)
+ap.add_argument("--output", required=True)
 a = ap.parse_args()
 
 raw = open(a.public, "rb").read()
@@ -141,7 +179,14 @@ dsl = {
         ]},
     ],
 }
-print(json.dumps({"dsl": dsl}))
+
+# 唯一的正式输出通道：tmp + 原子 rename（stdout 不是 IPC）
+tmp = a.output + ".tmp"
+with open(tmp, "w", encoding="utf-8") as f:
+    json.dump({"schema_version": "1.1", "dsl": dsl}, f)
+    f.flush()
+    os.fsync(f.fileno())
+os.replace(tmp, a.output)
 ```
 
 完整可运行版本见 [`starter/solver.py`](starter/solver.py)。
@@ -173,12 +218,36 @@ print(json.dumps({"dsl": dsl}))
 | 抗混叠采样预算 | ≤ 400,000 点 |
 | 单次计算超时 | 2000 ms（每方从自己的 GO 写入时刻起算） |
 | 内存上限 | 512 MB |
+| CPU / 线程 | 1 核 / 1 线程（`OMP_NUM_THREADS` 等全部钉死为 1） |
 | stdout 上限 | 256 KB |
+| stderr 上限 | 64 KB |
 
 **函数硬性要求：** 必须严格经过自己的 Shooter（`f(x_s) = y_s`），
 在射击区间内有限、连续、C²。
 
-### 5. 场地与判定
+### 5. 固定 Runtime（双方完全相同）
+
+正式比赛冻结统一 Runtime，双方环境逐项一致：
+
+| 项目 | 冻结值 |
+|------|--------|
+| 解释器 | CPython 3.9.6（`/usr/bin/python3`） |
+| numpy | 2.0.2 |
+| scipy | 1.13.1 |
+| sympy | **不允许使用** |
+| CPU 配额 | 1 核 |
+| 内存配额 | 512 MB |
+| 线程上限 | 1（`OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS`） |
+| 超时 | 2000 ms |
+
+冻结清单的唯一来源是 [`src/submission/Runtime.ts`](src/submission/Runtime.ts) 的 `FROZEN_RUNTIME`。
+开赛时平台会**实测**宿主解释器与包版本并与清单比对，结果写入审计日志（`RuntimeFrozen` 事件）；
+不一致不会阻断比赛（选手机器上可能没装 numpy），但会如实记录，供人工核对。
+
+线程数被钉死为 1 是公平性要求：默认情况下 BLAS/OpenMP 会吃满所有核，
+「谁的机器核多」就会变成计时优势。
+
+### 6. 场地与判定
 
 - 场地：`x ∈ [-20, 20]`，`y ∈ [-12, 12]`
 - 队伍区域：A 队 `x ∈ [-20, -4]`，B 队 `x ∈ [4, 20]`
@@ -194,16 +263,21 @@ print(json.dumps({"dsl": dsl}))
 ```bash
 npm install
 
-# 操作台（正式入口）
+# 操作台（正式入口）—— 直接使用槽位里已就绪的算法
+npx ts-node src/operator/cli.ts
+npx ts-node src/operator/cli.ts --seed 42 --points 8 --difficulty hard
+npx ts-node src/operator/cli.ts --auto                              # 无人值守
+
+# 上传新算法到槽位（staging → validate → preflight → hash → seal → replace）
 npx ts-node src/operator/cli.ts --a ./pkgA --b ./pkgB
-npx ts-node src/operator/cli.ts --a ./pkgA --b ./pkgB --seed 42 --points 8 --difficulty hard
-npx ts-node src/operator/cli.ts --a ./pkgA --b ./pkgB --auto        # 无人值守
+npx ts-node src/operator/cli.ts --a ./pkgA --slots /tmp/gb-slots    # 换用别的槽位根目录
+
 npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回放
 
 # 类型检查
 npm run typecheck
 
-# 回归测试（22 个套件，清单见 tests/run-all.ts）
+# 回归测试（24 个套件，清单见 tests/run-all.ts）
 npm test
 
 # 地图生成器压力验证（默认 300,000 张）
@@ -216,17 +290,21 @@ npm run stress
 
 ```
 几何斗殴/
+├── algorithms/        # 固定算法槽位（比赛工作人员与选手最关心的区域）
+│   ├── team-a/        #   Team A Slot —— 根目录必须有 solver.py
+│   ├── team-b/        #   Team B Slot
+│   └── .staging/ .slots/   # 上传暂存区 / 安装记录（不属于算法包，已 gitignore）
 ├── src/
 │   ├── core/          # Ast / Validator / Judge / Match / Round / Rules / RoundState / InputProtocol / Logs
 │   ├── field/         # 场地与点
 │   ├── obstacle/      # 障碍物几何与距离函数
 │   ├── map/           # MapGenerator（含 §47 公平性过滤）
-│   ├── submission/    # 包校验 / 密封 / 防篡改
+│   ├── submission/    # 包校验 / 密封 / 防篡改 / 算法槽位 / 固定 Runtime
 │   ├── runner/        # SandboxRunner（sandbox-exec + 进程组 + 计时屏障）
 │   ├── operator/      # 正式操作台 CLI
 │   ├── ui/            # 操作台 / 观众屏 / 裁判屏
 │   └── visualizer/    # 函数与轨迹可视化
-├── starter/           # 官方 Starter Algorithm
+├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
 ├── tests/             # 回归测试套件 + 算法 fixture
 └── Plans/
     ├── Input/         # 人输入的 Plan、规范与任务书
@@ -238,10 +316,14 @@ npm run stress
 ## 隔离与公平性
 
 - 每次计算运行在独立的 `sandbox-exec` 沙箱中：默认拒绝、拒绝网络、拒绝 `fork`。
-  沙箱内是三区布局 —— `app/`（只读算法包）、`input/`（只读的两份输入 JSON，0444）、
-  `work/`（**唯一**可写目录）。
-- 平台源码目录、密封包目录、`/Users`、沙箱根目录、对手沙箱均不可读。
-- 宿主环境变量不继承（只保留 `PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`/`PYTHON*`/`GB_TEAM`）。
+  沙箱内是**四区**布局 —— `app/`（只读算法包）、`input/`（只读的两份输入 JSON，0444）、
+  `output/`（只写的 `result.json`）、`work/`（可写临时区，唯一可写的目录）。
+- 写权限只开放 `file-write-data` / `file-write-create` / `file-write-unlink`（够用：tmp + fsync +
+  原子 rename、覆盖写、建子目录、写 `__pycache__`），**`utimes` 被拒绝** —— 算法无法回拨
+  自己结果文件的时间戳。计时终点取结果文件的 mtime，若它能被参赛代码改写，计时就可被伪造。
+- 平台源码目录、密封包目录、**算法槽位目录**、`/Users`、沙箱根目录、对手沙箱均不可读。
+- 宿主环境变量不继承（只保留 `PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`/`PYTHON*`/`GB_TEAM`，
+  以及钉死为 1 的线程数变量）。
 - **START 是硬门禁**：REVEAL 之后算法进程仍被扣住，直到裁判按下 START 才放行；
   未 START 直接计算会被引擎拒绝（`tests/stage-gating.ts`、`tests/pre-start-execution.ts`）。
   REVEAL 与 START 之间可以停任意久，停多久都不影响公平。
@@ -250,7 +332,16 @@ npm run stress
   审计日志记录 `decoySeed` 与 `matchSeed` 两个值（`tests/preflight-decoy.ts`）。
 - 公平启动：双方进程都完成 READY 握手后，宿主才先后写入 GO；每个 Runner 的正式
   compute latency 与超时预算都从**自己的** GO 写入时刻起算，因此不是双方共用一个
-  时间戳。`releaseSkewUs` 只是两次 GO 写入之间交付延迟的诊断量，不参与计时。
+  时间戳。`startSkewUs`（审计字段 `startSkewNs`）只是两次 GO 写入之间的偏差，不参与计时。
+  两次 GO 写入之前，双方的轮询器与超时预算已由 `prepare()` 提前挂好、stdin 写入路径
+  也预热过，写入本身只剩「打点 + 写 GO」两步，`stdin.end()`（EOF 信号，不参与计时）
+  推迟到下一拍 —— 否则夹在两次写入之间的宿主开销会整体计入**先写方**的耗时，
+  形成方向固定的偏置。收窄后 `startSkewUs` 中位数约 5µs，比先手判定阈值
+  `TIE_EPS_MS = 0.05`（50µs）小一个数量级。
+- 计时终点是**结果文件自身写成的时刻**（`mtime`，纳秒），不是宿主轮询回调的执行时刻：
+  轮询回调是串行的，先返回的一方会推迟后一方的读数（V1.1 实现期实测该偏置达 100µs 量级）。
+  `mtime` 由内核在写入时打戳、随 rename 保留、且因沙箱拒绝 `utimes` 而不可伪造；
+  取不到或换算不合理时退回轮询时刻。
 - `timing-fairness` 验证的是 slot / 顺序不产生可利用的系统性优势（同算法下「A 更快」
   的比例接近 0.5、换序胜率差有界），**不构成「绝对公平」的保证**。
 - 每回合使用全新沙箱，回合结束后整个目录被销毁（无跨回合持久化）。
@@ -260,6 +351,11 @@ npm run stress
 ## 已知限制
 
 - Plan V1 §28 只定义了「一方全部点死亡则比赛立即结束」，**没有定义僵局（stalemate）规则**。
-  若双方都无法命中对方，比赛在规范上可能不终止。操作台会持续回合直至分出胜负；
-  如遇长时间僵局请人工介入并记录为赛事异常。
+  引擎保持该语义不变：双方都打不中时 `getWinner()` 持续返回 `null`。
+  操作台侧有 `--max-rounds`（默认 50）护栏，达到上限即停止并报告 `UNDECIDED`，
+  产物照常落盘，由裁判按赛事规则裁定。出厂 starter 与它对局时会僵持（都不绕障碍物），
+  因此**不要用 starter 当正式对手**。
+- 操作台用 `--a/--b` 上传时会把算法**安装进槽位**（规范 §31/§32 的正式流程）。
+  默认槽位是仓库内的 `algorithms/`，所以一次真实上传会让工作区出现改动 ——
+  这是设计使然（槽位就是投放点）。想避免改动工作区就加 `--slots <临时目录>`。
 - 本 README 描述的是 V1 平台能力，最终比赛可用性由独立 Re-Gate 审计结论决定。

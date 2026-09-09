@@ -59,6 +59,59 @@ export const RESULT_FILENAME = 'result.json';
  */
 const RESULT_DRAIN_GRACE_MS = 50;
 
+/**
+ * 墙钟 / 单调钟锚点（进程启动时取一次，双方共用）。
+ *
+ * 计时终点取自结果文件的 **mtime**（纳秒），即算法自己写完内容的时刻，
+ * 而不是宿主轮询「发现」它的时刻。
+ *
+ * 为什么不能用「宿主发现的时刻」：两个 Runner 的轮询回调跑在同一个事件循环里，
+ * A 的回调先执行、且要读文件并解析 JSON，于是 B 的读数被系统性推迟约 0.1ms。
+ * 同算法对局下这表现为「A 恒快」—— `timing-fairness` 的 aFasterRate 一度达到 0.907
+ * （V1.0 用 stdout 'data' 事件打点，没有这个串行偏置）。
+ *
+ * 为什么不用 ctime（rename 时刻）：`os.replace()` 之后的 ctime 会被文件系统的
+ * fsync/事务屏障**同步**——双方几乎在同一时刻完成，于是 release 顺序差（约 27µs）
+ * 不再被抵消，反而整个算进先释放的一方的耗时里，aFasterRate 掉到 0.253。
+ * mtime 是写入时刻，不受该屏障影响，双方对称。
+ *
+ * mtime 可被 `os.utime()` 伪造，因此沙箱的写权限按操作细分，
+ * 只放行 file-write-data / create / unlink，`file-write-times` 默认拒绝
+ * （见 buildProfile 注释）——算法改不动自己产出文件的时间戳。
+ *
+ * 锚点用 `performance.timeOrigin + performance.now()`（亚微秒精度）而不是 `Date.now()`
+ * （毫秒精度），把单调时钟换算到墙钟域与 mtime 相减。
+ */
+const WALL_ANCHOR = (() => {
+  const hrtime = process.hrtime.bigint();
+  const wallNs = BigInt(Math.round((performance.timeOrigin + performance.now()) * 1e6));
+  return { hrtime, wallNs };
+})();
+
+/** 单调时钟 ns → 墙钟 ns（基于进程级锚点） */
+function monotonicToWallNs(monoNs: bigint): bigint {
+  return WALL_ANCHOR.wallNs + (monoNs - WALL_ANCHOR.hrtime);
+}
+
+/** 墙钟 ns → 单调时钟 ns（基于进程级锚点） */
+function wallToMonotonicNs(wallNs: bigint): bigint {
+  return WALL_ANCHOR.hrtime + (wallNs - WALL_ANCHOR.wallNs);
+}
+
+/**
+ * 结果内容写完的墙钟时刻（ns）；文件不存在或不可 stat 时返回 null。
+ *
+ * 取 mtime 而不是 ctime —— 理由见 WALL_ANCHOR。mtime 由算法自己写入，
+ * 且沙箱拒绝 `file-write-times`，因此不可伪造。
+ */
+function resultWrittenWallNs(resultPath: string): bigint | null {
+  try {
+    return fs.statSync(resultPath, { bigint: true }).mtimeNs;
+  } catch {
+    return null;
+  }
+}
+
 export type RunnerErrorCode =
   | 'TIMEOUT'
   | 'CRASH'
@@ -282,6 +335,12 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
     .map((p) => `(deny file-read* (subpath ${JSON.stringify(p)}))`)
     .join('\n');
 
+  // 写权限**按操作细分**，不用 `file-write*`：
+  // `file-write*` 还包含 `file-write-times`，即算法可以 `os.utime()` 改写
+  // 自己产出的 result.json 的 mtime —— 而 mtime 正是计时终点（见 WALL_ANCHOR）。
+  // 一条 `os.utime(out, (0, 0))` 就能把耗时压到 0，从而伪造「先手」。
+  // 只放行 data / create / unlink 已覆盖 tmp + 原子 rename + 子目录 + 本地模块导入，
+  // 同时让时间戳不可伪造（已在受限 profile 下逐项实测）。
   return `(version 1)
 (deny default)
 (deny network*)
@@ -296,8 +355,12 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
 ${extraDenies}
 (allow file-read* (subpath ${JSON.stringify(sandboxDir)}))
 (allow file-read* (literal "/dev/null") (literal "/dev/urandom") (literal "/dev/random"))
-(allow file-write* (subpath ${JSON.stringify(work)}))
-(allow file-write* (subpath ${JSON.stringify(output)}))
+(allow file-write-data (subpath ${JSON.stringify(work)}))
+(allow file-write-create (subpath ${JSON.stringify(work)}))
+(allow file-write-unlink (subpath ${JSON.stringify(work)}))
+(allow file-write-data (subpath ${JSON.stringify(output)}))
+(allow file-write-create (subpath ${JSON.stringify(output)}))
+(allow file-write-unlink (subpath ${JSON.stringify(output)}))
 (allow file-write* (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr"))
 `;
 }
@@ -514,12 +577,24 @@ export interface SpawnedRunner {
   sandbox: PreparedSandbox;
   ready: Promise<{ readyNs: bigint }>;
   /**
+   * 预置结果轮询与超时预算 —— 由 `runDuel` 在释放**任何一方之前**对双方各调一次。
+   *
+   * 存在的唯一理由是公平：两次 GO 写入必须背靠背，中间不能夹宿主侧开销，
+   * 否则先写 GO 的一方的计时基准会比后写的一方早出这段开销（见 `release` 注释）。
+   * 单独调用 `release()` 的路径会自动补做，因此 `prepare()` 是可选的。
+   */
+  prepare: () => void;
+  /**
    * 写入 GO，返回**本队自己的**释放时刻（单调 ns）。
    *
    * 计时必须以本队 GO 的写入时刻为基准：宿主先写 A 的 GO、再写 B 的 GO，
    * 两次写入之间有约 20µs 的交付延迟。若双方共用同一个 releaseNs，
    * 后释放方就会被多计这段延迟（Re-Gate Cycle 1 P1-B）。
    * 各自起算后，双方都拿到完整的 timeoutMs 预算，释放顺序不再产生偏置。
+   *
+   * 这段交付延迟本身也是偏置来源：它对**先写的一方不利**（基准更早，耗时被多算），
+   * 且方向固定，会系统性地把胜率推向「后释放的一方」。因此释放前的一切准备工作
+   * 都由 `prepare()` 提前做完，本函数只剩「打点 + 写 GO」两步。
    */
   release: () => bigint;
   /** 等待结束 */
@@ -602,6 +677,7 @@ export function spawnRunner(opts: {
       proc: undefined as any,
       sandbox,
       ready,
+      prepare: () => {},
       release: () => 0n,
       done,
       cancel: () => {},
@@ -613,6 +689,7 @@ export function spawnRunner(opts: {
   let stdoutBytes = 0;
   let stderrBytes = 0;
   let released = false;
+  let prepared = false;
   let releaseNs: bigint | null = null;
   let finished = false;
   let cancelled = false;
@@ -786,6 +863,10 @@ export function spawnRunner(opts: {
     }
     if (oversize) return;
 
+    // 进程可能刚写完就退出，1ms 的轮询还没轮到它 —— 退出前同步补一次检查，
+    // 否则合规算法（tmp + 原子 rename 后立即结束）会被误判为 INVALID_OUTPUT。
+    if (!pendingResult) pollForResult();
+
     // 结果已经拿到（规范 §27：Judge 只监听 result.json 出现）——
     // 进程之后以什么码退出都不影响判定，计时也已按结果到达时刻结算。
     if (pendingResult) {
@@ -840,7 +921,16 @@ export function spawnRunner(opts: {
       resultError = parsed.error;
       return;
     }
-    const resultNs = process.hrtime.bigint();
+    // 计时终点取**结果文件的 mtime**（算法自己写完内容的时刻），
+    // 而不是本轮询回调的执行时刻 —— 宿主侧的串行开销会系统性地推迟后一方的读数
+    // （见 WALL_ANCHOR 注释）。时间戳不可得或换算结果不合理时退回轮询时刻。
+    let resultNs = process.hrtime.bigint();
+    const writtenWallNs = resultWrittenWallNs(sandbox.resultPath);
+    if (writtenWallNs !== null && releaseNs !== null) {
+      const candidate = wallToMonotonicNs(writtenWallNs);
+      const candidateMs = Number(candidate - releaseNs) / 1e6;
+      if (candidateMs >= 0 && candidateMs <= opts.timeoutMs) resultNs = candidate;
+    }
     pendingResult = { resultJson: text, dslText: parsed.dslText, resultNs };
     if (poller) { clearInterval(poller); poller = null; }
     // 给进程一点时间自然退出，把 stderr 里的 debug log 排空（规范 §30）；
@@ -851,6 +941,40 @@ export function spawnRunner(opts: {
     }, RESULT_DRAIN_GRACE_MS);
   };
 
+  /**
+   * 预置结果轮询与超时预算（见 `SpawnedRunner.prepare`）。
+   *
+   * `pollForResult` 在 `released` 之前直接返回，提前挂上轮询器没有副作用；
+   * 超时预算提前 δ（两次 GO 写入之间的宿主开销，量级 10µs）起算，
+   * 相对 2000ms 的预算可忽略。
+   */
+  const prepare = () => {
+    if (prepared || finished) return;
+    prepared = true;
+    // 预热 stdin 的写入路径：本轮的**第一次** write() 比后续写贵约 35µs
+    // （JS 侧惰性初始化，探针实测 39.5µs → 5.4µs），而 GO 正是本轮第一次写。
+    // 写 0 字节即可把它吸收掉 —— 子进程读不到任何内容，bootstrap 仍在等它的 GO 行。
+    try {
+      proc.stdin?.write('');
+    } catch {
+      /* ignore */
+    }
+    // 结果通道：只监听 output/result.json 出现（规范 §27）
+    if (poller) clearInterval(poller);
+    poller = setInterval(pollForResult, 1);
+    // 精确超时从 release 起算；到点仍无合法结果 → TIMEOUT（规范 §28）
+    if (goTimeout) clearTimeout(goTimeout);
+    goTimeout = setTimeout(() => {
+      killTree(proc.pid);
+      finish({
+        success: false, stdout, stderr,
+        error: `算法超时（>${opts.timeoutMs}ms 内未生成合法的 output/result.json）`,
+        errorCode: 'TIMEOUT',
+        computeTimeMs: opts.timeoutMs,
+      });
+    }, opts.timeoutMs);
+  };
+
   // 输入不再走 stdin —— 两份 JSON 已由 prepareSandbox 写入 input/，
   // 参赛入口从 argv 拿到路径自己读（规范 §10/§13）。stdin 现在只承载 GO 信号。
 
@@ -859,31 +983,30 @@ export function spawnRunner(opts: {
     proc,
     sandbox,
     ready,
+    prepare,
     release: (): bigint => {
       if (released) return releaseNs ?? process.hrtime.bigint();
       released = true;
-      // 本队自己的 GO 时刻 —— 计时基准（P1-B）
+      prepare(); // 单方调用路径就地补做；runDuel 已在双方释放前调过（此时为空操作）
+      // 本队自己的 GO 时刻 —— 计时基准（P1-B）。打点与写 GO 之间不得再夹任何宿主开销。
       releaseNs = process.hrtime.bigint();
       try {
         proc.stdin?.write('GO\n');
-        proc.stdin?.end();
       } catch {
         /* ignore */
       }
-      // 结果通道：只监听 output/result.json 出现（规范 §27）
-      if (poller) clearInterval(poller);
-      poller = setInterval(pollForResult, 1);
-      // 精确超时从 release 起算；到点仍无合法结果 → TIMEOUT（规范 §28）
-      if (goTimeout) clearTimeout(goTimeout);
-      goTimeout = setTimeout(() => {
-        killTree(proc.pid);
-        finish({
-          success: false, stdout, stderr,
-          error: `算法超时（>${opts.timeoutMs}ms 内未生成合法的 output/result.json）`,
-          errorCode: 'TIMEOUT',
-          computeTimeMs: opts.timeoutMs,
-        });
-      }, opts.timeoutMs);
+      // EOF 只是给子进程一个「stdin 结束了」的信号，不参与计时：同步 end() 会给
+      // **后写 GO 的一方**多加约 16µs 的宿主开销（交错配对实测），于是先写方显得更慢。
+      // 推迟到下一拍，两次 GO 写入之间就只剩一个 write 调用。
+      setImmediate(() => {
+        const stdin = proc.stdin;
+        if (!stdin || stdin.destroyed || stdin.writableEnded) return;
+        try {
+          stdin.end();
+        } catch {
+          /* ignore */
+        }
+      });
       return releaseNs;
     },
     done,
@@ -983,6 +1106,10 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   }
 
   // ---- 释放双方：各自记录自己的 GO 时刻（P1-B / 规范 §22/§23）----
+  // 先把双方的轮询器与超时预算都挂好，让下面两次 release() 只剩「打点 + 写 GO」，
+  // 否则夹在中间的宿主开销会整体计入先释放方的耗时（方向固定的偏置）。
+  runnerA.prepare();
+  runnerB.prepare();
   const releaseANs = runnerA.release();
   const releaseBNs = runnerB.release();
   const startSkewNs =
