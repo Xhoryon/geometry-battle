@@ -8,7 +8,8 @@ Plans/
 │   ├── Plan V1.rtf                      # V1 规则规范（原始 RTF）
 │   ├── Plan 2 — V1 Completion Plan.md   # 阶段计划
 │   ├── Gate Plan1.md                    # Plan 1 Gate 的审核任务书（只读审计要求）
-│   └── Geometry Battle V1 — Documentation Closure & Final Freeze Re-Gate.md  # Closure Round 任务书
+│   ├── Geometry Battle V1 — Documentation Closure & Final Freeze Re-Gate.md  # Closure Round 任务书
+│   └── V1.1 — Algorithm Input Protocol.md  # V1.1 两阶段输入协议规范（28 节）
 └── Output/    # Agent 产出的报告、工作日志与交接文档
     ├── Plan 1 Gate Result.md            # Plan 1 Gate 审计报告（FAIL）
     ├── Plan 1 Gate 工作日志.md           # Plan 1 Gate 工作日志
@@ -16,7 +17,8 @@ Plans/
     ├── Re-Gate Cycle 2 Result.md        # 第 2 轮独立再审计（FAIL）
     ├── Re-Gate Cycle 3 Result.md        # 第 3 轮独立再审计（CONDITIONAL PASS）
     ├── V1 Documentation Closure Handoff.md  # Closure Round 交接（E-1～E-4 修正记录）
-    └── V1 Remediation Handoff.md        # 开发/修复交接文档（含终局状态 §10）
+    ├── V1 Remediation Handoff.md        # 开发/修复交接文档（含终局状态 §10）
+    └── V1.1 Implementation Handoff.md   # V1.1 协议实现交接（分支 feature/v1.1-ui-protocol）
 ```
 
 ## 当前结论
@@ -29,6 +31,17 @@ Cycle 3 判定 `CONDITIONAL PASS` 的 4 条**纯文档**阻塞项（E-1～E-4）
 
 详见 [Output/V1 Documentation Closure Handoff.md](Output/V1%20Documentation%20Closure%20Handoff.md)
 与 [Output/Re-Gate Cycle 3 Result.md](Output/Re-Gate%20Cycle%203%20Result.md)。
+
+## V1.1（2026-09-09）
+
+V1.0 冻结（tag `v1.0.0-competition` → `26d7970`）之后，按人输入的
+[`Input/V1.1 — Algorithm Input Protocol.md`](Input/V1.1%20%E2%80%94%20Algorithm%20Input%20Protocol.md)
+在分支 `feature/v1.1-ui-protocol` 上实现了两阶段输入协议（`public_state.json` +
+`reveal_state.json`）、START 硬门禁、三段式编排与 decoy preflight。
+
+**V1.0 tag 未被触碰**；判定语义（DSL / AST / 命中 / 碰撞 / 先手）未改动，
+`timing-fairness` 的计时断言一条未改。实现细节、逐套件回归判定与验证记录见
+[Output/V1.1 Implementation Handoff.md](Output/V1.1%20Implementation%20Handoff.md)。
 
 ## 重组说明（2026-09-09）
 

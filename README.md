@@ -6,10 +6,12 @@
 
 ## 概述
 
-双方队伍各提交一个算法包。每个回合，平台给双方注入相同的 `RoundState`（地图、障碍物、双方所有点的坐标、各自的 Shooter），
-双方算法各自输出一条函数曲线 `y = f(x)`；曲线从自己的 Shooter 出发，在射程内**严格经过对方点**即构成击杀。
+双方队伍各提交一个算法包。每个回合，平台分两阶段向双方注入**逐字节相同**的输入文件
+（`public_state.json` → `reveal_state.json`），双方算法各自输出一条函数曲线 `y = f(x)`；
+曲线从自己的 Shooter 出发，在射程内**严格经过对方点**即构成击杀。
 
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
+**START 之前，参赛代码一行都不会运行** —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
 
 ---
 
@@ -44,9 +46,18 @@ my-team/
 | 符号链接 | 不允许 |
 | entry | 必须是包内存在的 `.py` 文件 |
 
-### 2. 算法协议（stdin / stdout）
+### 2. 算法协议（两阶段输入文件 + argv）
 
-平台把 `RoundState` 以**一行 JSON** 写入算法进程的 stdin；算法必须在 stdout 输出**一行 JSON**：
+平台不再把状态写进 stdin。每个回合，宿主以如下 argv 启动算法进程：
+
+```
+python solver.py --team A \
+  --public  <sandbox>/input/public_state.json \
+  --reveal  <sandbox>/input/reveal_state.json
+```
+
+**队别只经 `--team A|B` 传递**；两份 JSON 对 A、B **逐字节相同**，双方可各自 `sha256` 复核。
+算法在 stdout 输出**一行 JSON**：
 
 ```json
 {"dsl": {"type": "...", "args": [...]}}
@@ -54,36 +65,69 @@ my-team/
 
 `dsl` 可以是 AST 对象，也可以是 AST 的 JSON 字符串。多输出的一律以最后一次可解析的 JSON 为准。
 
-**输入字段：**
+**输入分两次交付（V1.1 两阶段协议）：**
+
+| 阶段 | 文件 | 内容 |
+|------|------|------|
+| PRE-REVEAL | `public_state.json` | 轮次、场地、**双方全部点**（含 `alive: false` 的死点）；**不含**障碍物、种子、任何 Shooter |
+| REVEAL | `reveal_state.json` | 增量：双方 Shooter id、障碍物、以及 `public_state_sha256` |
+
+`public_state.json`：
 
 ```json
-{
-  "round": 1,
-  "team_id": "A",
-  "state_hash": "…",
-  "map_seed": 12345,
-  "map_hash": "…",
-  "obstacles": [ … ],
-  "points":    [{"id": "A1", "team": "A", "position": {"x": -12.3, "y": 4.1}}, …],
-  "shooters":  {"A": {"id": "A1", "position": {"x": -12.3, "y": 4.1}}, "B": { … }},
-  "team_a_x_range": [-20, -4],
-  "team_b_x_range": [4, 20],
-  "field": {"x_min": -20, "x_max": 20, "y_min": -12, "y_max": 12}
-}
+{"schema_version":"1.1","match_id":"M-1","round":4,"map":{"xmin":-20,"xmax":20,"ymin":-12,"ymax":12},"points":[{"id":"A1","team":"A","x":-14,"y":6,"alive":true},{"id":"A2","team":"A","x":-10,"y":-3,"alive":false}]}
 ```
+
+`reveal_state.json`：
+
+```json
+{"schema_version":"1.1","match_id":"M-1","round":4,"public_state_sha256":"92fa…","shooters":{"A":"A4","B":"B2"},"obstacles":[{"id":"O1","type":"rectangle","xmin":-1,"xmax":2,"ymin":-5,"ymax":1},{"id":"O2","type":"circle","cx":4,"cy":3,"radius":2}]}
+```
+
+**绑定自检（建议选手在入口处照抄）：**
+
+```python
+import hashlib
+assert hashlib.sha256(open(a.public, "rb").read()).hexdigest() == reveal["public_state_sha256"]
+```
+
+`roundStateHash = SHA256(publicStateHash + revealStateHash)`（两个十六进制串拼接后再哈希）
+写入比赛日志与回放，可事后独立复核；两份文件的确切字节即 `sha256` 字段值，可用 `shasum -a 256` 验证。
+
+**三段式节奏（公平性关键）：**
+
+```
+PRE-REVEAL   public_state.json 就位，算法进程尚未创建
+   ↓  双方选点并 LOCK
+REVEAL       reveal_state.json 生成，算法仍未运行
+   ↓  裁判按下 START（现场可停任意久，停多久都不影响公平）
+START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → 计算
+```
+
+计时仍从**各自** GO 写入时刻起算，与 V1.0 一致。
 
 **最小可运行示例（官方 starter 的简化版）：**
 
 ```python
-import json, sys
+import argparse, hashlib, json
 
-state = json.loads(sys.stdin.readline())
-team = state["team_id"]
-s = state["shooters"][team]["position"]
-enemies = [p for p in state["points"] if p["team"] != team]
+ap = argparse.ArgumentParser()
+ap.add_argument("--team", required=True, choices=["A", "B"])
+ap.add_argument("--public", required=True)
+ap.add_argument("--reveal", required=True)
+a = ap.parse_args()
+
+raw = open(a.public, "rb").read()
+public = json.loads(raw.decode("utf-8"))
+reveal = json.load(open(a.reveal))
+assert hashlib.sha256(raw).hexdigest() == reveal["public_state_sha256"]  # 绑定自检
+
+by_id = {p["id"]: p for p in public["points"]}
+s = by_id[reveal["shooters"][a.team]]                      # Shooter 坐标在 public 点表里查
+enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"]]
+t = enemies[0]
 
 # f(x) = y_s + m·(x - x_s)：严格经过自己的 Shooter，且是 C^∞ 的
-t = enemies[0]["position"]
 m = 0.0 if abs(t["x"] - s["x"]) < 1e-6 else (t["y"] - s["y"]) / (t["x"] - s["x"])
 
 dsl = {
@@ -97,7 +141,7 @@ dsl = {
         ]},
     ],
 }
-sys.stdout.write(json.dumps({"dsl": dsl}) + "\n")
+print(json.dumps({"dsl": dsl}))
 ```
 
 完整可运行版本见 [`starter/solver.py`](starter/solver.py)。
@@ -159,7 +203,7 @@ npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回�
 # 类型检查
 npm run typecheck
 
-# 回归测试（18 个套件：16 个点名套件 + map-fairness + hostile-input）
+# 回归测试（22 个套件，清单见 tests/run-all.ts）
 npm test
 
 # 地图生成器压力验证（默认 300,000 张）
@@ -173,7 +217,7 @@ npm run stress
 ```
 几何斗殴/
 ├── src/
-│   ├── core/          # Ast / Validator / Judge / Match / Round / Rules / RoundState / Logs
+│   ├── core/          # Ast / Validator / Judge / Match / Round / Rules / RoundState / InputProtocol / Logs
 │   ├── field/         # 场地与点
 │   ├── obstacle/      # 障碍物几何与距离函数
 │   ├── map/           # MapGenerator（含 §47 公平性过滤）
@@ -193,10 +237,17 @@ npm run stress
 
 ## 隔离与公平性
 
-- 每次计算运行在独立的 `sandbox-exec` 沙箱中：默认拒绝、拒绝网络、拒绝 `fork`，
-  只允许读自己的包、只允许写自己的 `work/` 目录。
-- 平台源码目录、密封包目录、`/Users`、沙箱根目录均不可读。
+- 每次计算运行在独立的 `sandbox-exec` 沙箱中：默认拒绝、拒绝网络、拒绝 `fork`。
+  沙箱内是三区布局 —— `app/`（只读算法包）、`input/`（只读的两份输入 JSON，0444）、
+  `work/`（**唯一**可写目录）。
+- 平台源码目录、密封包目录、`/Users`、沙箱根目录、对手沙箱均不可读。
 - 宿主环境变量不继承（只保留 `PATH`/`HOME`/`TMPDIR`/`LANG`/`LC_ALL`/`PYTHON*`/`GB_TEAM`）。
+- **START 是硬门禁**：REVEAL 之后算法进程仍被扣住，直到裁判按下 START 才放行；
+  未 START 直接计算会被引擎拒绝（`tests/stage-gating.ts`、`tests/pre-start-execution.ts`）。
+  REVEAL 与 START 之间可以停任意久，停多久都不影响公平。
+- **preflight 用 decoy 世界**：赛前冒烟跑的是由 `matchId` 派生的独立种子生成的地图，
+  与实际比赛种子无关（撞车时自动换种子），因此它不会变成本轮障碍物的预览；
+  审计日志记录 `decoySeed` 与 `matchSeed` 两个值（`tests/preflight-decoy.ts`）。
 - 公平启动：双方进程都完成 READY 握手后，宿主才先后写入 GO；每个 Runner 的正式
   compute latency 与超时预算都从**自己的** GO 写入时刻起算，因此不是双方共用一个
   时间戳。`releaseSkewUs` 只是两次 GO 写入之间交付延迟的诊断量，不参与计时。
