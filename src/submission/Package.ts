@@ -14,12 +14,16 @@
  *   ⚠️ 已知边界（Cycle 1 审计 P3-A #4）：密封后**不再复验原始包目录**。
  *   比赛开始后替换原始包既不影响已密封副本（比赛用的是密封副本），
  *   也**不会**产生任何告警或审计事件。人工评审时不要指望靠替换源包触发告警。
+ *
+ * V1.1（Algorithm Slot, Startup & JSON IPC §3/§4）：
+ *   入口固定为包根目录的 `solver.py`；`manifest.json` 变为可选元数据，
+ *   平台不再读取 `manifest.entry` 来决定执行什么。
  */
 
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Manifest, parseManifest } from './Manifest';
+import { ENTRY_FILENAME, Manifest, defaultManifest, parseManifest } from './Manifest';
 
 export interface PackageFile {
   relPath: string;
@@ -107,16 +111,19 @@ export function inspectPackage(dir: string): PackageInspection {
     return { valid: false, errors: ['Package 目录不存在'], manifest: null, files: [], totalBytes: 0, hash: null };
   }
 
+  // V1.1 §3/§4：入口固定为包根目录的 solver.py；manifest.json 变为可选元数据。
+  // 平台不再用 manifest.entry 决定执行什么，因此缺失 manifest 不再算错误。
   const manifestPath = path.join(dir, 'manifest.json');
-  if (!fs.existsSync(manifestPath)) {
-    return { valid: false, errors: ['缺少 manifest.json'], manifest: null, files: [], totalBytes: 0, hash: null };
+  let manifest: Manifest;
+  if (fs.existsSync(manifestPath)) {
+    const manifestResult = parseManifest(fs.readFileSync(manifestPath, 'utf-8'));
+    if (!manifestResult.valid || !manifestResult.manifest) {
+      return { valid: false, errors: manifestResult.errors, manifest: null, files: [], totalBytes: 0, hash: null };
+    }
+    manifest = manifestResult.manifest;
+  } else {
+    manifest = defaultManifest(path.basename(dir));
   }
-
-  const manifestResult = parseManifest(fs.readFileSync(manifestPath, 'utf-8'));
-  if (!manifestResult.valid || !manifestResult.manifest) {
-    return { valid: false, errors: manifestResult.errors, manifest: null, files: [], totalBytes: 0, hash: null };
-  }
-  const manifest = manifestResult.manifest;
 
   walk(dir, dir, files, errors);
 
@@ -127,9 +134,9 @@ export function inspectPackage(dir: string): PackageInspection {
     errors.push(`包体积 ${totalBytes} 字节超过上限 ${MAX_PACKAGE_BYTES}`);
   }
 
-  const entryRel = manifest.entry.split(path.sep).join('/');
-  if (!files.some((f) => f.relPath === entryRel)) {
-    errors.push(`entry 文件不存在或不在允许的文件类型内: ${manifest.entry}`);
+  // 固定入口必须在**包根目录**（子目录里的 solver.py 不算，规范 §3）
+  if (!files.some((f) => f.relPath === ENTRY_FILENAME)) {
+    errors.push(`缺少固定入口 ${ENTRY_FILENAME}（V1.1 §3：包根目录必须存在该文件）`);
   }
 
   return {
