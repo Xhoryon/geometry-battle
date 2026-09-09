@@ -23,6 +23,8 @@ const SUITES = [
   'alive-kill',
   'roundstate-equality',
   'input-protocol',
+  'stage-gating',
+  'pre-start-execution',
   'full-match-e2e',
   'runner-isolation',
   'cross-round-cheat',

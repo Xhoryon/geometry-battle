@@ -29,11 +29,14 @@ import { CanonicalNode, hashNode, parseCanonicalDSL, toMathString } from './Ast'
 import { validateAttackFunction } from './Validator';
 import { judgeShot, ShotOutcome } from './Judge';
 import { RoundMachine, RoundPhase } from './Round';
-import { AlivePoint, RoundStateCore, computeStateHash } from './RoundState';
+import { AlivePoint, RoundStateCore } from './RoundState';
 import {
+  PROTOCOL_VERSION,
+  BuiltInputFile,
   PublicStatePoint,
   buildPublicState,
   buildRevealState,
+  roundStateHash,
 } from './InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from './Rules';
 import { generateMapOrNull, GeneratedMap } from '../map/MapGenerator';
@@ -101,7 +104,10 @@ export interface PointState {
 
 export interface RoundResult {
   round: number;
-  stateHash: string;
+  /** 规范 §20 的三元哈希 —— V1.0 的单一 stateHash 已由它取代 */
+  publicStateHash: string;
+  revealStateHash: string;
+  roundStateHash: string;
   firstSolver: 'A' | 'B' | 'tie' | 'none';
   shooterA: string;
   shooterB: string;
@@ -163,6 +169,20 @@ export class MatchEngine {
   private machine: RoundMachine | null = null;
   private lastIsolation: IsolationReport | null = null;
   private startedAt = new Date();
+
+  // ---- V1.1 三段式（规范 §3/§17/§18/§19/§25）----
+  /** 本轮 public_state.json 的冻结字节（PRE-REVEAL 生成后不再变） */
+  private pendingPublic: BuiltInputFile | null = null;
+  /** 本轮 reveal_state.json 的冻结字节（双方 LOCK 后生成） */
+  private pendingReveal: BuiltInputFile | null = null;
+  private pendingRound = 0;
+  private pendingHashes: {
+    publicStateHash: string;
+    revealStateHash: string;
+    roundStateHash: string;
+  } | null = null;
+  /** 裁判是否已下达 START —— 唯一允许运行参赛代码的开关（规范 §14/§15） */
+  private startGranted = false;
 
   constructor(opts: MatchOptions = {}) {
     this.matchId = opts.matchId ?? generateMatchId();
@@ -337,6 +357,8 @@ export class MatchEngine {
     if (!this.shooters[team]) return { ok: false, error: `${team} 尚未选择 Shooter` };
     if (this.locked[team]) return { ok: false, error: `${team} 已经锁定` };
 
+    // 状态机与真实人工操作一一对应：锁 → A_LOCKED / B_LOCKED → 双方锁 → WAITING_FOR_JUDGE
+    this.ensureMachine().lockShooter(team);
     this.locked[team] = true;
     this.audit.log('ShooterLocked', { point: this.shooters[team]!.id }, team);
 
@@ -347,46 +369,162 @@ export class MatchEngine {
     return { ok: true, error: null };
   }
 
-  /** 裁判开始本轮 —— 双方 READY 不会自动触发（Plan V1 §27 / Gate §19） */
-  judgeStartRound(): { ok: boolean; error: string | null } {
+  // ========================================================================
+  // 执行一轮 —— V1.1 三段式（规范 §3/§25）
+  //   PRE-REVEAL (beginRound) → REVEAL (revealRound) → START (judgeStartRound)
+  //   → COMPUTE (computeRound)
+  // CLI 显式调用四段以便在 REVEAL 与 START 之间插入现场停顿（规范 §17）；
+  // runRound() 保留为顺序调用四段的便捷 API。
+  // ========================================================================
+
+  /**
+   * PRE-REVEAL：生成本轮 public_state.json 并冻结字节。
+   *
+   * 此时双方尚未选点，文件里没有任何隐藏信息（规范 §6/§7）；算法进程此刻
+   * **不存在**（规范 §14/§15）。幂等：同一轮重复调用返回同一份字节。
+   */
+  beginRound(): { round: number; publicStateHash: string } {
+    if (this.phase !== 'SELECT_SHOOTER' && this.phase !== 'LOCKED') {
+      throw new MatchEngineError(`当前阶段 ${this.phase} 不能开始新一轮`);
+    }
+    if (!this.map) throw new MatchEngineError('比赛尚未开始');
+
+    const round = this.roundNumber + 1;
+    this.ensureMachine();
+
+    if (this.pendingRound !== round) {
+      this.pendingRound = round;
+      this.pendingPublic = null;
+      this.pendingReveal = null;
+      this.pendingHashes = null;
+      this.startGranted = false;
+    }
+    if (!this.pendingPublic) {
+      this.pendingPublic = buildPublicState({
+        matchId: this.matchId,
+        round,
+        points: this.publicPoints(),
+      });
+      this.audit.log('PublicStateGenerated', { round, publicStateHash: this.pendingPublic.sha256 });
+    }
+    return { round, publicStateHash: this.pendingPublic.sha256 };
+  }
+
+  /**
+   * REVEAL：双方 LOCK 之后生成本轮 reveal_state.json，并绑定 public 的哈希
+   * （规范 §8/§10）。揭盲是独立事件，可以停任意久（规范 §17）——
+   * 此后 phase = REVEAL，参赛代码仍然没有运行。
+   */
+  revealRound(): { revealStateHash: string; roundStateHash: string } {
+    if (this.pendingReveal && this.pendingHashes) {
+      return {
+        revealStateHash: this.pendingHashes.revealStateHash,
+        roundStateHash: this.pendingHashes.roundStateHash,
+      };
+    }
     if (this.phase !== 'LOCKED') {
+      throw new MatchEngineError(`当前阶段 ${this.phase} 不能揭盲（需双方 LOCK）`);
+    }
+    const shooterA = this.shooters.A;
+    const shooterB = this.shooters.B;
+    if (!shooterA || !shooterB) throw new MatchEngineError('缺少 Shooter');
+    if (!this.map) throw new MatchEngineError('缺少地图');
+    if (!this.pendingPublic) this.beginRound();
+
+    this.ensureMachine().reveal(); // WAITING_FOR_JUDGE → REVEAL
+
+    const round = this.pendingRound;
+    const pub = this.pendingPublic!;
+    this.pendingReveal = buildRevealState({
+      matchId: this.matchId,
+      round,
+      publicStateSha256: pub.sha256,
+      shooters: { A: shooterA.id, B: shooterB.id },
+      obstacles: this.map.obstacles,
+    });
+    const hashes = {
+      publicStateHash: pub.sha256,
+      revealStateHash: this.pendingReveal.sha256,
+      roundStateHash: roundStateHash(pub.sha256, this.pendingReveal.sha256),
+    };
+    this.pendingHashes = hashes;
+    this.phase = 'REVEAL';
+    this.audit.log('RevealStateGenerated', {
+      round,
+      ...hashes,
+      shooters: { A: shooterA.id, B: shooterB.id },
+      obstacleCount: this.map.obstacles.length,
+    });
+    return { revealStateHash: hashes.revealStateHash, roundStateHash: hashes.roundStateHash };
+  }
+
+  /**
+   * START —— 唯一允许参赛代码运行的入口（规范 §14/§15/§25）。
+   *
+   * 幂等：重复调用返回成功。若调用时尚未揭盲（旧调用序「先 START 再 runRound」），
+   * 按规范顺序补齐揭盲，而不是允许跳过它。
+   */
+  judgeStartRound(): { ok: boolean; error: string | null } {
+    if (this.startGranted) return { ok: true, error: null };
+    if (this.phase === 'LOCKED') {
+      try {
+        this.revealRound();
+      } catch (e) {
+        return { ok: false, error: (e as Error).message };
+      }
+    }
+    if (this.phase !== 'REVEAL') {
       return { ok: false, error: `当前阶段 ${this.phase} 不能 START ROUND（需双方 LOCK）` };
     }
-    this.audit.log('JudgeStartRound', { round: this.roundNumber + 1 });
+
+    const machine = this.ensureMachine();
+    machine.judgeStartRound(); // REVEAL → START_ROUND
+    machine.startCountdown(); // START_ROUND → COUNTDOWN
+    this.startGranted = true;
+    this.phase = 'COUNTDOWN';
+    this.audit.log('JudgeStartRound', { round: this.pendingRound, ...(this.pendingHashes ?? {}) });
     return { ok: true, error: null };
   }
 
-  // ========================================================================
-  // 执行一轮
-  // ========================================================================
-
+  /** 便捷 API：按规范顺序走完一轮（PRE-REVEAL → REVEAL → START → COMPUTE） */
   async runRound(): Promise<RoundResult> {
-    if (this.phase !== 'LOCKED') throw new MatchEngineError(`当前阶段 ${this.phase} 不能运行 Round`);
+    if (!this.map || !this.shooters.A || !this.shooters.B) throw new MatchEngineError('缺少地图或 Shooter');
+    if (!this.packages.A || !this.packages.B) throw new MatchEngineError('缺少算法包');
+    if (!this.pendingPublic) this.beginRound();
+    if (this.phase === 'LOCKED') this.revealRound();
+    const started = this.judgeStartRound();
+    if (!started.ok) throw new MatchEngineError(started.error ?? 'START ROUND 失败');
+    return this.computeRound();
+  }
+
+  /**
+   * COMPUTE —— 把冻结的字节送进两个沙箱。
+   *
+   * `startGranted` 是硬门禁：没有 START 就没有参赛代码运行（规范 §14/§15）。
+   * 本方法只读 `pendingPublic` / `pendingReveal` 的冻结字节，**不重新生成 JSON**
+   * （规范 §19）—— 之后发生的任何击杀都只走 ShotCancelled。
+   */
+  async computeRound(): Promise<RoundResult> {
+    if (!this.startGranted) {
+      throw new MatchEngineError('START 尚未下达 —— START 前参赛代码绝不运行（规范 §14/§15）');
+    }
+    if (this.phase !== 'COUNTDOWN') {
+      throw new MatchEngineError(`当前阶段 ${this.phase} 不能计算本轮`);
+    }
+    if (!this.pendingPublic || !this.pendingReveal || !this.pendingHashes) {
+      throw new MatchEngineError('本轮输入字节缺失（未经过 PRE-REVEAL / REVEAL）');
+    }
     if (!this.map || !this.shooters.A || !this.shooters.B) throw new MatchEngineError('缺少地图或 Shooter');
     if (!this.packages.A || !this.packages.B) throw new MatchEngineError('缺少算法包');
 
-    const round = this.roundNumber + 1;
-    const machine = new RoundMachine(round);
-    this.machine = machine;
+    const round = this.pendingRound;
+    const hashes = this.pendingHashes;
+    const machine = this.ensureMachine();
 
-    machine.beginSelection();
-    machine.lockShooter('A');
-    machine.lockShooter('B');
-    machine.judgeStartRound();
-    machine.startCountdown();
-    while (machine.getPhase() === 'COUNTDOWN') {
-      this.phase = 'COUNTDOWN';
-      machine.tickCountdown();
-    }
-    this.phase = 'REVEAL';
-    machine.reveal();
-    machine.sendRoundState();
-
-    // ---- RoundState：双方字节级一致（仅 team_id 不同）----
+    // ---- RoundState（Judge 侧校验用）----
     const shooterA = this.shooters.A;
     const shooterB = this.shooters.B;
     const core = this.buildCore(round, shooterA, shooterB);
-    const stateHash = computeStateHash(core);
 
     // ---- 密封副本完整性（P0-6）----
     for (const team of ['A', 'B'] as const) {
@@ -398,21 +536,22 @@ export class MatchEngine {
       }
     }
 
-    machine.startComputing('A');
-    machine.startComputing('B');
+    // 倒计时以「计数归零」为终止条件，而不是阶段名 —— tickCountdown 归零后
+    // 不再自行转换阶段（V1.1 把推进权交给宿主），用阶段名做条件会死循环。
+    while (machine.getCountdown() !== null) machine.tickCountdown();
+    machine.sendRoundState(); // COUNTDOWN → SEND_ROUND_STATE
+    machine.startComputing('A'); // SEND_ROUND_STATE → A_COMPUTING
+    machine.startComputing('B'); // A_COMPUTING → B_COMPUTING
     this.phase = 'COMPUTING';
-    this.audit.log('RoundComputeStart', { round, stateHash });
+    this.audit.log('RoundComputeStart', { round, ...hashes });
 
     // ---- 运行双方算法 ----
     const cancelled: { A: boolean; B: boolean } = { A: false, B: false };
-    // 一份字节，两个沙箱 —— 队别只经 --team argv 分化（规范 §11/§12）
-    const input = this.buildRunnerInput({
-      matchId: this.matchId,
-      round,
-      map: this.map!,
-      idA: shooterA.id,
-      idB: shooterB.id,
-    });
+    // 一份**冻结的**字节，两个沙箱 —— 队别只经 --team argv 分化（规范 §11/§12/§19）
+    const input: RunnerInput = {
+      publicJson: this.pendingPublic.json,
+      revealJson: this.pendingReveal.json,
+    };
     const duel = await runDuel({
       matchId: this.matchId,
       roundNumber: round,
@@ -550,7 +689,9 @@ export class MatchEngine {
 
     const log: RoundLog = {
       round,
-      stateHash,
+      publicStateHash: hashes.publicStateHash,
+      revealStateHash: hashes.revealStateHash,
+      roundStateHash: hashes.roundStateHash,
       mapSeed: this.map.seed,
       mapHash: this.map.stateHash,
       shooterA: shooterA.id,
@@ -582,7 +723,9 @@ export class MatchEngine {
     this.frames.push({
       round,
       phase: machine.getPhase(),
-      stateHash,
+      publicStateHash: hashes.publicStateHash,
+      revealStateHash: hashes.revealStateHash,
+      roundStateHash: hashes.roundStateHash,
       obstacles: this.map.obstacles,
       // 必须是「本轮开战前仍存活」的点，而不是全体名单 ——
       // 否则回放里第 N 轮会把前几轮已阵亡的点画成活的（P1-16）。
@@ -615,6 +758,12 @@ export class MatchEngine {
     // 重置本轮选择
     this.shooters = { A: null, B: null };
     this.locked = { A: false, B: false };
+    // START 只对「本轮」有效：结算即收回授权，否则下一轮会在未 START 时开跑
+    this.startGranted = false;
+    // 本轮输入字节只服务本轮：结算后作废，下一轮必须重新生成（否则会拿到旧哈希）
+    this.pendingPublic = null;
+    this.pendingReveal = null;
+    this.pendingHashes = null;
 
     const winner = this.getWinner();
     if (winner) {
@@ -628,7 +777,9 @@ export class MatchEngine {
 
     return {
       round,
-      stateHash,
+      publicStateHash: hashes.publicStateHash,
+      revealStateHash: hashes.revealStateHash,
+      roundStateHash: hashes.roundStateHash,
       firstSolver,
       shooterA: shooterA.id,
       shooterB: shooterB.id,
@@ -687,6 +838,7 @@ export class MatchEngine {
   getMatchLog(): MatchLog {
     return {
       schemaVersion: 1,
+      protocolVersion: PROTOCOL_VERSION,
       matchId: this.matchId,
       seed: this.seed,
       pointCount: this.pointCount,
@@ -756,6 +908,38 @@ export class MatchEngine {
       if (pkg) paths.push(pkg.sourceDir);
     }
     return paths;
+  }
+
+  /**
+   * 本轮 public_state 的点表：**完整名单含死点**（规范 §5），自然序 A1..An, B1..Bm。
+   */
+  private publicPoints(): PublicStatePoint[] {
+    return this.points.map((p) => ({
+      id: p.id,
+      team: p.team,
+      x: p.position.x,
+      y: p.position.y,
+      alive: p.alive,
+    }));
+  }
+
+  /**
+   * 取本轮状态机；若不存在或属于上一轮则新建，并回放已经发生的人工操作。
+   *
+   * 回放锁定是必要的：`selectShooter` / `lockShooter` 可能先于 `beginRound()`
+   * 被调用（脚本与测试的常规用法），此时机器还不存在。
+   */
+  private ensureMachine(): RoundMachine {
+    const round = this.roundNumber + 1;
+    if (this.machine && this.machine.roundNumber === round) return this.machine;
+
+    const machine = new RoundMachine(round);
+    machine.beginSelection();
+    for (const team of ['A', 'B'] as const) {
+      if (this.locked[team]) machine.lockShooter(team);
+    }
+    this.machine = machine;
+    return machine;
   }
 
   private aliveEnemies(team: 'A' | 'B'): { id: string; position: Point }[] {

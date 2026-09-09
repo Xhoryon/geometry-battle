@@ -19,7 +19,12 @@ import { Point } from '../field/Field';
 
 export interface RoundLog {
   round: number;
-  stateHash: string;
+  /** 本轮 public_state.json 的字节哈希（规范 §4） */
+  publicStateHash: string;
+  /** 本轮 reveal_state.json 的字节哈希（规范 §8） */
+  revealStateHash: string;
+  /** SHA256(publicStateHash + revealStateHash)（规范 §20） */
+  roundStateHash: string;
   mapSeed: number;
   mapHash: string;
   shooterA: string;
@@ -59,6 +64,8 @@ export interface RoundLog {
 
 export interface MatchLog {
   schemaVersion: 1;
+  /** 算法输入协议版本（V1.1 起为 '1.1'；日志形状本身仍是 schemaVersion 1） */
+  protocolVersion: string;
   matchId: string;
   seed: number;
   pointCount: number;
@@ -91,7 +98,10 @@ export interface AuditLog {
 export interface ReplayFrame {
   round: number;
   phase: string;
-  stateHash: string;
+  /** 规范 §20 的三元哈希 —— 回放只存哈希，不存两份 JSON 正文 */
+  publicStateHash: string;
+  revealStateHash: string;
+  roundStateHash: string;
   obstacles: Obstacle[];
   aliveBefore: { id: string; team: 'A' | 'B'; position: Point }[];
   shooterA: { id: string; position: Point } | null;

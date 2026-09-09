@@ -75,7 +75,9 @@ async function playFullMatch(opts: { seed: number; pointCount?: number }): Promi
 
     const result = await engine.runRound();
     assert(result.machinePhases.includes('ROUND_RESULT'), '状态机未到达 ROUND_RESULT');
-    assertEqual(result.log.stateHash.length, 64, 'stateHash 应为 sha256 十六进制');
+    assertEqual(result.log.roundStateHash.length, 64, 'roundStateHash 应为 sha256 十六进制');
+    assertEqual(result.log.publicStateHash.length, 64, 'publicStateHash 应为 sha256 十六进制');
+    assertEqual(result.log.revealStateHash.length, 64, 'revealStateHash 应为 sha256 十六进制');
     rounds++;
 
     if (rounds > 40) throw new Error('回合数异常：比赛未能在 40 轮内结束');
@@ -147,7 +149,7 @@ test('full-match-e2e: 日志 / 审计 / 回放落盘后可重新加载，且回�
   assertEqual(replay.winner, match.winner, 'Replay 胜者应与 MatchLog 一致');
   for (const frame of replay.frames) {
     assert(frame.trajectoryA.length > 0 || frame.trajectoryB.length > 0, '回放帧应包含轨迹');
-    assertEqual(frame.stateHash.length, 64, '回放帧应带 stateHash');
+    assertEqual(frame.roundStateHash.length, 64, '回放帧应带 roundStateHash');
   }
 
   // 回放数据里不得包含可执行入口 —— 回放只读记录，不重跑算法

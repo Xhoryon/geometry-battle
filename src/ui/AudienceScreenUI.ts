@@ -11,8 +11,29 @@
 
 import { MatchEngine, MatchSnapshot } from '../core/Match';
 import { Replay, ReplayFrame, RoundLog } from '../core/Logs';
+import { Obstacle } from '../obstacle/Obstacle';
 import { AudienceState, formatAudienceState } from '../visualizer/AudienceDisplay';
 import { parseCanonicalDSL, toMathString } from '../core/Ast';
+
+/** 看板一行：内宽 61 字符，超长截断，保证边框不被撑破 */
+function row(text: string): string {
+  return `│  ${text}`.padEnd(62).slice(0, 62) + '│';
+}
+
+/** 揭盲后的障碍物一行摘要（只用于展示，不参与判定） */
+function formatObstacle(o: Obstacle): string {
+  const n = (v: number) => v.toFixed(2);
+  switch (o.type) {
+    case 'rectangle':
+      return `rect    x[${n(o.xmin)}, ${n(o.xmax)}]  y[${n(o.ymin)}, ${n(o.ymax)}]`;
+    case 'circle':
+      return `circle  c(${n(o.center[0])}, ${n(o.center[1])})  r=${n(o.radius)}`;
+    case 'segment':
+      return `segment (${n(o.x1)}, ${n(o.y1)}) → (${n(o.x2)}, ${n(o.y2)})`;
+    case 'polygon':
+      return `polygon ${o.vertices.length} vertices`;
+  }
+}
 
 export interface MatchResultSummary {
   winner: 'A' | 'B' | 'draw';
@@ -82,13 +103,57 @@ export class AudienceScreenUI {
     return lines.join('\n');
   }
 
+  /**
+   * PRE-REVEAL 板（规范 §26）。
+   *
+   * 只显示点、坐标、存活状态 —— 障碍物、Shooter、seed 一律不出现。
+   * 这一刻算法进程还不存在（规范 §14/§15）。
+   */
+  renderPreRevealBoard(snap: MatchSnapshot): string {
+    const lines: string[] = [];
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} PRE-REVEAL — SELECT SHOOTER`.padEnd(62) + '│');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(row('PUBLIC STATE  (obstacles / shooters 仍未揭盲)'));
+    for (const p of snap.points) {
+      const mark = p.alive ? ' ' : '×';
+      lines.push(row(`${mark} ${p.id.padEnd(4)} (${p.position.x.toFixed(1)}, ${p.position.y.toFixed(1)})`));
+    }
+    lines.push('└─────────────────────────────────────────────────────────────┘');
+    return lines.join('\n');
+  }
+
+  /**
+   * REVEAL 板（规范 §17/§18/§26）。
+   *
+   * 揭盲后、START 前：Shooter 与障碍物已公开，但两支算法都还没运行 ——
+   * 现场可以停任意久，停多久都不影响公平。
+   */
+  renderRevealBoard(snap: MatchSnapshot): string {
+    const lines: string[] = [];
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} REVEAL`.padEnd(62) + '│');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(row(`TEAM A SHOOTER: ${(snap.shooters.A?.id ?? '-').padEnd(6)}   TEAM B SHOOTER: ${(snap.shooters.B?.id ?? '-').padEnd(6)}`));
+    lines.push(row(`OBSTACLES REVEALED: ${snap.map?.obstacles.length ?? 0}`));
+    for (const o of snap.map?.obstacles ?? []) {
+      lines.push(row(`  ${formatObstacle(o)}`));
+    }
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push('│  A ALGORITHM: NOT STARTED                                   │');
+    lines.push('│  B ALGORITHM: NOT STARTED                                   │');
+    lines.push('│  READY TO COMPUTE                          [ START ]        │');
+    lines.push('└─────────────────────────────────────────────────────────────┘');
+    return lines.join('\n');
+  }
+
   /** 回放一帧 —— 只读已记录的数据 */
   renderReplayFrame(replay: Replay, index: number): string {
     const frame: ReplayFrame | undefined = replay.frames[index];
     if (!frame) return `(no frame ${index})`;
     const lines: string[] = [];
     lines.push(`═══ REPLAY ${replay.matchId} — ROUND ${frame.round} (${index + 1}/${replay.frames.length}) ═══`);
-    lines.push(`  stateHash: ${frame.stateHash.substring(0, 16)}…`);
+    lines.push(`  roundStateHash: ${frame.roundStateHash.substring(0, 16)}…`);
     lines.push(`  Shooter A: ${frame.shooterA?.id ?? '-'}   Shooter B: ${frame.shooterB?.id ?? '-'}`);
     lines.push(`  f_A(x) = ${frame.functionMathA ?? '(invalid)'}`);
     lines.push(`  f_B(x) = ${frame.functionMathB ?? '(invalid)'}`);

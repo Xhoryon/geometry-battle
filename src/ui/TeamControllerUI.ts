@@ -78,6 +78,30 @@ export class JudgeControllerUI {
     return { success: r.ok, error: r.error };
   }
 
+  /**
+   * WAITING FOR JUDGE 面板（规范 §18）—— 揭盲完成、算法未运行。
+   *
+   * 这是 V1.1 与 V1.0 最直观的差别：START 是一个真实的门禁，
+   * 裁判在这里按下的不是「确认」而是「开火」。
+   */
+  renderWaitingForStart(): string {
+    const snap = this.engine.getSnapshot();
+    const lines: string[] = [];
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} — WAITING FOR JUDGE`.padEnd(62) + '│');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    lines.push(`│  PUBLIC STATE  ✓   A LOCKED ${snap.locked.A ? '✓' : '✕'}  B LOCKED ${snap.locked.B ? '✓' : '✕'}   REVEAL STATE ✓`.padEnd(62) + '│');
+    lines.push(
+      `│  A SHOOTER: ${(snap.shooters.A?.id ?? '-').padEnd(6)}   B SHOOTER: ${(snap.shooters.B?.id ?? '-').padEnd(6)}`.padEnd(62) + '│'
+    );
+    lines.push('│                                                             │');
+    lines.push('│  A ALGORITHM: NOT STARTED                                   │');
+    lines.push('│  B ALGORITHM: NOT STARTED                                   │');
+    lines.push('│  READY TO COMPUTE                          [ START ]        │');
+    lines.push('└─────────────────────────────────────────────────────────────┘');
+    return lines.join('\n');
+  }
+
   renderJudgeUI(): string {
     const snap = this.engine.getSnapshot();
     const lines: string[] = [];

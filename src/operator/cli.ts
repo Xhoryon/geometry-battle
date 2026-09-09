@@ -11,8 +11,11 @@
  *   P1-A  产物只在整场结束后一次性落盘 → 开赛后、每回合后、异常退出前都落盘
  *
  * 工作人员只用本入口即可完成一整场比赛：
- *   上传 → Preflight → 开始比赛 → 选择 Shooter → 锁定 →
- *   裁判 START ROUND → 结算 → 下一轮 → 胜者 → 落盘
+ *   上传 → Preflight → 开始比赛 →（每轮）PRE-REVEAL 板 → 选择 Shooter → 锁定 →
+ *   REVEAL 板 → 裁判 START → 计算 → 结算 → 下一轮 → 胜者 → 落盘
+ *
+ * V1.1 三段式：REVEAL 与 START 是两个独立事件，中间可以停任意久；
+ * 在裁判按下 START 之前，参赛代码一行都不会执行（规范 §14/§15/§17/§18）。
  *
  * 不需要：修改 JSON、DevTools、monkey patch、内部状态注入。
  *
@@ -179,7 +182,10 @@ async function main(): Promise<void> {
     persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）
 
     while (engine.getWinner() === null) {
-      console.log('\n' + audience.renderSnapshotBoard(engine.getSnapshot()));
+      // ---- 1. PRE-REVEAL：生成 public_state.json，算法进程不存在（规范 §14/§15）----
+      const pre = engine.beginRound();
+      console.log('\n' + audience.renderPreRevealBoard(engine.getSnapshot()));
+      console.log(`  public_state.json  sha256 = ${pre.publicStateHash}`);
 
       for (const team of ['A', 'B'] as const) {
         const ctrl = controllers[team];
@@ -198,14 +204,22 @@ async function main(): Promise<void> {
         if (!lock.success) throw new Error(`Team ${team} 锁定失败: ${lock.error}`);
       }
 
-      console.log('\n' + judge.renderJudgeUI());
-      if (!opts.auto) await ask('裁判确认 —— 按回车 START ROUND...');
+      // ---- 2. REVEAL：双方 LOCK 之后才生成 reveal_state.json（规范 §3/§17）----
+      const rev = engine.revealRound();
+      console.log('\n' + audience.renderRevealBoard(engine.getSnapshot()));
+      console.log(`  reveal_state.json  sha256 = ${rev.revealStateHash}`);
+      console.log(`  roundStateHash              = ${rev.roundStateHash}`);
+
+      // ---- 3. START：真实门禁，此刻之前算法一行都没跑（规范 §18）----
+      console.log('\n' + judge.renderWaitingForStart());
+      if (!opts.auto) await ask('裁判确认 —— 按回车 START（此刻之前算法未运行）...');
       const startedRound = judge.startRound();
       if (!startedRound.success) throw new Error(`START ROUND 失败: ${startedRound.error}`);
+      console.log('  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…');
 
-      const result = await engine.runRound();
+      const result = await engine.computeRound();
       console.log(`\n── ROUND ${result.round} RESULT ──`);
-      console.log(`  stateHash: ${result.stateHash.substring(0, 16)}…`);
+      console.log(`  roundStateHash: ${result.roundStateHash.substring(0, 16)}…`);
       console.log(`  先解: ${result.firstSolver}`);
       console.log(`  A: ${result.shooterA}  t=${result.computeTimeMs.A?.toFixed(3) ?? '-'}ms  命中=[${result.hits.A.join(',')}]`);
       console.log(`  B: ${result.shooterB}  t=${result.computeTimeMs.B?.toFixed(3) ?? '-'}ms  命中=[${result.hits.B.join(',')}]`);

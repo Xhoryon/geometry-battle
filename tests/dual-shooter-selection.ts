@@ -55,8 +55,10 @@ test('dual-shooter-selection: 双方都锁定后才允许 START ROUND', async ()
   assert(!engine.judgeStartRound().ok, '只有一方锁定时不能开局');
   engine.selectShooter('B', 'B1');
   engine.lockShooter('B');
+  assertEqual(engine.getSnapshot().phase, 'LOCKED', '双方锁定后、START 前阶段应为 LOCKED');
   assert(engine.judgeStartRound().ok, '双方锁定后应允许开局');
-  assertEqual(engine.getSnapshot().phase, 'LOCKED', '阶段应为 LOCKED');
+  // V1.1：START 是真实门禁 —— 揭盲发生在 START 之前，START 之后才进入 COUNTDOWN
+  assertEqual(engine.getSnapshot().phase, 'COUNTDOWN', 'START 之后阶段应为 COUNTDOWN');
 });
 
 test('dual-shooter-selection: 死点不可被选为 Shooter', async () => {

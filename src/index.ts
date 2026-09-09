@@ -83,16 +83,8 @@ export {
 } from './core/Judge';
 
 // ---- RoundState / Round 状态机 ----
-export {
-  AlivePoint,
-  RoundStateCore,
-  RunnerPayload,
-  canonicalCoreJson,
-  computeStateHash,
-  toRunnerPayload,
-  runnerPayloadJson,
-  runnerPayloadWithoutTeamId,
-} from './core/RoundState';
+// Runner 输入的唯一序列化入口是下面的 InputProtocol —— V1.0 的 team_id 载荷 API 已删除
+export { AlivePoint, RoundStateCore } from './core/RoundState';
 export { RoundPhase, PhaseTransition, RoundMachine } from './core/Round';
 
 // ---- V1.1 两阶段输入协议 ----

@@ -1,5 +1,5 @@
 /**
- * Round 状态机 —— 17 阶段，真实运行（不是死代码）
+ * Round 状态机 —— 19 阶段，真实运行（不是死代码）
  *
  * 修复的 Finding：
  *   P1-20 17 状态机未集成
@@ -7,9 +7,16 @@
  *   P1-25 finishRound() 没有阶段守卫
  *   P2-16/P2-17/P2-18 非法转换 / 跳过状态 / 自动开始下一回合
  *
+ * V1.1 顺序修正（规范 §3/§17/§18/§25）：
+ *   揭盲（REVEAL）必须发生在 START 之前，且 START 与揭盲是两个独立事件：
+ *     WAITING_FOR_JUDGE → REVEAL → START_ROUND → COUNTDOWN → SEND_ROUND_STATE
+ *   V1.0 的转换表是 START_ROUND → COUNTDOWN → REVEAL —— 揭盲落在 START 之后，
+ *   与「START 前参赛代码绝不运行」的三大原则直接冲突。
+ *
  * 设计原则：
  *   - 所有转换都必须通过 transition()，非法转换抛错并记录
  *   - 双方 READY 不会自动开始 Round —— 必须裁判显式 judgeStartRound()
+ *   - 倒计时归零不自行推进：宿主随后显式 sendRoundState()
  */
 
 export type RoundPhase =
@@ -39,10 +46,10 @@ const TRANSITIONS: Record<RoundPhase, RoundPhase[]> = {
   SHOOTER_SELECTION: ['A_LOCKED', 'B_LOCKED'],
   A_LOCKED: ['WAITING_FOR_JUDGE'],
   B_LOCKED: ['WAITING_FOR_JUDGE'],
-  WAITING_FOR_JUDGE: ['START_ROUND'],
+  WAITING_FOR_JUDGE: ['REVEAL'],
+  REVEAL: ['START_ROUND'],
   START_ROUND: ['COUNTDOWN'],
-  COUNTDOWN: ['REVEAL'],
-  REVEAL: ['SEND_ROUND_STATE'],
+  COUNTDOWN: ['SEND_ROUND_STATE'],
   SEND_ROUND_STATE: ['A_COMPUTING', 'B_COMPUTING'],
   A_COMPUTING: ['B_COMPUTING', 'FIRST_SOLUTION', 'ROUND_RESULT'],
   B_COMPUTING: ['A_COMPUTING', 'FIRST_SOLUTION', 'ROUND_RESULT'],
@@ -140,7 +147,12 @@ export class RoundMachine {
     this.countdown = 3;
   }
 
-  /** 返回当前倒计时值；归零时进入 REVEAL */
+  /**
+   * 返回当前倒计时值；归零时只返回 null，**不自行推进阶段**。
+   *
+   * 归零后由宿主显式 `sendRoundState()` —— 否则倒计时结束会把状态机推回
+   * REVEAL（V1.0 的顺序），而 V1.1 的 REVEAL 已经在 START 之前发生。
+   */
   tickCountdown(): number | null {
     if (this.phase !== 'COUNTDOWN') {
       throw new Error(`当前阶段 ${this.phase} 不在倒计时`);
@@ -150,7 +162,6 @@ export class RoundMachine {
 
     if (this.countdown <= 0) {
       this.countdown = null;
-      this.transition('REVEAL', 'countdown finished');
       return null;
     }
     return this.countdown;

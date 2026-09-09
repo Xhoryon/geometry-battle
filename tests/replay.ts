@@ -84,7 +84,7 @@ test('replay: 删除算法包与沙箱后，回放仍可完整加载', async () 
   }
 });
 
-test('replay: 帧的 stateHash 与 MatchLog 逐轮一致，alive 链首尾相接', async () => {
+test('replay: 帧的 roundStateHash 与 MatchLog 逐轮一致，alive 链首尾相接', async () => {
   const played = await playAndPersist('REPLAY-CHAIN', 660022);
   const replay: Replay = loadReplay(path.join(played.artifactDir, 'replay.json'));
   const match: MatchLog = JSON.parse(
@@ -93,7 +93,21 @@ test('replay: 帧的 stateHash 与 MatchLog 逐轮一致，alive 链首尾相接
 
   assertEqual(replay.frames.length, match.rounds.length, '帧数应等于 MatchLog 回合数');
   for (let i = 0; i < replay.frames.length; i++) {
-    assertEqual(replay.frames[i].stateHash, match.rounds[i].stateHash, `第 ${i + 1} 轮 stateHash 必须一致`);
+    assertEqual(
+      replay.frames[i].roundStateHash,
+      match.rounds[i].roundStateHash,
+      `第 ${i + 1} 轮 roundStateHash 必须一致`
+    );
+    assertEqual(
+      replay.frames[i].publicStateHash,
+      match.rounds[i].publicStateHash,
+      `第 ${i + 1} 轮 publicStateHash 必须一致`
+    );
+    assertEqual(
+      replay.frames[i].revealStateHash,
+      match.rounds[i].revealStateHash,
+      `第 ${i + 1} 轮 revealStateHash 必须一致`
+    );
     assertEqual(replay.frames[i].killed.length, match.rounds[i].aKills + match.rounds[i].bKills, '击杀数必须一致');
     assertEqual(replay.frames[i].firstSolver, match.rounds[i].firstSolver, '先手必须一致');
     if (i > 0) {
