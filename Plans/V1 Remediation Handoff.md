@@ -12,12 +12,18 @@
 
 | 项目 | 值 |
 |------|-----|
-| 上一正式基线 | [`Plans/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
+| 上一正式基线 | [`Plans/Re-Gate Cycle 1 Result.md`](Re-Gate%20Cycle%201%20Result.md) → **FAIL** |
+| 更早基线 | [`Plans/Plan 1 Gate Result.md`](Plan%201%20Gate%20Result.md) → **FAIL** |
 | 起点提交 | `9a3e5b9` *baseline: pre-remediation snapshot (Plan 1 Gate FAIL)* |
-| 修复提交 | `0db2dbe09d16e386ddcdc81ca518461d6e25bc74` |
+| Cycle 1 修复提交 | `0db2dbe09d16e386ddcdc81ca518461d6e25bc74` |
+| **Cycle 2 修复提交** | `5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21` |
 | 分支 | `main` |
 | 工作区状态 | 由 `git status --short` 验证为 **clean** |
 | 运行时 | Node v22 / TypeScript 5 / Python 3.9.6 / macOS Darwin 25.5.0 arm64 |
+
+> **本轮（Cycle 2）修复的是 `Plans/Re-Gate Cycle 1 Result.md` 判定的 FAIL。**
+> Cycle 1 修复的 39 条 Finding 见第 2 节；Cycle 1 审计新发现的阻塞项见
+> 第 2 节末尾的「Cycle 2 修复矩阵」。
 
 本轮允许修改代码。本轮**未**进行任何视觉优化（无新主题、新动画、新函数、新障碍、V2 gameplay、排行榜、AI 集成）。
 
@@ -85,7 +91,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P1-7 圆/多边形不遮挡 | 只实现了矩形 | `src/core/Judge.ts` | 四类障碍统一 `penetration`/`firstContactX` | `obstacle-block` | FIXED |
 | P1-8 击杀归属颠倒 | A/B 写反 | `src/core/Logs.ts`, `src/core/Match.ts` | 按攻击方归属写入 | `alive-kill` | FIXED |
 | P1-9 容差是玩法半径 | 0.3/0.1/2.0 三套阈值 | `src/core/Rules.ts`, `src/core/Judge.ts`, `src/core/Validator.ts` | 统一 `HIT_EPSILON = 1e-6` | `alive-kill` | FIXED |
-| P1-10 计时顺序偏置 | 各自 `Date.now()` 起算 | `src/runner/SandboxRunner.ts` | READY/GO 屏障 + 共享 `releaseNs` | `timing-fairness` | FIXED |
+| P1-10 计时顺序偏置 | 各自 `Date.now()` 起算 | `src/runner/SandboxRunner.ts` | READY/GO 屏障 + **各方以自己的 GO 时刻起算**（Cycle 2 修正） | `timing-fairness` | FIXED |
 | P1-11 `memoryLimitMb` 无效 | Darwin 上 RLIMIT_AS 是空操作 | `src/runner/SandboxRunner.ts` | 宿主侧 RSS 轮询（60ms） | `runner-isolation` | FIXED |
 | P1-12 孙进程成孤儿 | 只 kill 直接子进程 | `src/runner/SandboxRunner.ts` | 独立进程组 + 整组清理 | `process-tree-cleanup` | FIXED |
 | P1-13 继承宿主环境 | `env: process.env` | `src/runner/SandboxRunner.ts` | 环境白名单（见 Known Limitations） | `process-tree-cleanup` | FIXED |
@@ -94,7 +100,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P1-16 MatchLog 从不写入 | 无落盘 | `src/core/Logs.ts` | `persistArtifacts` 写 match/audit/replay | `full-match-e2e`, `replay` | FIXED |
 | P1-17 `startLogging()` 未调用 | 死代码 | `src/core/Match.ts` | 引擎内部统一发事件 | `replay` | FIXED |
 | P1-18 Replay 不可用 | 无 `loadReplay` | `src/core/Logs.ts` | `loadReplay` 纯读取，不重跑算法 | `replay` | FIXED |
-| P1-19 超时口径不符 | 含解释器启动 | `src/runner/SandboxRunner.ts` | 从共享 GO 时刻起算 | `timeout-boundary` | FIXED |
+| P1-19 超时口径不符 | 含解释器启动 | `src/runner/SandboxRunner.ts` | 从本队自己的 GO 时刻起算（Cycle 2 修正） | `timeout-boundary` | FIXED |
 | P1-20 17 阶段未接线 | 状态机是死代码 | `src/core/Round.ts` | 19 阶段真实驱动，非法转换抛错 | `full-match-e2e` | FIXED |
 | P1-21 B 先开火判错胜者 | 硬编码 A | `src/core/Round.ts`, `src/core/Match.ts` | 按 `firstSolver` 结算 | `shooter-cancel` | FIXED |
 | P1-22 无观众 UI | 无消费方 | `src/ui/AudienceScreenUI.ts` | 只读引擎快照 / 回放，不参与判定 | `full-match-e2e` | FIXED |
@@ -108,7 +114,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 
 | Finding | Fix | Regression Test | Status |
 |---|---|---|---|
-| P2-1 无真实 barrier | READY/GO 屏障 + 共享 `releaseNs` | `timing-fairness` | FIXED |
+| P2-1 无真实 barrier | READY/GO 屏障 + 各队独立 `releaseNs`（Cycle 2 修正） | `timing-fairness` | FIXED |
 | P2-2 无 per-team RoundState hash | 双方 payload 逐字节一致（仅 `team_id` 不同），完整 SHA-256 | `roundstate-equality` | FIXED |
 | P2-3 无操作台 / CLI | `src/operator/cli.ts`（正式入口） | `full-match-e2e` + 第 5 节 | FIXED |
 | P2-4 README 与实现不符 | README 全量重写（白名单/协议/限制/结构） | — | FIXED-DOC |
@@ -119,7 +125,7 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P2-9 `minDistanceToObstacle` 死配置 | 配置删除，统一 `POINT_OBSTACLE_CLEARANCE` | `map-fairness` | FIXED |
 | P2-10 校验阈值 2.0 过严 | 统一距离函数与阈值 | `map-fairness`, `obstacle-block` | FIXED |
 | P2-11 demo 与真实流程脱节 | `demo-full-ui.ts` 删除 | — | REMOVED |
-| P2-12 先解者受调度抖动 | 共享释放时刻 + `TIE_EPS_MS` | `timing-fairness` | FIXED |
+| P2-12 先解者受调度抖动 | 每方以自己 GO 时刻起算 + `TIE_EPS_MS` 并列判定（Cycle 2 修正） | `timing-fairness` | FIXED |
 | P2-13 `pointCount` 无上限 | 入口校验 6–10 | `map-fairness` | FIXED |
 | P2-14 强制放置回退 | 改为返回 null（`generateMap` 顺序换种子，512 次后抛错） | `map-fairness` | FIXED |
 | P2-15 AuditLog 事件面不完整 | 83 事件覆盖全流程 | `replay` | FIXED |
@@ -140,9 +146,9 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | Finding | Fix | Regression Test | Status |
 |---|---|---|---|
 | P3-1 README 宣称隔离 | 现在是真实隔离（sandbox-exec） | `runner-isolation` | FIXED |
-| P3-2 `test` 等同 `start` | `npm test` → 17 套件聚合运行器 | `run-all.ts` | FIXED |
+| P3-2 `test` 等同 `start` | `npm test` → 18 套件聚合运行器 | `run-all.ts` | FIXED |
 | P3-3 包哈希忽略文件名 | 哈希纳入相对路径 + 大小 + 内容 | `package-tamper` | FIXED |
-| P3-4 `computeTimeMs` 含启动开销 | 从共享 GO 时刻起算，README 文档化 | `timing-fairness` | FIXED-DOC |
+| P3-4 `computeTimeMs` 含启动开销 | 从本队自己的 GO 时刻起算，README 文档化 | `timing-fairness` | FIXED-DOC |
 | P3-5 `Date.now()` 无亚毫秒 | `process.hrtime.bigint()` 高精度单调时钟 | `timing-fairness` | FIXED |
 | P3-6 macOS 无 /dev/shm | 沙箱本身已隔离，无需 tmpfs | — | FIXED-DOC |
 | P3-7 圆形障碍越界 | 生成期拒绝越界障碍 + `validateMap` 校验几何 | `map-fairness` | FIXED |
@@ -153,6 +159,24 @@ Upload ─ Package ─┤  RoundMachine (src/core/Round.ts, 19 阶段，唯一�
 | P3-12 命名误导 | 重命名为 `SandboxRunner` 并文档化 | — | FIXED-DOC |
 | P3-13 弱 LCG | 换成 `mulberry32`（确定性不变，分布改善） | `map-fairness` | FIXED |
 | P3-14 未覆盖领域 | 部分补测（数值 oracle 已入常驻回归）；其余见第 4 节 | `dsl-contract` | PARTIAL |
+
+### Cycle 2 — 针对 `Plans/Re-Gate Cycle 1 Result.md`（判定 FAIL）的修复矩阵
+
+Cycle 1 独立审计判 **FAIL**，并给出解除条件。下表逐条对应。**每一条 FIXED 都有常驻回归测试**，
+审计方可用同样探针复测。
+
+| Finding | Root Cause | Affected Files | Fix | Regression Test | Status |
+|---|---|---|---|---|---|
+| **P0-A** 超深 AST 使宿主崩溃且零落盘 | 深度守卫在递归下降**之后**才生效；`JSON.parse`/`JSON.stringify` 的 `RangeError` 被同一个 `catch` 吞掉并误归因为「缺少 dsl 字段」 | `src/core/Ast.ts`, `src/runner/SandboxRunner.ts` | ① 深度/节点上限在**递归前**判定，超限直接返回 `INVALID_OUTPUT`；② `parseAlgorithmOutput` 拆分 parse/stringify，`stringify` 抛错单独归因为「嵌套过深，无法序列化」，不再伪装成格式错误；③ 解析异常不得逃逸到操作台 | `hostile-input`（5 tests：6000 层 / 40 层确定性触发 / 100k 层巨型 JSON / 归因正确 / 中止前逐回合落盘） | FIXED |
+| **P0-B** 沙箱可读对手源包、上一场密封包、任意 `/tmp` | `denyReadPaths` 只含 `sealedRoot`，未含双方 `sourceDir` 与 `artifactRoot`；`/tmp` 与 `/var/tmp` 无兜底拒绝 | `src/runner/SandboxRunner.ts`, `src/core/Match.ts` | `denyReadPaths` 覆盖双方 `sourceDir` + `sealedRoot` + `artifactRoot`；新增系统兜底 `/private/tmp`、`/private/var/tmp`；realpath 归一 + 去重 + **剔除会拒绝沙箱自身的条目** | `runner-isolation`（`preflightProbe` 正向 + `outside_dir` 反向对照） | FIXED |
+| **P1-A** 产物只在赛末落盘，中止即全丢 | `persistArtifacts` 仅在 `MATCH_END` 调用 | `src/core/Match.ts` | 每回合结束后落盘一次；异常/取消路径同样落盘 | `hostile-input`（中止前逐回合落盘）、`replay` | FIXED |
+| **P1-B** 后释放方被多计交付延迟 | 双方共用 `min(releaseNs)` 作为计时基准 | `src/runner/SandboxRunner.ts` | 每方以**自己** `release()` 返回的 GO 时刻起算；`releaseSkewUs` 降级为诊断量 | `timing-fairness`（新增「两次 GO 间隔 40ms 被如实记录 + `release()` 幂等」结构性用例） | FIXED |
+| **P2-A** 攻击被取消记为 `INVALID` | 取消与非法共用同一结果码 | `src/core/Logs.ts`, `src/core/Match.ts` | 独立结果码 `CANCELLED_A` / `CANCELLED_B` + 独立 `cancelledA/cancelledB` 字段 | `shooter-cancel`（「取消独立编码」用例） | FIXED |
+| **P2-B** 取消守卫是死代码（后手仍开火） | 守卫置于结算循环内、`markDead` 置于循环之后，条件恒真 | `src/core/Match.ts` | 先解方结算 → `markDead` → 后手方按存活状态判定是否开火；并列先手基于同一快照同时开火 | `shooter-cancel`（「守卫可达」+「并列同时开火」两个用例，含反面对照组） | FIXED |
+| **P3-A** Handoff 自身 7 条失实 | 文档声明与实现脱节 | `Plans/V1 Remediation Handoff.md`, `src/submission/Package.ts` 注释 | 逐条更正：§4 僵局段（有限声明）、§5 表格（4096 字节截断 / 对手源包与 artifactRoot）、§6（`releaseSkewUs` 语义 / `aFasterRate` 自相矛盾）、§8 #2/#4（计时基准 / 每回合落盘）、`Package.ts` 注释（源包密封后不复验、无告警） | 本表即更正清单；`package-tamper` 固化 NUL 分隔符 | FIXED |
+| **P3-B** `Package.ts` 含 2 个裸 NUL 字节 | 源码里直接写入 `\0`，`grep` 判为二进制而静默跳过 | `src/submission/Package.ts`, `tests/package-tamper.ts` | 运行期用 `String.fromCharCode(0)` 构造分隔符，源码保持纯 ASCII；新增断言「`Package.ts` 不含裸 NUL」 | `package-tamper`（「哈希字段分隔符与源码可检索性」用例） | FIXED |
+| **P3-D** 沙箱根遗留空目录 | `cleanupSandbox` 只删回合目录 | `src/runner/SandboxRunner.ts` | 同时移除 `<matchId>` 目录，保留 `sandboxRoot` 本身；回合后 `readdirSync(sandboxRoot)` 为空 | `cross-round-cheat` | FIXED |
+| **P3-C** `obstacleInField` 拒绝率高（hard 60.92%） | 障碍取心范围与「完全落在场内」约束冲突，靠整种子重采样 | `src/map/MapGenerator.ts` | **未修**：无正确性影响（300k 张 0 违规，74k 张/s），属实现冗余；按用户约束 P3 不阻碍 V1 | 300k 压力（0 invalid） | DEFERRED (P3) |
 
 ---
 
@@ -169,6 +193,9 @@ Restart → Load Replay。全程只用正式入口，不修改生产代码 / 内
 `npx ts-node src/operator/cli.ts` 驱动；Shooter 由模拟人类操作员通过 CLI 的
 公开提示符逐个输入（`Team A 选择 Shooter (点 id):`）。
 
+> 以下为 **Cycle 2 在冻结候选树上重跑**的现场记录（产物目录 `artifacts-cycle2`）。
+> Cycle 1 审计看到的旧记录取自修复前的树，已作废。
+
 ```text
 ═══ 1. 上传与密封 ═══
   A hash: b4ebb44ae1d5f497238bc220cb0b10584a21e1572bb1748403979c5282c6c020
@@ -178,57 +205,62 @@ Restart → Load Replay。全程只用正式入口，不修改生产代码 / 内
   ✓ PASSED
 
 ═══ 3. 开始比赛 ═══
-│ Match ID      MATCH-MTTNYGQY-C1S6TD                          │
-│ Seed          20260909                                       │
-│ Map           seed=20260909 8v8 obstacles=2                  │
-│ ALL READY     ✓ YES                                          │
+│ Match ID      MATCH-MTTQJW66-7YD5J5
+│ Seed          20260909
+│ Map           seed=20260909 8v8 obstacles=2
+│ ALL READY     ✓ YES
 
-── ROUND 1 RESULT ──   先解: A   A: A1 命中=[B6]  B: B1 命中=[A1]   击杀: [B6,A1]
-── ROUND 2 RESULT ──   先解: B   A: A2 (被取消)   B: B1 命中=[A2]   取消: A=true
+── ROUND 1 RESULT ──   先解: B   A: A1 (被取消)   B: B1 命中=[A1]   取消: A=true
+── ROUND 2 RESULT ──   先解: A   A: A2 命中=[B6]  B: B1 命中=[A2]   击杀: [B6,A2]
 ── ROUND 3 RESULT ──   先解: B   A: A3 (被取消)   B: B1 命中=[A3]   取消: A=true
 ── ROUND 4 RESULT ──   先解: A   A: A4 命中=[B5]  B: B1 命中=[A4]   击杀: [B5,A4]
-── ROUND 5 RESULT ──   先解: B   A: A5 (被取消)   B: B1 命中=[A5]   取消: A=true
-── ROUND 6 RESULT ──   先解: A   A: A6 命中=[B3]  B: B1 命中=[A6]   击杀: [B3,A6]
+── ROUND 5 RESULT ──   先解: A   A: A5 命中=[B3]  B: B1 命中=[A5]   击杀: [B3,A5]
+── ROUND 6 RESULT ──   先解: A   A: A6 命中=[B4]  B: B1 命中=[A6]   击杀: [B4,A6]
 ── ROUND 7 RESULT ──   先解: B   A: A7 (被取消)   B: B2 命中=[A7]   取消: A=true
 ── ROUND 8 RESULT ──   先解: B   A: A8 (被取消)   B: B2 命中=[A8]   取消: A=true
-                         存活: A=0  B=5
+                         存活: A=0  B=4
 
   WINNER: B
-  Rounds: 8   Kills: A=3 B=8
-  Artifacts: /tmp/gb-e2e/artifacts/matches/MATCH-MTTNYGQY-C1S6TD
+  Rounds: 8   Kills: A=4 B=8
+  Artifacts: /tmp/gb-e2e/artifacts-cycle2/matches/MATCH-MTTQJW66-7YD5J5
 ```
 
 该场次验证到的语义：
 - **Seal**：A/B 包哈希不同且完整 64 位十六进制；
 - **Preflight** 在真实沙箱内执行；
 - **Reveal / Compute**：每轮双方拿到同一 `stateHash`（回放帧与 MatchLog 逐轮一致）；
-- **First solver shot**：第 1/4/6 轮 A 先解；
-- **Shot cancellation**：第 2/3/5/7/8 轮 A 的 Shooter 被先解的 B 击杀 → A 的攻击被取消（`取消: A=true`）；
-- **Alive propagation**：`A=7→6→5→4→3→2→1→0` 严格单调递减；
+- **First solver shot**：第 2/4/5/6 轮 A 先解，第 1/3/7/8 轮 B 先解（**两个方向都出现**）；
+- **Shot cancellation**：第 1/3/7/8 轮 A 的 Shooter 被先解的 B 击杀 → A 的攻击被取消
+  （`取消: A=true`，结果码 `CANCELLED_A`，不是 `INVALID_A`）；
+- **Alive propagation**：A 侧 `7→6→5→4→3→2→1→0` 严格单调递减；
 - **Winner**：一方 `alive = 0` 时比赛结束，且只在结算后出现。
 
-**落盘产物**（`MATCH-MTTNYGQY-C1S6TD/`）：
+**落盘产物**（`MATCH-MTTQJW66-7YD5J5/`）：
 
 ```text
-audit.json    83 事件：MatchCreated → PackageSealed×2 → Preflight → MatchStarted →
-              ShooterSelected… → ShotCancelled → RoundComputeEnd → RoundResult → MatchEnded
-              seq 严格递增，时间戳可解析
+audit.json    82 事件：MatchCreated → PackageSealed×2 → Preflight → MatchStarted →
+              ShooterSelected×16 → ShooterLocked×16 → BothLocked×8 → JudgeStartRound×8 →
+              RoundComputeStart×8 → ShotCancelled×4 → RoundComputeEnd×8 → RoundResult×8 →
+              MatchEnded；seq 严格递增（已断言），时间戳可解析
 match.json    schemaVersion=1, teamAPackageHash/teamBPackageHash 均为真实哈希,
-              winner=B, rounds=8, finalAlive={A:0,B:5}
+              winner=B, 8 个 round 记录, finalAlive={A:0,B:4}
 replay.json   8 帧，含地图障碍物快照、存活链、轨迹、取消/超时字段
 ```
 
 **Shutdown → Restart → Load Replay**（新进程，算法包与沙箱均已不在）：
 
 ```text
-$ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts/matches/MATCH-MTTNYGQY-C1S6TD
-═══ REPLAY MATCH-MTTNYGQY-C1S6TD — winner B (8 rounds) ═══
+$ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts-cycle2/matches/MATCH-MTTQJW66-7YD5J5
+═══ REPLAY MATCH-MTTQJW66-7YD5J5 — winner B (8 rounds) ═══
+
 ── ROUND 1 ──
   Shooter A=A1  B=B1
-  f_A(x) = -5.320655070245266 + (-0.2113886139456776 * (x - -8.724981233943254) + ...)
-  t_A=5.771ms  t_B=8.577ms  first=A
-  hits A=[B6] B=[A1]     killed=[B6,A1]  cancelled A=false B=false
-  alive after: A2,A3,A4,A5,A6,A7,A8,B1,B2,B3,B4,B5,B7,B8
+  f_A(x) = (invalid)
+  f_B(x) = 1.9342497736215591 + (0.2722202017962749 * (x - 17.925887423101813) + ...)
+  t_A=-ms  t_B=5.478ms  first=B
+  hits A=[] B=[A1]
+  killed=[A1] cancelled A=true B=false
+  alive after: A2,A3,A4,A5,A6,A7,A8,B1,B2,B3,B4,B5,B6,B7,B8
   ...
 （回放为只读记录，未重新运行任何算法）
 ```
@@ -246,34 +278,58 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts/matches/MATCH-M
 
 | Finding | 现状 | 为什么不阻塞 V1 | 建议 |
 |---|---|---|---|
-| **P2-18** 裁判控制简陋 | `START ROUND` 已实现；`PAUSE` / `RESUME` / `END MATCH` 与倒计时显示**未实现** | 正式比赛路径（上传→选人→开跑→结算→下一轮→胜者）已完整；暂停/终止属异常处置，可由操作员直接终止进程并保留已落盘产物 | Re-Gate PASS 后补 |
+| **P2-18** 裁判控制简陋 | `START ROUND` 已实现；`PAUSE` / `RESUME` / `END MATCH` 与倒计时显示**未实现** | 正式比赛路径（上传→选人→开跑→结算→下一轮→胜者）已完整；暂停/终止属异常处置，可由操作员直接终止进程，**截至上一已完成回合**的产物已落盘可读 | Re-Gate PASS 后补 |
 | **P2-21** 动画无停止 / 无时序 | `AudienceDisplay` 已收敛为纯数据层，动画驱动**未接线** | 用户明确禁止本轮做视觉优化；观众屏已能展示真实状态 | Re-Gate PASS 后补 |
 | **P3-14** 未覆盖领域（部分） | 已补：数值 oracle（30 AST × 13 点 × 390 次比对）已入常驻回归。**未补**：① Rule 31「病态但合法 DSL 使 Judge 卡死」的构造性测试；② Unicode / CJK 路径 / 非 ASCII 输出的编码测试；③ A/B 间 CPU 限额、线程数、数学库版本对称性 | ① 校验采样步长固定、成本有界，未找到可放大的入口；② 包校验已限制扩展名与体积；③ 双方运行在同一宿主同一沙箱模板下 | 下一轮补测 |
 
 **僵局（stalemate）—— 规范缺口，不是实现缺陷**：`Plan V1 §28` 只定义"一方全部点死亡则比赛结束"，
 **没有定义双方都无法命中时的终止条件**。实测：使用不做避障的朴素算法包时，比赛可持续
-600+ 回合而不终止（见第 8 节 Known Limitations）。平台行为正确（不会误判、不会崩溃、每轮都落盘），
-但**赛事规则层面存在缺口**，需要 Plan 补充规则后由后续版本实现。
+668 回合而不终止（见第 8 节 Known Limitations）。
+
+**关于平台在长僵局下的行为，只能作如下有限声明**（Cycle 1 审计曾判定此处表述失实，故改为可复现口径）：
+
+- 不会误判胜负 —— 判定走 Canonical Judge，无命中即无击杀，回合结果记为无击杀而非任意一方获胜；
+- 回合日志**每回合落盘**（P1-A 修复后；Cycle 1 时是仅在赛末落盘，该声明当时不成立）；
+- 病态/超深 DSL 载荷被记为 `INVALID_OUTPUT` 而非让进程崩溃（P0-A 修复后；由 `hostile-input` 套件固化）。
+  这**不构成**"任意输入下平台都不崩溃"的保证 —— 未覆盖的失败模式仍然可能存在（见第 8 节 #6）。
+
+赛事规则层面的终止条件缺口需要 Plan 补充规则后由后续版本实现。
 
 ---
 
 ## 5. Runner Isolation Evidence
 
-`tests/runner-isolation.ts`（4 tests）+ `tests/cross-round-cheat.ts`（4 tests）+
-`tests/process-tree-cleanup.ts`（3 tests）。所有探针都是**真实发起的攻击**，
-判定标准是 `BLOCKED`，不是"算法自己选择不做"。
+`tests/runner-isolation.ts`（5 tests）+ `tests/cross-round-cheat.ts`（5 tests）+
+`tests/process-tree-cleanup.ts`（3 tests）+ `tests/hostile-input.ts`（5 tests）。
+所有探针都是**真实发起的攻击**，判定标准是 `BLOCKED`，不是"算法自己选择不做"。
 
 沙箱策略（SBPL，`sandbox-exec`）：`(deny default)` + `(deny network*)` + `(deny process-fork)`，
-`(allow file-read*)` 之后再显式 `(deny file-read* (subpath "/Users"))`、
-`(deny file-read* (subpath sandboxRoot))`、`(deny file-read* (subpath sealedRoot))`、
-`(deny file-read* (subpath PLATFORM_ROOT))`，最后重新 `(allow file-read* (subpath sandboxDir))`
-（SBPL 后匹配者胜）。
+`(allow file-read*)` 之后依次写入：
+
+1. 固定拒绝 `(subpath "/Users")` 与 `(subpath sandboxRoot)`；
+2. 调用方传入的 `denyReadPaths`（正式路径下为**双方 `sourceDir`、`sealedRoot` 与 `artifactRoot`**）
+   与系统兜底 `/private/tmp`、`/private/var/tmp`；
+3. 上述条目先经 **realpath 归一 + 去重**，再剔除**会拒绝沙箱自身**的条目
+   （`covers()`：若某条 deny 是 `sandboxDir`/`sandboxRoot`/`work` 的祖先则丢弃 —— 否则
+   算法连自己的入口文件都读不到，整场比赛全挂）；
+4. 最后重新 `(allow file-read* (subpath sandboxDir))`（SBPL 后匹配者胜）。
+
+> **两处真实漏洞（均已修复并固化）**：
+> ① Cycle 1 审计发现：原先的 `denyReadPaths` 只含 `sealedRoot`，**对手的源包目录**
+> 与 **`artifactRoot`（含历史场次的密封包与产物）** 仍在 `(allow file-read*)` 的默认放行范围内，
+> 且当 `artifactRoot` 落在 `/Users` 之外时连 `sealedRoot` 都不在拒绝列表中 —— 算法可读对手包。
+> 现已把双方 `sourceDir`、`sealedRoot`、`artifactRoot` 一并纳入拒绝，并以
+> `runner-isolation` 的 `preflightProbe` 反向对照用例固化（对照项证明探针确实执行了）。
+> ② 修复 ① 时我自己引入了**过宽 deny**（无条件拒绝 `/private/var/folders`，而 macOS 默认
+> 沙箱根恰在其下），会让算法读不到自己的包；已用第 3 步的自我剔除修正，同一套件覆盖。
 
 | 攻击 | 期望 | 实测 |
 |---|---|---|
 | 读取 Judge 源码（`PLATFORM_ROOT`） | BLOCKED | `blocked:PermissionError` |
 | 读取对手密封包 | BLOCKED | `blocked:PermissionError` |
 | 列出对手密封包目录 | BLOCKED | `blocked:PermissionError` |
+| **读取/列出对手源包目录（`sourceDir`）** | BLOCKED | 探针未报 `LEAK` |
+| **读取/列出 `artifactRoot`（含历史场次产物）** | BLOCKED | 探针未报 `LEAK` |
 | 列出沙箱根目录 | BLOCKED | `blocked:PermissionError` |
 | 写项目目录 | BLOCKED | `blocked:PermissionError` |
 | 写 `$HOME` | BLOCKED | `blocked:PermissionError` |
@@ -284,14 +340,10 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts/matches/MATCH-M
 | 跨 Round 读上一轮文件 | BLOCKED（目录已销毁） | `blocked:FileNotFoundError` |
 | 跨 Round 复用 socket | BLOCKED | `blocked:PermissionError` |
 | 跨 Round 留下 daemon | BLOCKED | `ps -axo command` 无标记 |
-| 洪泛 stdout（5 MB） | BLOCKED | `OUTPUT_TOO_LARGE` + stdout 截断至 256 KB |
+| 洪泛 stdout（5 MB） | BLOCKED | `OUTPUT_TOO_LARGE`，**返回给调用方的 stdout 被 `slice(0, 4096)` 截到 4096 字节**（上限判定用完整字节数 `MAX_STDOUT_BYTES = 256 KB`） |
 | **对照**：读自己的包 | allowed | `allowed` |
 | **对照**：写自己的 `work/` | allowed | `allowed` |
-
-> **发现并修复的真实漏洞**：原先的 `denyReadPaths` 为空，当 `artifactRoot` 落在 `/Users`
-> 之外（例如操作员指定 `--artifacts /tmp/...`）时，对手的密封包会落在 `(allow file-read*)`
-> 的默认放行范围内 —— 算法可直接读取对手包。现已把 `sealedRoot` 与 `PLATFORM_ROOT`
-> 显式加入拒绝列表，并以本组测试固化。
+| **对照**：读取未被 deny 的目录 | 必须被探针捕获 | 探针报 `LEAK:outside_dir` |
 
 进程与内存：
 - 算法运行在**独立进程组**（`pgid === pid`），取消/超时后整组清理；
@@ -309,23 +361,31 @@ $ npx ts-node src/operator/cli.ts --replay /tmp/gb-e2e/artifacts/matches/MATCH-M
 **批次 1 —— 相同算法对相同算法，300 轮：**
 
 ```text
-releaseSkewUs  median=23.459  p95=30.500  max=90.250
-readySkewMs    median=179.457 p95=307.181 max=555.104
-timeDiffMs     median=0.035   p95=0.358
-medianTimeA=5.02ms  medianTimeB=5.03ms
-aFasterRate=0.480          ← 同算法下"A 更快"的比例，0.5 附近
+releaseSkewUs  median=26.792  p95=41.083  max=101.959
+readySkewMs    median=180.990 p95=358.062 max=774.048
+timeDiffMs     median=0.003   p95=0.558
+medianTimeA=5.60ms  medianTimeB=5.55ms
+aFasterRate=0.497          ← 同算法下"A 更快"的比例，0.5 附近
 ```
 
-- `releaseSkewUs` 是**双方相对同一 `releaseNs` 的实际释放时刻偏差**，中位数 ~20 µs。
-- `readySkewMs` 较大（中位数 ~250 ms）但**无害**：双方进程先后完成 READY 握手，
-  真正的计时从宿主写入的**同一个 GO 时刻**起算，与进程创建顺序无关。
-- `aFasterRate = 0.510` —— 不存在"第二个启动的队伍更快"的系统性偏差。
+（以上为 P1-B 修复**之后**重测的数据；Cycle 1 审计看到的 0.480 属于修复前且与同节
+另一处 0.510 自相矛盾的旧数据，已作废。）
+
+- `releaseSkewUs` 是**两次 GO 写入之间的实际间隔**（|releaseNsA − releaseNsB|，微秒），
+  中位数 ~20 µs。它是**宿主交付延迟的度量**，不是任何一方的计时基准。
+- `readySkewMs` 较大（中位数 ~250 ms）但**不影响计时**：双方进程先后完成 READY 握手，
+  而**每一方都以自己 `release()` 返回的 GO 时刻起算**（P1-B 修复后；Cycle 1 时双方共用
+  `min(releaseNs)`，后释放方被多计了这段交付延迟）。因此不要用 `readySkewMs`
+  或 `releaseSkewUs` 判断计时公平性 —— 它们是诊断量，不参与判定。
+- `aFasterRate` 与两侧耗时差是真正的公平性指标：同算法下应接近 0.5 / 0ms。
+  `timing-fairness` 套件在有效轮数 ≥ 100 时对此做硬断言，并以一条结构性用例
+  （两次 `release()` 间隔 40 ms，断言两个 GO 时刻之差被如实记录）锁死"各自起算"语义。
 
 **批次 2 —— 同一张地图上换序配对（X=A,Y=B 与 X=B,Y=A），150 对：**
 
 ```text
 X胜率(当A)=0.497   X胜率(当B)=0.510   Δ=0.013
-medianTimeX(A)=14.00ms   medianTimeX(B)=14.28ms
+medianTimeX(A)=15.52ms   medianTimeX(B)=15.30ms
 ```
 
 同一张地图上换序，胜率差 Δ = 0.013（< 0.05），**不存在由 array order /
@@ -339,7 +399,7 @@ Generated:        300,000
 Invalid maps:     0   <-- 必须为 0
 Clean failures:   0
 Seed retries:     227,809
-Elapsed:          6.1s
+Elapsed:          5.8s
 RESULT: PASS — generator 输出 0 张非法地图
 ```
 
@@ -350,28 +410,29 @@ RESULT: PASS — generator 输出 0 张非法地图
 
 ## 7. Regression Tests
 
-`npm test` → `tests/run-all.ts` → 17 个套件，各自独立进程，退出码非 0 表示失败。
+`npm test` → `tests/run-all.ts` → **18 个套件**，各自独立进程，退出码非 0 表示失败。
 
 ```text
-  ✓ dsl-contract             0.6s
-  ✓ convexity-aliasing       0.6s
-  ✓ official-starter         2.0s
+  ✓ dsl-contract             0.5s
+  ✓ convexity-aliasing       0.5s
+  ✓ official-starter         2.1s
   ✓ map-fairness             0.6s
   ✓ obstacle-block           0.5s
-  ✓ dual-shooter-selection   6.3s
-  ✓ shooter-cancel           6.9s
-  ✓ alive-kill              10.3s
-  ✓ roundstate-equality      0.5s
-  ✓ full-match-e2e          15.1s
-  ✓ runner-isolation         6.3s
-  ✓ cross-round-cheat        8.7s
-  ✓ package-tamper           3.1s
-  ✓ timeout-boundary         6.7s
-  ✓ process-tree-cleanup    12.0s
-  ✓ timing-fairness        327.7s
-  ✓ replay                  18.9s
+  ✓ dual-shooter-selection   6.6s
+  ✓ shooter-cancel           9.8s
+  ✓ alive-kill              12.9s
+  ✓ roundstate-equality      0.6s
+  ✓ full-match-e2e          14.8s
+  ✓ runner-isolation         6.9s
+  ✓ cross-round-cheat        9.3s
+  ✓ package-tamper           3.2s
+  ✓ timeout-boundary         7.4s
+  ✓ process-tree-cleanup    11.9s
+  ✓ hostile-input            6.7s
+  ✓ timing-fairness        304.5s
+  ✓ replay                  21.1s
 
-17/17 套件通过
+18/18 套件通过
 ```
 
 用户点名的套件与文件对应关系：
@@ -395,15 +456,19 @@ RESULT: PASS — generator 输出 0 张非法地图
 | `full-match-e2e` | [tests/full-match-e2e.ts](../tests/full-match-e2e.ts) |
 | `replay` | [tests/replay.ts](../tests/replay.ts) |
 | （额外）`map-fairness` | [tests/map-fairness.ts](../tests/map-fairness.ts) |
+| （额外）`hostile-input` | [tests/hostile-input.ts](../tests/hostile-input.ts) |
+
+`hostile-input` 是 Cycle 2 为 P0-A 新增的套件（用户点名的 16 个套件之外），
+覆盖超深 AST、巨型嵌套 JSON、诊断归因与中止前落盘。
 
 放大验证命令：
 
 ```bash
-npm test                                   # 全部 17 套件
+npm test                                   # 全部 18 套件
 npm run typecheck                          # tsc --noEmit
 npm run stress                             # 300,000 张地图压力验证
 ROUNDS_ORDER=1000 ROUNDS_SWAP=500 npx ts-node tests/timing-fairness.ts   # 加大公平性样本
-npx ts-node tests/run-all.ts dsl-contract replay                          # 只跑指定套件
+npx ts-node tests/run-all.ts dsl-contract replay hostile-input            # 只跑指定套件
 ```
 
 ---
@@ -415,14 +480,16 @@ npx ts-node tests/run-all.ts dsl-contract replay                          # 只�
 1. **僵局规则缺失（规范层，最高优先级）**
    `Plan V1 §28` 未定义 stalemate。若双方算法都无法命中，比赛在规范上不终止。
    实测：朴素（不避障）算法包在 `seed=20260909 / 8v8 / easy` 下持续 **668 回合**仍无胜者；
-   换用会绕障的算法后同一张地图 8 回合结束。平台本身行为正确（不误判、不崩溃、每轮落盘），
-   但**操作台会持续回合**。需要 Plan 补充规则后才能实现自动终止。
+   换用会绕障的算法后同一张地图 8 回合结束。平台在长僵局下的行为仅限于第 4 节所述的三条
+   有限声明（不误判胜负 / 每回合落盘 / 病态载荷记为 `INVALID_OUTPUT`），
+   **不构成"任意输入都不崩溃"的保证**。需要 Plan 补充规则后才能实现自动终止。
    **Re-Gate 前请确认这是否属于可接受的"赛事异常需人工介入"。**
 
-2. **`readySkewMs` 很大但无害**
-   双方 READY 握手时间差中位数 ~250 ms（进程启动/解释器冷启动差异）。
-   真正的计时从宿主写入的**同一个 `releaseNs`** 起算，`releaseSkewUs` 中位数仅 ~20 µs。
-   不要用 `readySkewMs` 判断计时公平性。
+2. **`readySkewMs` / `releaseSkewUs` 都很大，但都不参与计时**
+   双方 READY 握手时间差中位数 ~250 ms（进程启动/解释器冷启动差异）；
+   两次 GO 写入间隔中位数 ~20 µs。
+   **每一方以自己的 `release()` 时刻为计时基准**，`releaseSkewUs` 只记录宿主交付延迟。
+   不要用这两个量判断计时公平性 —— 要看 `aFasterRate` 与两侧耗时差。
 
 3. **沙箱环境存在 OS 注入变量**
    `/bin/sh` 与 macOS `/usr/bin/python3` 启动器会注入
@@ -432,8 +499,10 @@ npx ts-node tests/run-all.ts dsl-contract replay                          # 只�
    平台**不主动传递**任何宿主环境变量。
 
 4. **P2-18 裁判控制面不完整**
-   无 `PAUSE` / `RESUME` / `END MATCH` / 倒计时显示。异常处置需操作员终止进程；
-   已落盘的 `match.json` / `audit.json` / `replay.json` 仍完整可读。
+   无 `PAUSE` / `RESUME` / `END MATCH` / 倒计时显示。异常处置需操作员终止进程。
+   产物**每回合落盘**（P1-A 修复后），因此中途终止时**截至上一已完成回合**的
+   `match.json` / `audit.json` / `replay.json` 可读；**当前进行中的那一回合**可能尚未落盘。
+   Cycle 1 时产物仅在赛末写入，中途终止会丢失全部日志 —— 该限制已消除。
 
 5. **P2-21 动画未接线**
    `AudienceDisplay` 只有数据层。视觉/动画按用户约束推迟到 Re-Gate PASS 之后。
@@ -457,12 +526,13 @@ npx ts-node tests/run-all.ts dsl-contract replay                          # 只�
 ```text
 Branch:         main
 Baseline:       9a3e5b9  baseline: pre-remediation snapshot (Plan 1 Gate FAIL)
-Remediation:    0db2dbe09d16e386ddcdc81ca518461d6e25bc74
+Cycle 1 fix:    0db2dbe09d16e386ddcdc81ca518461d6e25bc74
+Cycle 2 fix:    5a7f0c3c34e42b9087c9e0a804fe86e1d04fcc21
 Freeze HEAD:    本文档所在提交（唯一改动就是本文档，故用 git log -1 读取即可）
 Working tree:   clean
 ```
 
-修复提交与冻结提交之间**只差本文档**：`git diff --stat 0db2dbe..HEAD` 应当只有
+Cycle 2 修复提交与冻结提交之间**只差本文档**：`git diff --stat 5a7f0c3..HEAD` 应当只有
 `Plans/V1 Remediation Handoff.md` 一个文件。
 
 `git status --short` 为空即视为冻结成立。审计 Agent 应以 **Freeze HEAD** 为唯一审计对象，
