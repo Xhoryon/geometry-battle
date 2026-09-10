@@ -890,7 +890,17 @@ export function spawnRunner(opts: {
       : Number(process.hrtime.bigint() - startedNs) / 1e6;
 
     if (cancelled) {
-      finish({ success: false, stdout, stderr, error: '本轮攻击被取消', errorCode: 'CANCELLED', computeTimeMs });
+      // 运行器级终止（宿主显式 cancel()，例如 READY 握手失败）。
+      // **不是**规则意义上的攻击取消：Locked Attack Right 之下，
+      // Shooter 被击杀不会走到这里（规则修订 §10/§11）。
+      finish({
+        success: false,
+        stdout,
+        stderr,
+        error: '运行器被宿主取消（进程终止）—— 不是 Shooter 阵亡导致',
+        errorCode: 'CANCELLED',
+        computeTimeMs,
+      });
       return;
     }
     if (oversize) return;

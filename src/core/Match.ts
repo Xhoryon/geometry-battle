@@ -704,7 +704,8 @@ export class MatchEngine {
    *
    * `startGranted` 是硬门禁：没有 START 就没有参赛代码运行（规范 §14/§15）。
    * 本方法只读 `pendingPublic` / `pendingReveal` 的冻结字节，**不重新生成 JSON**
-   * （规范 §19）—— 之后发生的任何击杀都只走 ShotCancelled。
+   * （规范 §19）—— 之后发生的任何击杀都只改变**实时结算状态**，
+   * 不回写算法输入快照（规则修订 §7：Algorithm Input Snapshot ≠ Live Resolution State）。
    */
   async computeRound(): Promise<RoundResult> {
     if (!this.startGranted) {
