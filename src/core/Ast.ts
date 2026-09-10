@@ -178,8 +178,18 @@ function parseNode(raw: unknown, issues: AstIssue[], depth: number): CanonicalNo
   }
 
   if (type === 'variable') {
+    // V1.1 Competitor Kit §7：value 必须**显式**给出且必须为 "x"。
+    // 旧实现把缺失的 value 静默当成 x（连 {"name":"y"} 也会被当成 x），
+    // 属于静默歧义 —— 冻结格式要求任何偏差都必须显式 INVALID。
     const v = raw.value;
-    if (v !== undefined && v !== 'x') {
+    if (v === undefined) {
+      issues.push({
+        code: 'BAD_VALUE',
+        message: 'variable 节点必须显式给出 value: "x"（缺失 value 或使用其它键名一律非法）',
+      });
+      return null;
+    }
+    if (v !== 'x') {
       issues.push({ code: 'BAD_VALUE', message: `variable 节点只支持变量 "x"，收到 ${JSON.stringify(v)}` });
       return null;
     }

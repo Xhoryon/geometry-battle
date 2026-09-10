@@ -99,6 +99,24 @@ function wallToMonotonicNs(wallNs: bigint): bigint {
 }
 
 /**
+ * 有界截断：保留**头 + 尾**，切掉中间（V1.1 Competitor Kit §13）。
+ *
+ * 为什么不能用 `slice(0, N)`：Python traceback 的**最后一行**才是异常类型与消息
+ * （`ModuleNotFoundError` / `SyntaxError` / …）。只留头部时参赛者看到的是一串
+ * `File "…", line …` 调用帧，根因被切掉，错误信息不可行动。
+ *
+ * 上限语义：返回串长度 ≤ limit（省略标记计入预算），因此不会突破调用方的预算。
+ */
+function boundedHeadTail(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const marker = `\n… [已省略 ${text.length - limit} 字符] …\n`;
+  const budget = Math.max(0, limit - marker.length);
+  const head = Math.ceil(budget * 0.4);
+  const tail = budget - head;
+  return text.slice(0, head) + marker + text.slice(text.length - tail);
+}
+
+/**
  * 结果内容写完的墙钟时刻（ns）；文件不存在或不可 stat 时返回 null。
  *
  * 取 mtime 而不是 ctime —— 理由见 WALL_ANCHOR。mtime 由算法自己写入，
@@ -849,7 +867,7 @@ export function spawnRunner(opts: {
   proc.on('close', (code) => {
     if (!readySettled) {
       readySettled = true;
-      rejectReady(new Error(`进程在 READY 之前退出 (code=${code}): ${stderr.slice(0, 500)}`));
+      rejectReady(new Error(`进程在 READY 之前退出 (code=${code}): ${boundedHeadTail(stderr, 500)}`));
     }
     if (finished) return;
 
@@ -877,7 +895,7 @@ export function spawnRunner(opts: {
     if (code !== 0) {
       finish({
         success: false, stdout, stderr,
-        error: `算法异常退出 (code=${code}): ${stderr.slice(0, 1000)}`,
+        error: `算法异常退出 (code=${code}): ${boundedHeadTail(stderr, 1000)}`,
         errorCode: 'CRASH',
         computeTimeMs,
       });

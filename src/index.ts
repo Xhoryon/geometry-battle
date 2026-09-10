@@ -155,6 +155,21 @@ export {
   writeSlotRecord,
 } from './submission/Slot';
 
+// ---- 参赛者本地自检（V1.1 Competitor Kit §11/§12）----
+export {
+  CHECK_SECTIONS,
+  CheckSection,
+  CheckStatus,
+  LOCAL_PREFLIGHT_SEED,
+  LocalCheck,
+  LocalPreflightOptions,
+  LocalPreflightReport,
+  TeamReport,
+  assertDirectory,
+  summarize,
+  validateSubmission,
+} from './submission/LocalPreflight';
+
 // ---- 固定 Runtime（V1.1 §5）----
 export {
   FROZEN_RUNTIME,

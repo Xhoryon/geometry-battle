@@ -222,8 +222,9 @@ os.replace(tmp, a.output)
 | stdout 上限 | 256 KB |
 | stderr 上限 | 64 KB |
 
-**函数硬性要求：** 必须严格经过自己的 Shooter（`f(x_s) = y_s`），
+**函数硬性要求：** 必须经过自己的 Shooter（`|f(x_s) − y_s| ≤ 1e-6`，`ε = HIT_EPSILON`），
 在射击区间内有限、连续、C²。
+（注意：这里的 1e-6 与「命中判定」的 1e-6 是两个**不同**概念，不要混用。）
 
 ### 5. 固定 Runtime（双方完全相同）
 
@@ -232,17 +233,22 @@ os.replace(tmp, a.output)
 | 项目 | 冻结值 |
 |------|--------|
 | 解释器 | CPython 3.9.6（`/usr/bin/python3`） |
-| numpy | 2.0.2 |
-| scipy | 1.13.1 |
-| sympy | **不允许使用** |
+| 第三方包 | **NONE**（只有标准库；`numpy` / `scipy` / `sympy` 等一律不可用） |
 | CPU 配额 | 1 核 |
 | 内存配额 | 512 MB |
 | 线程上限 | 1（`OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS`） |
 | 超时 | 2000 ms |
 
 冻结清单的唯一来源是 [`src/submission/Runtime.ts`](src/submission/Runtime.ts) 的 `FROZEN_RUNTIME`。
-开赛时平台会**实测**宿主解释器与包版本并与清单比对，结果写入审计日志（`RuntimeFrozen` 事件）；
-不一致不会阻断比赛（选手机器上可能没装 numpy），但会如实记录，供人工核对。
+开赛时平台会**实测**宿主解释器并与清单比对，结果写入审计日志（`RuntimeFrozen` 事件）；
+不一致不会阻断比赛，但会如实记录，供人工核对。
+
+> **为什么是「无第三方包」**：沙箱 `scrubEnv` 设置 `PYTHONNOUSERSITE=1`，且 SBPL 拒绝读取
+> `/Users`，所以开发机用户级 site-packages 里的 `numpy` / `scipy` 在沙箱内**无法 import**。
+> 早期文档曾把宿主探测到的 `numpy 2.0.2` / `scipy 1.13.1` 写成冻结依赖，那是**宿主观测**，
+> 会诱导参赛者写出必然 `ModuleNotFoundError` 的算法，已修正。
+> 沙箱内可用模块的权威清单是 [`competitor-kit/RUNTIME_MANIFEST.md`](competitor-kit/RUNTIME_MANIFEST.md)，
+> 由 `tests/runtime-manifest.ts` 在真实沙箱里逐条验证。
 
 线程数被钉死为 1 是公平性要求：默认情况下 BLAS/OpenMP 会吃满所有核，
 「谁的机器核多」就会变成计时优势。

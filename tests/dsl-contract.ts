@@ -183,4 +183,31 @@ test('dsl-contract: 超深嵌套必须被干净拒绝，绝不抛异常（P0-A �
   );
 });
 
+test('dsl-contract: variable 节点必须显式给出 value: "x"（Competitor Kit §7）', () => {
+  // 冻结格式：唯一合法的 variable 形态
+  assert(parseCanonicalDSL({ type: 'variable', value: 'x' }).ok, '{"type":"variable","value":"x"} 必须合法');
+
+  // 缺失 value —— 旧实现会静默当成 x，属于静默歧义，必须显式 INVALID
+  const missing = parseCanonicalDSL({ type: 'variable' });
+  assert(!missing.ok, '缺失 value 的 variable 必须被拒绝');
+  assert(
+    missing.issues.some((i) => i.code === 'BAD_VALUE'),
+    `应报 BAD_VALUE，实际 ${missing.issues.map((i) => i.code).join(',')}`
+  );
+
+  // 文档旧示例用的 name 键：同样没有 value —— 不得被静默解释成 x
+  const legacyName = parseCanonicalDSL({ type: 'variable', name: 'x' });
+  assert(!legacyName.ok, '{"type":"variable","name":"x"} 必须被拒绝（键名不是 value）');
+
+  // value 不是 "x"
+  for (const bad of ['y', 'X', '', 0, null, true]) {
+    const r = parseCanonicalDSL({ type: 'variable', value: bad });
+    assert(!r.ok, `variable value=${JSON.stringify(bad)} 必须被拒绝`);
+  }
+
+  // op 别名路径也必须受同一约束
+  assert(!parseCanonicalDSL({ op: 'variable' }).ok, 'op 别名缺 value 同样必须被拒绝');
+  assert(parseCanonicalDSL({ op: 'variable', value: 'x' }).ok, 'op 别名 + value:"x" 必须合法');
+});
+
 void runAll('dsl-contract');

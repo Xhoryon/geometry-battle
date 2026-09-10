@@ -8,8 +8,12 @@
  *
  * 冻结不是「写在文档里」就算数：本模块同时提供 `detectRuntime()`，
  * 在宿主上实际探测解释器与包版本，供启动时核对并把结果写进审计日志。
- * 探测失败**不会**让比赛无法进行（选手机器上可能没有 numpy），
- * 但会让核对结果变成 MISMATCH —— 这正是需要人工介入的信号。
+ * 探测失败**不会**让比赛无法进行，但会让核对结果变成 MISMATCH ——
+ * 这正是需要人工介入的信号。
+ *
+ * 注意探测范围：`detectRuntime()` 看到的是**宿主**，而参赛代码运行在**沙箱**内。
+ * 两者在第三方包上并不等价（见 `FROZEN_RUNTIME.packages` 的注释），
+ * 因此包级事实以 `competitor-kit/RUNTIME_MANIFEST.md` + `tests/runtime-manifest.ts` 为准。
  *
  * 双方环境相同由三件事共同保证：
  *   1. 同一个解释器（`/usr/bin/python3`，沙箱 argv 固定，规范 §6）；
@@ -48,16 +52,24 @@ export interface FrozenRuntime {
   stderrCapBytes: number;
 }
 
-/** 正式冻结的 Runtime（规范 §5）—— 修改此常量即为修改比赛规则 */
+/**
+ * 正式冻结的 Runtime（规范 §5）—— 修改此常量即为修改比赛规则
+ *
+ * ⚠️ `packages` 为**空**：正式沙箱内没有任何第三方包（V1.1 Competitor Kit §4）。
+ * 早期版本在这里写了 `numpy 2.0.2` / `scipy 1.13.1`，那是**宿主**上探测到的版本，
+ * 不是沙箱内的事实 —— 沙箱 `scrubEnv` 设置 `PYTHONNOUSERSITE=1` 且拒绝读取
+ * `/Users`，因此用户级 site-packages 里的 numpy/scipy 在沙箱内**不可 import**。
+ * 把宿主观测写进冻结清单，会让参赛者据此写出必然 `ModuleNotFoundError` 的算法。
+ *
+ * 沙箱内可用模块的**唯一权威清单**是 `competitor-kit/RUNTIME_MANIFEST.md`，
+ * 由 `tests/runtime-manifest.ts` 在真实沙箱里逐条验证。
+ */
 export const FROZEN_RUNTIME: FrozenRuntime = {
   implementation: 'CPython',
   python: '3.9.6',
   platform: 'darwin',
-  packages: [
-    { name: 'numpy', version: '2.0.2' },
-    { name: 'scipy', version: '1.13.1' },
-    { name: 'sympy', version: null },
-  ],
+  /** Third-party packages: NONE（stdlib only） */
+  packages: [],
   cpuQuota: 1,
   memoryLimitMb: MEMORY_LIMIT_MB,
   threadLimit: 1,
@@ -159,9 +171,11 @@ export function checkRuntime(
 
 /** 一行式摘要（CLI / 审计共用） */
 export function describeRuntime(frozen: FrozenRuntime = FROZEN_RUNTIME): string {
-  const pkgs = frozen.packages
-    .map((p) => `${p.name}${p.version === null ? '=禁用' : `==${p.version}`}`)
-    .join(' ');
+  const pkgs = frozen.packages.length === 0
+    ? '第三方包: NONE'
+    : frozen.packages
+        .map((p) => `${p.name}${p.version === null ? '=禁用' : `==${p.version}`}`)
+        .join(' ');
   return (
     `${frozen.implementation} ${frozen.python} (${frozen.platform}) | ${pkgs} | ` +
     `cpu=${frozen.cpuQuota}核 mem=${frozen.memoryLimitMb}MB threads=${frozen.threadLimit} ` +

@@ -37,6 +37,8 @@ const SUITES = [
   'hostile-input',
   'timing-fairness',
   'replay',
+  'runtime-manifest',
+  'competitor-kit',
 ];
 
 const requested = process.argv.slice(2).filter((a) => !a.startsWith('-'));
