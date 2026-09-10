@@ -356,6 +356,106 @@ test('competitor-kit: 干净参赛者复制 starter → 官方 Preflight PASS', 
 });
 
 // ============================================================================
+// I-1：文档承诺的「自带 .py 模块 / utils/ 子目录」必须真的能用
+// ============================================================================
+
+/** 按 ALGORITHM_REQUIREMENTS.md §1 的措辞原样写一个多文件包（含 utils/ 子目录） */
+function writeMultiFilePackage(dir: string): void {
+  fs.mkdirSync(path.join(dir, 'utils'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'solver.py'),
+    [
+      '"""多文件算法包：入口 + 同级模块 + utils/ 子目录（不自行改 sys.path）。"""',
+      'import argparse, hashlib, json, os, sys',
+      '',
+      'from strategy import build_function',            // 同级模块
+      'from utils.helper import alive_enemies, shooter_of',  // 子目录模块
+      '',
+      'def main():',
+      '    ap = argparse.ArgumentParser()',
+      '    ap.add_argument("--team", required=True)',
+      '    ap.add_argument("--public", required=True)',
+      '    ap.add_argument("--reveal", required=True)',
+      '    ap.add_argument("--output", required=True)',
+      '    args = ap.parse_args()',
+      '    with open(args.public, "rb") as f:',
+      '        raw = f.read()',
+      '    public = json.loads(raw.decode("utf-8"))',
+      '    with open(args.reveal, "r") as f:',
+      '        reveal = json.load(f)',
+      '    if reveal.get("public_state_sha256") != hashlib.sha256(raw).hexdigest():',
+      '        raise SystemExit(2)',
+      '    dsl = build_function(shooter_of(public, reveal, args.team),',
+      '                        alive_enemies(public, args.team))',
+      '    tmp = args.output + ".tmp"',
+      '    with open(tmp, "w", encoding="utf-8") as f:',
+      '        json.dump({"schema_version": "1.1", "dsl": dsl}, f)',
+      '        f.flush()',
+      '        os.fsync(f.fileno())',
+      '    os.replace(tmp, args.output)',
+      '    return 0',
+      '',
+      'if __name__ == "__main__":',
+      '    sys.exit(main())',
+      '',
+    ].join('\n')
+  );
+  fs.writeFileSync(
+    path.join(dir, 'strategy.py'),
+    [
+      '"""策略层：构造经过 Shooter 的直线 f(x) = y_s + m*(x - x_s)。"""',
+      '',
+      'def _num(v):',
+      '    return {"type": "number", "value": v}',
+      '',
+      'def build_function(shooter, enemies):',
+      '    sx, sy = shooter["x"], shooter["y"]',
+      '    if enemies:',
+      '        t = min(enemies, key=lambda p: (abs(p["y"] - sy), (p["x"] - sx) ** 2))',
+      '        tx, ty = t["x"], t["y"]',
+      '    else:',
+      '        tx, ty = sx, sy',
+      '    dx, dy = tx - sx, ty - sy',
+      '    slope = 0.0 if abs(dx) < 1e-6 else max(-2.0, min(2.0, dy / dx))',
+      '    return {"type": "add", "args": [_num(sy), {"type": "mul", "args": [',
+      '        _num(slope), {"type": "sub", "args": [',
+      '            {"type": "variable", "value": "x"}, _num(sx)]}]}]}',
+      '',
+    ].join('\n')
+  );
+  fs.writeFileSync(
+    path.join(dir, 'utils', 'helper.py'),
+    [
+      '"""输入查询工具。"""',
+      '',
+      'def shooter_of(public, reveal, team):',
+      '    by_id = {p["id"]: p for p in public["points"]}',
+      '    return by_id[reveal["shooters"][team]]',
+      '',
+      'def alive_enemies(public, team):',
+      '    return [p for p in public["points"] if p["team"] != team and p.get("alive", True)]',
+      '',
+    ].join('\n')
+  );
+}
+
+test('competitor-kit: 多文件包（同级模块 + utils/ 子目录）首次自检即 PASS（I-1）', async () => {
+  const mine = tmpDir('multi-file-competitor');
+  writeMultiFilePackage(mine);
+
+  assert(inspectPackage(mine).valid, '多文件包必须是合法算法包');
+  const report = await validateSubmission(mine);
+  const failures = report.teams.flatMap((t) =>
+    t.checks.filter((c) => c.status === 'FAIL').map((c) => `${t.team}/${c.section}: ${c.errors.join('; ')}`)
+  );
+  assertEqual(
+    failures,
+    [],
+    `多文件包自检应全 PASS（不自行改 sys.path 也必须能 import 包内模块）:\n  ${failures.join('\n  ')}`
+  );
+});
+
+// ============================================================================
 // §13 CRASH 必须保留根因（头 + 尾）
 // ============================================================================
 

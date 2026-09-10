@@ -118,7 +118,12 @@ cvxpy  z3  networkx  jax  tensorflow  statsmodels
 
 ## 6. 环境变量
 
-沙箱内只保留以下变量（其余一律清空）：
+宿主环境变量**不继承**：平台显式构造一份最小环境，下表是**平台自己设置**的全部变量。
+实测沙箱内还会看到少量由 macOS 与进程启动器注入的良性变量
+（`CPATH`、`LIBRARY_PATH`、`MANPATH`、`PWD`、`SDKROOT`、`SHLVL`、`__CF_USER_TEXT_ENCODING`），
+它们不含任何宿主敏感信息，也不要依赖它们。
+
+平台显式设置的变量：
 
 ```text
 PATH          /usr/bin:/bin:/usr/sbin:/sbin

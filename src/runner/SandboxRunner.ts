@@ -235,7 +235,7 @@ export interface DuelResult {
  * 不匹配即退出码 4，进程在 READY 之前退出 → 宿主侧 ready 被 reject → 本轮双方取消。
  */
 const BOOTSTRAP_SOURCE = `# Geometry Battle official bootstrap (platform-provided)
-import sys, runpy, json, hashlib
+import sys, runpy, json, hashlib, os
 
 def check_binding(argv):
     try:
@@ -269,6 +269,13 @@ def main():
     if not line or line.strip() != 'GO':
         sys.stderr.write("bootstrap: no GO signal\\n")
         return 3
+    # 把算法包根目录加入 sys.path —— 与直接运行 python solver.py 的行为一致。
+    # runpy.run_path 不会为脚本文件改 sys.path（此时 sys.path[0] 是启动壳所在目录），
+    # 因此不补这一行，包内 import 自己的模块 / from utils import helper 会
+    # ModuleNotFoundError（Re-Gate Cycle 2 I-1）。只加路径，不导入任何参赛代码。
+    pkg_root = os.path.dirname(os.path.abspath(entry))
+    if pkg_root not in sys.path:
+        sys.path.insert(0, pkg_root)
     sys.argv = [entry] + solver_argv
     sys.setrecursionlimit(10000)
     try:
@@ -612,7 +619,16 @@ export interface SpawnedRunner {
    *
    * 这段交付延迟本身也是偏置来源：它对**先写的一方不利**（基准更早，耗时被多算），
    * 且方向固定，会系统性地把胜率推向「后释放的一方」。因此释放前的一切准备工作
-   * 都由 `prepare()` 提前做完，本函数只剩「打点 + 写 GO」两步。
+   * 都由 `prepare()` 提前做完。
+   *
+   * **打点在 `write()` 之后**（Re-Gate Cycle 2 B-1）：`write()` 本身不是免费的 ——
+   * GO 正是在这次调用**内部**交给内核的，而这次调用实测要几微秒（未预热的首次管道写
+   * 约 10.7µs、第二次约 3.0µs；生产路径预热后约 3.3µs）。若在调用**之前**打点，
+   * 先释放方的基准就被白算了一整个 write 耗时：微探针实测两次 GO 真正到达子进程
+   * 只差 4–9µs，宿主打点却差了 10.0–10.8µs，多出的部分恒记在先释放方头上
+   * （生产路径上逐轮耗时差中位 0.005–0.007ms，7/7 次观测 aFasterRate < 0.5）。
+   * 打在写入之后，基准才等于 GO 真正可被本队读到的时刻（实测 aFasterRate 由
+   * 稳定偏低回到 0.44–0.48，4 次 300 轮观测）。
    */
   release: () => bigint;
   /** 等待结束 */
@@ -1006,13 +1022,15 @@ export function spawnRunner(opts: {
       if (released) return releaseNs ?? process.hrtime.bigint();
       released = true;
       prepare(); // 单方调用路径就地补做；runDuel 已在双方释放前调过（此时为空操作）
-      // 本队自己的 GO 时刻 —— 计时基准（P1-B）。打点与写 GO 之间不得再夹任何宿主开销。
-      releaseNs = process.hrtime.bigint();
+      // 本队自己的 GO 时刻 —— 计时基准（P1-B / B-1）。
+      // 先把 GO 交给内核，再打点：`write()` 内部才发生真正的交付（见 `release` 注释），
+      // 打在调用之前会把这次写入的耗时算成本队的计算耗时，且方向固定在先释放的一方。
       try {
         proc.stdin?.write('GO\n');
       } catch {
         /* ignore */
       }
+      releaseNs = process.hrtime.bigint();
       // EOF 只是给子进程一个「stdin 结束了」的信号，不参与计时：同步 end() 会给
       // **后写 GO 的一方**多加约 16µs 的宿主开销（交错配对实测），于是先写方显得更慢。
       // 推迟到下一拍，两次 GO 写入之间就只剩一个 write 调用。
@@ -1042,14 +1060,20 @@ export function spawnRunner(opts: {
 /**
  * 同时运行双方算法。
  *
- * 公平性（P1-10 + Re-Gate Cycle 1 P1-B + 规范 §19/§22/§23）：
+ * 公平性（P1-10 + Re-Gate Cycle 1 P1-B + Re-Gate Cycle 2 B-1 + 规范 §19/§22/§23）：
  *   两个进程都完成 READY 握手后，宿主先后写入 GO（约 20µs 交付延迟）。
  *   两次 GO 由**同一个 GO 事件**触发、走**同一条启动路径**，这就是赛事意义上的
  *   「同时启动」（规范 §19）。
  *   **每方的 computeTimeMs 与超时预算都从它自己的 GO 时刻起算**，
- *   因此双方拿到等长的计算预算，释放顺序不再产生方向固定的偏置。
- *   早期版本让双方共用同一个 releaseNs，等于把「后写 GO 的那一方」的
- *   交付延迟计进了它的耗时，恒对 B 不利。
+ *   双方拿到等长的计算预算。早期版本让双方共用同一个 releaseNs，
+ *   等于把「后写 GO 的那一方」的交付延迟计进了它的耗时，恒对 B 不利。
+ *
+ *   Re-Gate Cycle 2 修正了这条链路上最后一处方向固定的偏置：**打点曾被放在
+ *   `write('GO')` 之前**，于是先释放的一方被白算了一整个 write 调用耗时
+ *   （微探针实测 A 10.7µs / B 3.0µs，而 GO 真正到达子进程只差 4–9µs），
+ *   7/7 次观测的 aFasterRate 都落在 0.5 以下（均值 ≈ 0.42）。现在打点在写入之后，
+ *   基准等于 GO 真正可被本队读到的时刻（见 `SpawnedRunner.release`）；
+ *   逐轮耗时差中位回到 0.002–0.004ms，aFasterRate 回到 0.44–0.48（4 次 300 轮观测）。
  *   `releaseA_ns` / `releaseB_ns` / `startSkew_ns` 三者写入审计，供事后复核。
  */
 export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
@@ -1124,7 +1148,7 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   }
 
   // ---- 释放双方：各自记录自己的 GO 时刻（P1-B / 规范 §22/§23）----
-  // 先把双方的轮询器与超时预算都挂好，让下面两次 release() 只剩「打点 + 写 GO」，
+  // 先把双方的轮询器与超时预算都挂好，让下面两次 release() 只剩「写 GO + 打点」，
   // 否则夹在中间的宿主开销会整体计入先释放方的耗时（方向固定的偏置）。
   runnerA.prepare();
   runnerB.prepare();

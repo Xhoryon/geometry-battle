@@ -49,6 +49,9 @@ my-algorithm/
 
 - 入口文件名**固定**为 `solver.py`，且必须位于包**根目录**（不允许再套一层子目录）。
 - 可以带自己的 `.py` 模块、`.json` / `.txt` / `.csv` / `.yaml` / `.md` 数据文件。
+- **包根目录会被加入 `sys.path`**：同目录模块可直接 `import optimizer`，
+  子目录可 `from utils import helper`，不需要你自己改 `sys.path`
+  （首次自检即通过，见 [README.md](README.md) §5）。
 - 不允许符号链接；包大小 ≤ 8 MB，文件数 ≤ 256。
 - `manifest.json` 可选。如果提供，必须包含 `name` 与 `version`，且 `entry`（若写）只能是 `solver.py`。
 - 不接受压缩包上传。请直接给出目录。

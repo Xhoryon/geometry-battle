@@ -1,7 +1,7 @@
 """
 Geometry Battle — 官方 Starter Algorithm (v1.1)
 
-V1.1 启动契约（Plans/Input/V1.1 — Algorithm Slot, Startup & JSON IPC Protocol.md §6）：
+V1.1 启动契约（见 competitor-kit/ALGORITHM_REQUIREMENTS.md §2 与 §3）：
 
     python solver.py \
       --team A \
@@ -10,6 +10,10 @@ V1.1 启动契约（Plans/Input/V1.1 — Algorithm Slot, Startup & JSON IPC Prot
       --output /output/result.json
 
     四个参数固定；双方唯一差异是 `--team` 的取值（规范 §6）。
+
+多文件包：平台会把**包根目录**加入 `sys.path`，因此同目录下的模块可直接
+`import strategy`，子目录也可以 `from utils import helper` —— 无需自行修改
+`sys.path`（与直接运行 `python solver.py` 的行为一致）。
 
 输入（规范 §10/§37）：
     public_state.json  揭盲前的公开世界：schema_version / match_id / round /

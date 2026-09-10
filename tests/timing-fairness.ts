@@ -320,4 +320,75 @@ test('timing-fairness: 每方 release() 记录自己的 GO 时刻（P1-B 回归�
   cleanupSandbox(runnerB.sandbox.dir);
 });
 
+test('timing-fairness: GO 打点必须落在 write() 之后 —— 锚点即交付时刻（B-1 回归）', async () => {
+  // Re-Gate Cycle 2 B-1：`write('GO')` 不是免费的（实测首次管道写约 10.7µs、第二次约 3.0µs），
+  // 而 GO 正是在这次调用**内部**交给内核的。若打点在调用之前，先释放方的基准就被白算了一整个
+  // write 耗时 —— 方向固定地把它记成「更慢」（7/7 次观测 aFasterRate < 0.5）。
+  //
+  // 微秒级的量不能用绝对阈值（换台机器就变），所以用**同一 runner 上的对照组**：
+  //   被测 = 首次 release() 的「调用进入 → 打点」——修复后它包含 write 耗时；
+  //   对照 = 同一个 runner 的**幂等第二次** release()（早返回、不写、不打点）的整调用耗时，
+  //         它量的是「同一段闭包调用路径」的纯开销。
+  // 实测（M 系列 mac / 已预热 stdin）：被测 ≈ 3.25µs、对照 ≈ 0.17µs，比值 ≈ 20；
+  // 若打点被移回 write 之前，被测塌缩到 ≈ 一次 hrtime 的成本，比值掉到 ≈ 2。
+  const ROUNDS = 10;
+  const root = tmpDir('fairness-anchor');
+  const sealedRoot = path.join(root, 'artifacts', 'sealed');
+  const sandboxRoot = path.join(root, 'sandboxes');
+  const seal = sealPackage({ team: 'A', sourceDir: STARTER, sealRoot: sealedRoot, matchId: 'FAIR-ANCHOR' });
+  assert(seal.sealed, 'starter 应能密封');
+  const map = generateMapOrNull({ seed: 909_090, pointCount: 8, difficulty: 'medium' });
+  assert(map, '前置地图应存在');
+  const core = coreFor(map!);
+
+  const mkRunner = (team: 'A' | 'B', roundNumber: number) => {
+    const sandbox = prepareSandbox({
+      sandboxRoot,
+      matchId: 'FAIR-ANCHOR',
+      roundNumber,
+      team,
+      packageDir: seal.sealed!.sealedDir,
+      entry: 'solver.py',
+      input: runnerInputFromCore(core, 'FAIR-ANCHOR'),
+      memoryLimitMb: 512,
+      denyReadPaths: [sealedRoot, PLATFORM_ROOT],
+    });
+    return spawnRunner({ team, sandbox, timeoutMs: 5000, memoryLimitMb: 512 });
+  };
+
+  const withWrite: number[] = [];
+  const noWrite: number[] = [];
+  for (let i = 0; i < ROUNDS; i++) {
+    const runnerA = mkRunner('A', i + 1);
+    const runnerB = mkRunner('B', i + 1);
+    await Promise.all([runnerA.ready, runnerB.ready]);
+    // 与 runDuel 一致：先挂好轮询器与超时预算，release() 里只剩「写 GO + 打点」
+    runnerA.prepare();
+    runnerB.prepare();
+    for (const r of [runnerA, runnerB]) {
+      const entry = process.hrtime.bigint();
+      const ns = r.release();
+      withWrite.push(Number(ns - entry));
+      const e2 = process.hrtime.bigint();
+      r.release(); // 幂等路径：早返回、不写 GO、不打点
+      noWrite.push(Number(process.hrtime.bigint() - e2));
+    }
+    const [outA, outB] = await Promise.all([runnerA.done, runnerB.done]);
+    assert(outA.success && outB.success, `第 ${i + 1} 轮双方应正常完成: ${outA.errorCode} / ${outB.errorCode}`);
+    cleanupSandbox(runnerA.sandbox.dir);
+    cleanupSandbox(runnerB.sandbox.dir);
+  }
+
+  const med = (a: number[]) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  const headNs = med(withWrite);
+  const ctrlNs = med(noWrite);
+  const ratio = headNs / ctrlNs;
+  assert(
+    ratio > 4,
+    `打点必须在 write('GO') 之后：实测「进入→打点」中位 ${headNs}ns、幂等调用中位 ${ctrlNs}ns、` +
+      `比值 ${ratio.toFixed(1)}（应 ≫ 4）。比值塌缩说明锚点又被提前到 write 之前 —— B-1 复发。`
+  );
+  assert(headNs > 0, `打点偏移应为正，实测 ${headNs}ns`);
+});
+
 void runAll('timing-fairness');
