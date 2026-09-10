@@ -116,6 +116,16 @@ export interface MatchOptions {
   artifactRoot?: string;
   /** 固定算法槽位根目录（规范 §2/§41），默认 `<PLATFORM_ROOT>/algorithms` */
   slotRoot?: string;
+  /**
+   * **仅供测试 / 演练**：覆盖 Stalemate 的两个阈值。
+   *
+   * 生产与正式比赛**必须**使用 `Rules` 里冻结的 20 / 60 —— 操作台 CLI 不暴露这两个
+   * 参数（`operator/cli.ts` 里没有对应 flag）。存在的唯一理由是让「终止保证」的
+   * 两条边界（STALEMATE / HARD_ROUND_LIMIT）能被**逐条**验证：
+   * 在自然对局里 HARD_ROUND_LIMIT 可能一整轮都不触发，那条代码路径就没人盯着。
+   */
+  stalemateNoProgressLimit?: number;
+  hardRoundLimit?: number;
 }
 
 export interface PointState {
@@ -201,6 +211,8 @@ export class MatchEngine {
   private slotRoot: string;
   private teamAName: string;
   private teamBName: string;
+  private stalemateLimit: number;
+  private hardRoundLimit: number;
 
   private map: GeneratedMap | null = null;
   /**
@@ -257,6 +269,8 @@ export class MatchEngine {
     this.slotRoot = opts.slotRoot ?? path.join(PLATFORM_ROOT, DEFAULT_SLOT_ROOT);
     this.teamAName = opts.teamAName ?? 'Team A';
     this.teamBName = opts.teamBName ?? 'Team B';
+    this.stalemateLimit = opts.stalemateNoProgressLimit ?? STALEMATE_NO_PROGRESS_LIMIT;
+    this.hardRoundLimit = opts.hardRoundLimit ?? HARD_ROUND_LIMIT;
     this.audit = new AuditRecorder(this.matchId);
     this.audit.log('MatchCreated', { seed: this.seed, pointCount: this.pointCount });
   }
@@ -993,8 +1007,8 @@ export class MatchEngine {
 
     // ---- 终局判定（Rule Revision 3 §17：四类结束方式覆盖全部情形）----
     const winner = this.getWinner();
-    const stalemate = this.noProgressStreak >= STALEMATE_NO_PROGRESS_LIMIT;
-    const hardLimit = round >= HARD_ROUND_LIMIT;
+    const stalemate = this.noProgressStreak >= this.stalemateLimit;
+    const hardLimit = round >= this.hardRoundLimit;
 
     if (winner) {
       this.terminalReason = mutualElimination ? 'MUTUAL_ELIMINATION' : 'ELIMINATION';

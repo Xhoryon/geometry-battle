@@ -20,6 +20,7 @@ const SUITES = [
   'obstacle-block',
   'fixed-emitter',
   'locked-attack-right',
+  'termination',
   'alive-kill',
   'roundstate-equality',
   'input-protocol',
