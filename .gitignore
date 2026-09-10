@@ -9,3 +9,13 @@ runs/
 # 二者都**不属于**算法包，绝不能进版本库，也不能进包哈希。
 algorithms/.staging/
 algorithms/.slots/
+
+# Playtest Harness 的槽位安装目录（playtest-only）。内容是 contenders 的
+# 已安装副本 + 安装记录，全部可由 `gb_playtest.py --install` 从
+# `playtest/competitors/` 重新生成；且 install-report.json 与 .slots/*.json
+# 记录了本机绝对路径，不适合作为基线证据入库。
+playtest/slots/
+
+# 例外：`*.log` 是全局规则，但 Round-1 raw evidence 里逐场的平台 console
+# 日志是原始证据链的一部分，必须随 raw/ 一起入库，故在此显式豁免。
+!playtest/results/raw/**/console.log
