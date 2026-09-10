@@ -4,6 +4,33 @@
 
 本文档定义 Geometry Battle V1.1 当前正式玩法与算法竞赛规则。
 
+### 0.1 当前生效版本：Revision 3
+
+**本文件是 V1.1 Playtest Rules — Revision 3。** 以下章节是**唯一权威规则**：
+
+```text
+§7      固定 Emitter（取代旧的 Shooter Selection）
+§23     函数必须经过自己的固定 Emitter
+§38     Locked Attack Right（START 后双方攻击权锁定）
+§43     Match Win（含 Mutual Elimination 与其它判和分支）
+§44–46  Stalemate（已冻结，不再是拟议）
+§54     当前已冻结规则清单
+```
+
+**贯穿全文的读法**：凡本文件中出现「Shooter」「Shooter Selection」「Shooter Lock」
+「Shooter 被击杀」「Shot Cancellation」「CANCELLED」等表述且**未标注「历史记录」**的，
+一律按 Revision 3 重新解释：
+
+```text
+Shooter / Shooter Selection  →  固定 Emitter（常量坐标，不由任何人选择）
+「Shooter 被击杀 → 攻击取消」  →  已废止；Emitter 不可击杀，攻击权在 START 时锁定
+CANCELLED_*                  →  历史/兼容标记，不再是任何规则路径
+2000 ms                      →  500 ms
+```
+
+§39 保留被废止规则的完整历史证据（不删除）。除此之外的章节若有歧义，
+**以本替换表为准**，不要按字面实现旧语义。
+
 后续：
 
 - 平台开发；
@@ -187,12 +214,10 @@ Choose Shooter
 
 # 5. Round 信息阶段
 
-每轮严格分为：
+每轮严格分为（Rule Revision 3 §5）：
 
 ```text
 PUBLIC
-↓
-SHOOTER LOCK
 ↓
 REVEAL
 ↓
@@ -202,6 +227,9 @@ COMPUTE
 ↓
 RESOLVE
 ```
+
+> **历史记录（不删除）**：`SHOOTER LOCK` 曾是 PUBLIC 与 REVEAL 之间的一个阶段 ——
+> 双方各自秘密选点并锁定。Revision 3 删除了 Shooter Selection，该阶段随之消失。
 
 ---
 
@@ -219,59 +247,86 @@ public_state.json
 match
 round
 arena
-points
+emitters（固定 Emitter 坐标 —— 公开的常量结构）
+points（战斗点）
 alive/dead state
 ```
 
 PUBLIC State 不得包含：
 
 ```text
-Shooter
 obstacles
 real hidden map seed
 future Round information
 Judge result
 ```
 
+> Rule Revision 3 §6：`emitters` **属于** public —— 它是整场比赛固定的公开结构。
+
 ---
 
-# 7. Shooter Selection
+# 7. Fixed Emitter（Rule Revision 3 §2–§6）
 
-Team A 与 Team B 分别秘密选择：
+> **历史记录（不删除）**：本节曾是「Shooter Selection」—— 双方每轮各自秘密选择一个
+> 存活点当 Shooter、LOCK 后不可修改。那套流程已在 Revision 3 中**整个删除**，
+> 连同 `SHOOTER LOCK` 阶段与 `reveal.shooters` 字段。保留本节标题是为了让旧引用
+> 有处可查；现行规则以下文为准。
+
+## 7.1 固定 Emitter
+
+每支队伍有一个**固定 Emitter**。它在整场比赛中：
 
 ```text
-one alive Point
+固定        坐标是常量：A = (-18, 0)，B = (18, 0)
+公开        从第 1 轮的 public_state.emitters 起就可见
+不可更换    不由任何人选择，也不随回合变化
+不可击杀    它不是战斗点，轨迹穿过它不产生任何效果
 ```
 
-作为当前 Round Shooter。
+Emitter 是**本轮攻击函数的数学发射锚点**，不是「枪手」，也不是打击目标。
 
-双方：
+## 7.2 不再存在 Shooter Selection
+
+正式流程里**没有**以下任何一步：
 
 ```text
-LOCK
+human selects Shooter every round
+SHOOTER LOCK
+Shooter reveal
+Shooter replacement
 ```
 
-后不得修改。
+回合流程简化为：
 
-Team A 在选择期间不能知道 Team B 的选择。
+```text
+PUBLIC → REVEAL → START → COMPUTE → RESOLVE
+```
 
-Team B 同理。
+`REVEAL` 仍然存在（障碍物是隐藏信息），但它**不再承担 Shooter reveal**。
+
+## 7.3 Emitter 的公平性保证
+
+生成地图时必须保证 Emitter：
+
+```text
+不落在障碍物内部
+不紧贴障碍物（间距 >= 1.5）
+与所有战斗点保持最小间距（>= 2.5）
+```
+
+不满足即整张地图作废 —— 被障碍物埋住的 Emitter 等于该队永远打不中任何东西。
 
 ---
 
 # 8. REVEAL
 
-双方完成 Lock 后：
-
 ```text
 REVEAL
 ```
 
-同时公开：
+公开：
 
 ```text
-Team A Shooter
-Team B Shooter
 Round Obstacles
 ```
 
@@ -282,6 +337,11 @@ reveal_state.json
 ```
 
 Reveal State 是 Public State 的增量，而不是完整重复。
+
+> **Revision 3 变化**：REVEAL 不再公开任何 Shooter —— 发射锚点是固定 Emitter，
+> 已在 `public_state.emitters` 里给出，且整场不变（§6/§7）。
+> 现在 REVEAL **只剩障碍物**这一项隐藏信息，`reveal_state.json` 里也没有
+> `shooters` 字段了。
 
 ---
 
@@ -453,11 +513,17 @@ T_B=t_{result,B}-t_{start,B}
 
 # 16. 计算时间上限
 
-当前正式：
+当前正式（Rule Revision 3 §11）：
 
 \[
-\boxed{2000\text{ ms}}
+\boxed{500\text{ ms}}
 \]
+
+> 从 2000 ms 收紧到 500 ms 是三档 benchmark 的结果
+> （`playtest/results/revision-3-timeout-bench/BENCHMARK.json`）：
+> 250 ms 下参考优化器出现 15.6% 超时、并使整场 Preflight 失败；
+> 500 ms 与 750 ms 在 218 个「队伍×回合」样本上均为 **0 超时**。
+> 按 §11 的判据**保持 500 ms**，不回升到 2000 ms。
 
 算法超过时间：
 
@@ -606,25 +672,28 @@ Judge 根据函数本身完成攻击判定。
 
 ---
 
-# 23. Shooter Constraint
+# 23. Emitter Constraint（原 Shooter Constraint）
 
-若 Shooter 为：
+若本队的固定 Emitter 为：
 
 \[
-S=(x_s,y_s)
+E=(x_e,y_e)
 \]
 
 则攻击函数必须满足：
 
 \[
-f(x_s)=y_s
+f(x_e)=y_e
 \]
 
-当前 Shooter pass-through 数值容差：
+当前 pass-through 数值容差：
 
 \[
-\boxed{|f(x_s)-y_s|\le10^{-6}}
+\boxed{|f(x_e)-y_e|\le10^{-6}}
 \]
+
+> `x_e` / `y_e` 是**常量**（A：`(-18,0)`，B：`(18,0)`），每轮完全一样。
+> 增量写法 `f(x) = y_e + g(x − x_e)` 可让等式恒成立。
 
 否则：
 
@@ -955,23 +1024,20 @@ INVALID / TIMEOUT 不获得有效先手攻击。
 
 ---
 
-# 37. Shooter Elimination
+# 37. Shooter Elimination — 概念已废止
 
-对方当前 Round Shooter：
-
-> 仍然是正常可攻击敌方 Point。
-
-因此可以主动设计：
-
-```text
-Shooter assassination
-```
+> **历史记录（不删除）**：本节曾规定「对方当前 Round Shooter 仍然是正常可攻击的
+> 敌方 Point，因此可以主动设计 Shooter assassination（刺杀对方 Shooter）」。
+>
+> Revision 3 之后**这个概念不存在**：发射锚点是**不可击杀的固定 Emitter**，
+> 它甚至不在 `points[]` 里。打击目标只有战斗点（`A1..An` / `B1..Bn`）。
+> 任何「优先击杀对方 Shooter」的策略都已失去意义 —— 见 §7 与 §38。
 
 ---
 
 # 38. Locked Attack Right
 
-当前正式规则 **FROZEN FOR PLAYTEST**（V1.1 Playtest Rules — Revision 2）：
+当前正式规则 **FROZEN FOR PLAYTEST**（V1.1 Playtest Rules — Revision 3）：
 
 START 之后，双方获得本轮：
 
@@ -1014,29 +1080,34 @@ START 时原始 Shooter
 
 ---
 
-# 38.1 Shooter 的语义
+# 38.1 Emitter 的语义
 
-Shooter 在一个 Round 中定义为：
+本队的发射锚点在整场比赛中定义为：
 
-> 本轮攻击函数的数学发射锚点。
+> **固定 Emitter** —— 常量坐标（A：`(-18,0)`，B：`(18,0)`），
+> 不由任何人选择、不随回合变化、不可击杀、不属于战斗点。
 
 而不是：
 
-> 必须存活到攻击执行瞬间，否则攻击失效的枪手。
+> 从本轮存活点里选出来的、必须存活到攻击执行瞬间的枪手。
 
 因此：
 
 ```text
-START snapshot Shooter = B4
+Team B 的 Emitter = (18, 0)
 ```
 
-则 B 的函数始终必须满足：
+则 B 的函数在**每一轮**都必须满足：
 
 ```text
-f(x_B4) = y_B4
+f(18) = 0
 ```
 
-即使 B4 在 B 攻击执行前被 A 击杀。
+这个约束与回合、与点位存活状态、与先手顺序都无关。
+
+> **历史记录（不删除）**：Revision 2 时锚点仍是每轮从存活点里选出的 Shooter
+> （例如 `START snapshot Shooter = B4`），因此约束是 `f(x_B4) = y_B4`，
+> 且 B4 可能在 B 攻击执行前被 A 击杀。Revision 3 用固定 Emitter 取代了这套语义。
 
 ---
 
@@ -1075,23 +1146,20 @@ NO SAME-ROUND SHOOTER REPLACEMENT
 
 ---
 
-# 38.3 下一轮 Shooter
+# 38.3 下一轮（无 Shooter 可选）
 
-如果当前 Shooter 在本 Round 死亡：
-
-```text
-alive = false
-```
-
-那么下一轮：
+> **历史记录（不删除）**：本节曾规定「本轮阵亡的 Shooter 下一轮不可再被选中，
+> 人类仍按正常 Shooter Selection 流程从剩余存活点中重新选择」。
+>
+> Revision 3 删除了 Shooter Selection 这一整个流程，也删除了「Shooter 会死」这件事：
 
 ```text
-cannot be selected
+Emitter 不会死亡
+不存在「下一轮换一个发射点」
+每一轮的锚点都是同一个常量
 ```
 
-人类仍按正常 Shooter Selection 流程，从剩余存活点中重新选择。
-
-不自动随机指定下一轮 Shooter。
+下一轮唯一会变化的是**战斗点的存活集合**。
 
 ---
 
@@ -1107,15 +1175,9 @@ slower valid solver
 → attacks second
 ```
 
-因此计算速度仍然有正式价值。
+因此计算速度仍然有正式价值 —— 但只决定**结算顺序**，不决定胜负。
 
-只是：
-
-```text
-A kills B Shooter
-```
-
-不再删除 B 整个本轮攻击。
+先手方打掉对方任何战斗点，都**不会**删除对方的整个本轮攻击。
 
 ---
 
@@ -1233,7 +1295,7 @@ Judge 根据：
 
 ```text
 First Shot
-Second Shot / Cancellation
+Second Shot
 Kills
 Alive State
 ```
@@ -1248,81 +1310,100 @@ Visualizer 不得参与正式判定。
 
 # 43. Match Win
 
-当前基本胜利条件：
+**胜负只看战斗点**（Rule Revision 3 §9）。Emitter 不计入 `alive`。
 
-如果一方：
-
-```text
-alive = 0
-```
-
-则另一方：
+结算一轮之后：
 
 ```text
-MATCH WINNER
+aliveCombatPointsA = 0  AND  aliveCombatPointsB > 0   →  B MATCH WINNER
+aliveCombatPointsB = 0  AND  aliveCombatPointsA > 0   →  A MATCH WINNER
+aliveCombatPointsA = 0  AND  aliveCombatPointsB = 0   →  MATCH DRAW（见下）
 ```
+
+## 43.1 Mutual Elimination（同归于尽）
+
+同一轮结束后双方**同时**归零：
+
+```text
+MATCH DRAW
+endReason = MUTUAL_ELIMINATION
+```
+
+这是 Locked Attack Right（§38）的直接后果：先手方清零对方之后，后手方仍持有
+本轮已锁定的攻击权，可以反过来清零先手方。
+
+> **不得**因为 A 是 First Solver 就把胜利判给 A。先手只决定**结算顺序**，
+> 不决定胜负。见 §38.6。
+
+## 43.2 其它判和分支
+
+除同归于尽外，比赛还可能以两种方式判和（Rule Revision 3 §16/§17）：
+
+```text
+STALEMATE         连续 20 回合双方都没有击杀  →  MATCH DRAW
+HARD_ROUND_LIMIT  到达第 60 回合              →  MATCH DRAW
+```
+
+**终止保证**：`ELIMINATION` / `MUTUAL_ELIMINATION` / `STALEMATE` /
+`HARD_ROUND_LIMIT` 四者覆盖全部情形 —— 每场合法比赛都在有限时间内终止，
+且由**引擎自身**保证，不依赖任何外部轮数参数。
 
 ---
 
-# 44. Stalemate — 当前状态
+# 44. Stalemate — 已冻结（Rule Revision 3 §16）
 
 当前正式版本：
 
-> 尚未冻结新的 Stalemate / Round Limit 规则。
-
-此前讨论过：
-
 ```text
-12 consecutive no-progress rounds
-100 total rounds
+NO-PROGRESS LIMIT = 20 consecutive rounds
+HARD ROUND LIMIT  = 60 total rounds
 ```
 
-但目前它们只是：
+判定：
 
 ```text
-PROPOSED
+连续 20 个回合双方合计击杀 = 0   →  STALEMATE  →  MATCH DRAW
+到达第 60 回合仍未分出胜负        →  HARD_ROUND_LIMIT  →  MATCH DRAW
 ```
 
-而不是：
+两条上限都**已在生产引擎中实现**（`src/core/Rules.ts` 的
+`STALEMATE_NO_PROGRESS_LIMIT` / `HARD_ROUND_LIMIT`，
+`src/core/Match.ts` 的终局判定），并作为 `MatchLog.endReason` 落盘。
 
-```text
-FROZEN RULE
-```
-
-不得提前写入正式 Judge。
+> 阈值依据：Revision 3 playtest 的实测分布见
+> `playtest/results/revision-3/revision-3-summary.json` 的 `noprogress` /
+> `matchlength` 两节。此前「12 consecutive no-progress rounds / 100 total rounds」
+> 的拟议数值**未采用** —— 它们是右删失数据的产物，不能直接冻结。
 
 ---
 
-# 45. 为什么暂不冻结 Stalemate
+# 45. Stalemate 的测量依据
 
 此前已经观察到：
 
 > 某些算法组合可能出现数百 Round 无法自然结束。
 
-因此 Stalemate 是真实问题。
-
-但阈值必须优先根据 Algorithm Playtest 数据决定。
-
-需要收集：
+因此 Stalemate 是真实问题。冻结阈值前先收集了：
 
 ```text
 match length
 no-progress streak
-P50
-P75
-P90
-P95
-P99
+P50 / P75 / P90 / P95 / P99
 maximum
+repeated state signatures（同一点集反复出现的局面）
 ```
 
-再冻结规则。
+关键测量（Revision 3 playtest）：僵持**不是「回合数不够」**。
+把上限从 30 抬到 60 后，触顶的对局几乎全部仍未化解 —— 它们是**吸收式不动点**，
+不是缓慢收敛。因此阈值只需覆盖「已经冻结的局面」，不需要留很大的余量：
+`NO-PROGRESS LIMIT = 20` 就能在大部分吸收态形成后不久收场，
+而 `HARD_ROUND_LIMIT = 60` 是最后一道兜底。
 
 ---
 
-# 46. No-progress 定义候选
+# 46. No-progress 定义（已冻结）
 
-后续若实施 Stalemate，推荐候选定义：
+正式定义（与生产实现一致）：
 
 如果某 Round：
 
@@ -1344,7 +1425,10 @@ NoProgressStreak += 1
 NoProgressStreak = 0
 ```
 
-但具体阈值尚未冻结。
+阈值为 **20**；达到即判 `STALEMATE` → `MATCH DRAW`（§44）。
+
+> 判据不看谁先手、也不看函数是否合法：双方都交出合法解但谁也打不中，
+> 同样是僵持。`NoProgressStreak` 逐轮写入 `RoundLog`，可事后复核。
 
 ---
 
@@ -1440,9 +1524,9 @@ obstacle intersection
 arena exit
 hit
 kill
-shot cancellation
 round result
 match result
+end reason（ELIMINATION / MUTUAL_ELIMINATION / STALEMATE / HARD_ROUND_LIMIT）
 ```
 
 算法自己的预测不具有裁判效力。
@@ -1496,17 +1580,17 @@ Timing
 
 # 54. 当前 Playtest 已冻结规则
 
-以下内容在下一轮 Balance Playtest 前不得改变：
+以下内容在 Revision 3 之后不得改变：
 
 ```text
-2000 ms timeout
+500 ms timeout
 TIE_EPS_MS
 public → reveal → START
 no preprocessing
 same A/B JSON
 own official timing anchor
 single y=f(x)
-Shooter pass-through
+Fixed Emitter pass-through
 attack direction
 DSL operators
 AST 128
@@ -1514,12 +1598,18 @@ Depth 12
 C²
 Convexity <=100
 Obstacle stop
-Arena boundary stop
+Arena boundary stop（首次离开即永久终止、重入不恢复）
 First Solver
-Shooter assassination
-Shot cancellation
+Locked Attack Right（START 后双方攻击权独立且不可撤销）
+Mutual Elimination → MATCH DRAW
+Stalemate → MATCH DRAW
+HARD_ROUND_LIMIT → MATCH DRAW
 Immutable Round snapshot
 ```
+
+> **已从本清单删除**（Revision 2/3 废止，历史记录见 §39）：
+> `Shooter assassination`、`Shot cancellation`、每轮 Shooter Selection 与 SHOOTER LOCK；
+> `Shooter pass-through` 改名为 `Fixed Emitter pass-through`。
 
 ---
 
@@ -1528,16 +1618,20 @@ Immutable Round snapshot
 Playtest Harness 可以单独实现：
 
 ```text
-CF-NO-CANCEL
+CF-LEGACY-CANCEL     ← 唯一的真反事实：把被废止的取消规则加回来
 CF-SIMULTANEOUS
 ```
 
 用于回答：
 
 ```text
-Shooter cancellation effect
+legacy cancellation effect
 speed effect
 ```
+
+> `CF-NO-CANCEL` 已**不再是反事实** —— 它在 Revision 2 之后就是生产规则，
+> 现改名为 `locked-attack` 并只作为模型保真度核对（见 §39 与
+> `playtest/harness/gb_counterfactual.py` 的模块 docstring）。
 
 这些实验结果：
 
@@ -1690,17 +1784,21 @@ Controlled matches
 UI development reference
 ```
 
-在完成：
+当前版本已完成的评审：
 
 ```text
-Shooter cancellation balance review
-Stalemate threshold review
-remaining interface/platform re-gate
+Shooter cancellation balance review   —— 已完成（Revision 2 废止该规则）
+Stalemate threshold review            —— 已完成（Revision 3 §16 冻结阈值）
+Rule re-gate（Revision 2）             —— CONDITIONAL PASS，P1 已在本轮关闭
 ```
 
-之前，
+仍然**未**完成的是：
 
-不要将 V1.1 Playtest Baseline 宣称为新的最终：
+```text
+Final Competition Readiness Audit（独立）
+```
+
+在该审计通过之前，不要将 V1.1 Playtest Baseline 宣称为新的最终：
 
 ```text
 v1.1.0-competition
@@ -1712,7 +1810,7 @@ v1.1.0-competition
 
 Geometry Battle 的核心是：
 
-> 两名玩家先秘密选择 Shooter，地图随后揭盲；裁判发出 START 后，两支冻结算法同时开始，根据相同 Round JSON 独立生成一条合法 \(y=f(x)\) 攻击曲线。更快返回合法函数的一方先攻击，轨迹沿己方攻击方向传播，可连续击杀多个敌人，但遇到第一个障碍物或离开 Arena 后永久停止；如果先手在后手攻击执行前击杀其 Shooter，后手本轮攻击取消。所有判定由 Judge 完成，算法只能决定函数本身。
+> 每支队伍有一个**固定的 Emitter**（A 在 `(-18,0)`、B 在 `(18,0)`），整场比赛不变、不可更换、不可击杀 —— 它只是本队函数的数学发射锚点。地图揭盲后，裁判发出 START，两支冻结算法同时开始，各自根据**同一份** Round JSON 独立生成一条合法 \(y=f(x)\) 攻击曲线，且必须经过自己的 Emitter。更快返回合法函数的一方先攻击，**但 START 之后双方的攻击权都已锁定，先手打掉对方任何点位都不会取消对方本轮的攻击**。轨迹沿己方攻击方向传播，可连续击杀多个敌人，但遇到第一个障碍物、或**第一次离开 Arena** 之后即**永久停止**（此后即使函数重新入场也不恢复）。每方只剩战斗点可被击杀；一方战斗点全灭即败，双方同轮全灭则判和，连续 20 回合无人击杀或到达 60 回合同样判和。所有判定由 Judge 完成，算法只能决定函数本身。
 
 ---
 
@@ -1726,12 +1824,20 @@ OPEN FOR PLAYTEST EVIDENCE
 
 而不是让 Agent 自行决定：
 
-1. Shooter cancellation 是否需要修改；
-2. 速度先手是否奖励过强；
-3. 是否采用 Stalemate；
-4. Stalemate 连续无进展阈值；
-5. Match hard round limit；
-6. 是否需要扩大正式 Runtime；
-7. 是否需要新的 DSL Operator。
+1. 是否需要扩大正式 Runtime；
+2. 是否需要新的 DSL Operator；
+3. 是否需要引入新的策略维度（速度/质量之外）；
+4. Stalemate 阈值是否需要在更多数据后微调。
+
+**已由人类决定并冻结、不再属于本清单**：
+
+```text
+Shooter cancellation 是否需要修改   → 已废止（Revision 2）
+速度先手是否奖励过强                 → 已由 Locked Attack Right + 固定 Emitter 处理
+是否采用 Stalemate                   → 采用（Revision 3 §16）
+Stalemate 连续无进展阈值             → 20（Revision 3 §16）
+Match hard round limit               → 60（Revision 3 §17）
+Shooter Selection 是否存在           → 已删除（Revision 3 §5）
+```
 
 这些问题只能在后续测试后由人决定。
