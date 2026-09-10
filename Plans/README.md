@@ -98,3 +98,25 @@ V1.0 冻结（tag `v1.0.0-competition` → `26d7970`）之后，按人输入的
   Historical note / Current location，列出当前实际行号，但**不修改**当时记录的数字。
 - 仓库内**没有任何代码、测试或构建配置**引用 `Plans/` 下的文件
   （`grep` 全仓确认：仅 `README.md` 的项目结构树与 `Plans/` 内文档互相引用）。
+
+## V1.1 Round 2（2026-09-10）
+
+第二轮 Algorithm Balance Playtest（三算法对抗 + 反事实实验）。
+
+- 任务书：[`Input/Geometry Battle V1.1 — Round 2 Balance Playtest Agent.md`](Input/Geometry%20Battle%20V1.1%20%E2%80%94%20Round%202%20Balance%20Playtest%20Agent.md)
+- 交接文档：[`Output/Round 2 Balance Playtest Handoff.md`](Output/Round%202%20Balance%20Playtest%20Handoff.md)
+- 完整报告：`playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md`
+
+**当前结论**：`CANCELLATION-DOMINATED`。任务书 §29 的 A–E 已逐条回答
+（A = NO 但显著收窄；B = YES；C = YES；D = 建议 YES；**E = NO，阈值不可识别**）。
+
+三个开放项待人类决策：§38 Shot Cancellation 是否复核、Stalemate 阈值（需先补无上限实验）、
+competitor-kit 的场地边界终止文档缺口。
+
+> 规则文件名注记：任务书 §0 引用的 `Plans/Input/Geometry Battle V1.1 Playtest Rules.md`
+> **在本仓库不存在**。本轮 canonical 路径为
+> [`Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md`](Input/Geometry%20Battle%20V1.1%20%E2%80%94%20Competition%20Rules%20%26%20Playtest%20Specification.md)
+> （提交 `8f7dc110`，未修改）。后续任务书应修正该引用。
+
+**本轮未修改任何规则、production Judge、Sandbox、timing 规则或正式算法槽位。**
+`v1.0.0-competition` → `26d7970` 未改变。
