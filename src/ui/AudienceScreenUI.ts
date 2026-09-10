@@ -13,10 +13,25 @@ import { MatchEngine, MatchSnapshot } from '../core/Match';
 import { Replay, ReplayFrame, RoundLog } from '../core/Logs';
 import { Obstacle } from '../obstacle/Obstacle';
 import { Point } from '../field/Field';
+import { ArenaFrame, arenaLegend, arenaRuler, renderArena } from './ArenaView';
 import { AudienceState, formatAudienceState } from '../visualizer/AudienceDisplay';
 import { parseCanonicalDSL, toMathString } from '../core/Ast';
 
 /** 看板一行：内宽 61 字符，超长截断，保证边框不被撑破 */
+function wrapLegend(text: string, width = 61): string[] {
+  if (text.length <= width) return [' ' + text];
+  const out: string[] = [];
+  let rest = text;
+  while (rest.length > width - 1) {
+    const cut = rest.lastIndexOf('   ', width - 1);
+    const at = cut > 0 ? cut : width - 1;
+    out.push(' ' + rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).trimStart();
+  }
+  out.push(' ' + rest);
+  return out;
+}
+
 function fmtPt(p: Point | undefined): string {
   return p ? `${p.x.toFixed(1)}, ${p.y.toFixed(1)}` : '-';
 }
@@ -153,6 +168,52 @@ export class AudienceScreenUI {
     lines.push('│  B ALGORITHM: NOT STARTED                                   │');
     lines.push('│  READY TO COMPUTE                          [ START ]        │');
     lines.push('└─────────────────────────────────────────────────────────────┘');
+    return lines.join('\n');
+  }
+
+  /**
+   * 竞技场板（Rule Revision 3 §23/§25）—— 观众屏的主体。
+   *
+   * 画出真实几何：场地、障碍物、**固定 Emitter**、战斗点、以及本轮轨迹。
+   * 传入 `frame` 时可以带轨迹与击杀（结算后）；不传则只画静态局面（REVEAL 时）。
+   */
+  renderArenaBoard(frame: ArenaFrame, title: string): string {
+    const lines: string[] = [];
+    lines.push('┌─────────────────────────────────────────────────────────────┐');
+    lines.push(`│  ${title}`.padEnd(62) + '│');
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    for (const line of renderArena(frame, 59, 17).split('\n')) {
+      lines.push(`│${line}│`);
+    }
+    lines.push('├─────────────────────────────────────────────────────────────┤');
+    for (const line of wrapLegend(arenaRuler())) lines.push(`│${line.padEnd(61)}│`);
+    for (const line of wrapLegend(arenaLegend())) lines.push(`│${line.padEnd(61)}│`);
+    lines.push('└─────────────────────────────────────────────────────────────┘');
+    return lines.join('\n');
+  }
+
+  /**
+   * 本轮的状态与错误（§27 Error UX）。
+   *
+   * 正式 UI 必须能清楚表达 `INVALID` / `TIMEOUT` / `CRASH` ——
+   * 而不是把「有一方没开火」留给裁判自己去翻 match.json。
+   */
+  renderRoundStatus(result: Awaited<ReturnType<MatchEngine['computeRound']>>): string {
+    const lines: string[] = [];
+    for (const team of ['A', 'B'] as const) {
+      const err = team === 'A' ? result.log.aErrorCode : result.log.bErrorCode;
+      const ran = result.log.attacksExecuted.includes(team);
+      if (!err && ran) continue;
+      const label = err === 'TIMEOUT' ? 'TIMEOUT' : err === 'CRASH' ? 'CRASH' : err === 'CANCELLED' ? 'RUNNER CANCELLED (historical)' : err ? 'INVALID' : 'NO RESULT';
+      const detail = err
+        ? err === 'TIMEOUT'
+          ? '未在计算预算内产出合法 result.json'
+          : err === 'CRASH'
+            ? '算法进程异常退出'
+            : '输出不是合法函数'
+        : '本轮没有执行攻击';
+      lines.push(`  ⚠ TEAM ${team}: ${label} — ${detail}`);
+    }
     return lines.join('\n');
   }
 

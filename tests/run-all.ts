@@ -37,6 +37,7 @@ const SUITES = [
   'hostile-input',
   'timing-fairness',
   'replay',
+  'arena-view',
   'runtime-manifest',
   'competitor-kit',
 ];

@@ -42,6 +42,7 @@
  *   --artifacts <dir>     产物目录（默认 ./artifacts）
  *   --timeout <ms>        单次计算超时（默认 500，Rule Revision 3 §11）
  *   --auto                无人值守：跳过所有回车等待（不再有选点动作）
+ *   --audience            观众模式：只输出观众屏，隐藏路径 / 哈希 / 诊断（§25）
  *   --replay <dir>        只读回放已落盘的比赛（不重跑算法）
  */
 
@@ -76,6 +77,13 @@ interface CliOptions {
   timeout: number;
   auto: boolean;
   replay?: string;
+  /**
+   * 观众模式（Rule Revision 3 §25）。
+   *
+   * 只打印观众屏内容，**隐藏**开发者诊断：槽位绝对路径、包哈希、decoy seed、
+   * 状态哈希、产物目录、内部错误细节。用于现场投影或对外直播。
+   */
+  audience: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -89,6 +97,7 @@ function parseArgs(argv: string[]): CliOptions {
     maxRounds: HARD_ROUND_LIMIT,
     timeout: COMPUTE_TIMEOUT_MS,
     auto: false,
+    audience: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -104,6 +113,7 @@ function parseArgs(argv: string[]): CliOptions {
       case '--max-rounds': opts.maxRounds = Number(next()); break;
       case '--timeout': opts.timeout = Number(next()); break;
       case '--auto': opts.auto = true; break;
+      case '--audience': opts.audience = true; break;
       case '--replay': opts.replay = path.resolve(next()); break;
       default:
         if (arg.startsWith('--')) throw new Error(`未知选项: ${arg}`);
@@ -264,9 +274,20 @@ async function main(): Promise<void> {
 
       // ---- 2. REVEAL：生成 reveal_state.json（规范 §3/§17）----
       const rev = engine.revealRound();
-      console.log('\n' + audience.renderRevealBoard(engine.getSnapshot()));
-      console.log(`  reveal_state.json  sha256 = ${rev.revealStateHash}`);
-      console.log(`  roundStateHash              = ${rev.roundStateHash}`);
+      const snapReveal = engine.getSnapshot();
+      console.log('\n' + audience.renderRevealBoard(snapReveal));
+      // 观众屏主体：把真实几何画出来（障碍物已揭盲，Emitter 是常量）
+      console.log('\n' + audience.renderArenaBoard({
+        obstacles: snapReveal.map?.obstacles ?? [],
+        emitters: snapReveal.emitters,
+        points: snapReveal.points.map((pt) => ({
+          id: pt.id, team: pt.team, position: pt.position, alive: pt.alive,
+        })),
+      }, `ROUND ${snapReveal.round + 1} — ARENA`));
+      if (!opts.audience) {
+        console.log(`  reveal_state.json  sha256 = ${rev.revealStateHash}`);
+        console.log(`  roundStateHash              = ${rev.roundStateHash}`);
+      }
 
       // ---- 3. START：真实门禁，此刻之前算法一行都没跑（规范 §18）----
       console.log('\n' + judge.renderWaitingForStart());
@@ -291,6 +312,25 @@ async function main(): Promise<void> {
       }
       console.log(`  存活战斗点: A=${result.aliveAfter.A}  B=${result.aliveAfter.B}（不含 Emitter）`);
       console.log(`  连续零击杀: ${result.log.noProgressStreak} / ${STALEMATE_NO_PROGRESS_LIMIT}`);
+
+      // §27 Error UX：把 TIMEOUT / INVALID / CRASH 明确说出来，
+      // 而不是让裁判从「有一方没开火」去反推。
+      const status = audience.renderRoundStatus(result);
+      if (status) console.log(status);
+
+      // 结算后的竞技场：叠加本轮轨迹与被击杀的点
+      const frame = engine.getReplay().frames[engine.getReplay().frames.length - 1];
+      const snapAfter = engine.getSnapshot();
+      console.log('\n' + audience.renderArenaBoard({
+        obstacles: snapAfter.map?.obstacles ?? [],
+        emitters: snapAfter.emitters,
+        points: snapAfter.points.map((pt) => ({
+          id: pt.id, team: pt.team, position: pt.position, alive: pt.alive,
+        })),
+        trajectoryA: frame?.trajectoryA ?? [],
+        trajectoryB: frame?.trajectoryB ?? [],
+        killed: result.killed,
+      }, `ROUND ${result.round} — RESOLUTION`));
       persistNow(engine); // 每回合落盘（P1-A）
     }
 
@@ -309,9 +349,12 @@ async function main(): Promise<void> {
       console.log(`  END REASON: ${endReason}`);
     }
     console.log(`  Rounds: ${summary.rounds}   Kills: A=${summary.totalKillsA} B=${summary.totalKillsB}`);
-    console.log(`  Artifacts: ${dir}`);
     console.log('═══════════════════════════════════════════════════');
-    console.log(`\n回放: npx ts-node src/operator/cli.ts --replay ${dir}`);
+    if (!opts.audience) {
+      // 观众屏不显示产物路径与回放命令（§25：隐藏文件系统路径与开发者诊断）
+      console.log(`  Artifacts: ${dir}`);
+      console.log(`\n回放: npx ts-node src/operator/cli.ts --replay ${dir}`);
+    }
   } finally {
     rl.close();
   }
