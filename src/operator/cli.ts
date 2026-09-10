@@ -127,7 +127,18 @@ function replayOnly(dir: string): void {
       console.log(`  f_B(x) = ${frame.functionMathB ?? '(invalid)'}`);
       console.log(`  t_A=${frame.timerA?.toFixed(3) ?? '-'}ms  t_B=${frame.timerB?.toFixed(3) ?? '-'}ms  first=${frame.firstSolver}`);
       console.log(`  hits A=[${frame.hitsA.map((h) => h.id).join(',')}] B=[${frame.hitsB.map((h) => h.id).join(',')}]`);
-      console.log(`  killed=[${frame.killed.join(',')}] cancelled A=${frame.cancelledA} B=${frame.cancelledB}`);
+      console.log(`  killed=[${frame.killed.join(',')}]`);
+      console.log(`  attacks executed: [${frame.attacksExecuted.join(' -> ')}]`);
+      for (const t of frame.attacksExecuted) {
+        const alive = frame.shooterAliveAtAttack[t];
+        console.log(
+          `    ${t} fired with shooter ${alive ? 'alive' : 'ELIMINATED (locked attack right — shot not cancelled)'}`
+        );
+      }
+      if (frame.mutualElimination) console.log('  *** MUTUAL ELIMINATION — both teams at zero ***');
+      if (frame.cancelledA || frame.cancelledB) {
+        console.log(`  runner cancelled (historical field): A=${frame.cancelledA} B=${frame.cancelledB}`);
+      }
       console.log(`  alive after: ${frame.aliveAfter.map((p) => p.id).join(',') || '(none)'}`);
     },
   };
@@ -273,7 +284,18 @@ async function main(): Promise<void> {
       console.log(`  先解: ${result.firstSolver}`);
       console.log(`  A: ${result.shooterA}  t=${result.computeTimeMs.A?.toFixed(3) ?? '-'}ms  命中=[${result.hits.A.join(',')}]`);
       console.log(`  B: ${result.shooterB}  t=${result.computeTimeMs.B?.toFixed(3) ?? '-'}ms  命中=[${result.hits.B.join(',')}]`);
-      console.log(`  击杀: [${result.killed.join(',')}]  取消: A=${result.cancelled.A} B=${result.cancelled.B}`);
+      console.log(`  击杀: [${result.killed.join(',')}]`);
+      // 攻击权在 START 时已锁定：Shooter 阵亡不取消攻击，因此这里报告的是
+      // 「谁真的开火了」以及「开火那一刻它的 Shooter 还在不在」（规则修订 §12/§13）
+      console.log(`  实际开火: [${result.attacksExecuted.join(' -> ')}]`);
+      for (const t of result.attacksExecuted) {
+        const alive = result.shooterAliveAtAttack[t];
+        console.log(`    ${t} 开火时 Shooter ${alive ? '存活' : '已被击杀（攻击权已锁定，不取消）'}`);
+      }
+      if (result.mutualElimination) console.log('  *** 同归于尽 —— 双方同时归零，判平局 ***');
+      if (result.cancelled.A || result.cancelled.B) {
+        console.log(`  运行器取消（历史字段）: A=${result.cancelled.A} B=${result.cancelled.B}`);
+      }
       console.log(`  存活: A=${result.aliveAfter.A}  B=${result.aliveAfter.B}`);
       persistNow(engine); // 每回合落盘（P1-A）
     }

@@ -160,7 +160,24 @@ export class AudienceScreenUI {
     lines.push(`  t_A = ${frame.timerA === null ? '-' : frame.timerA.toFixed(3) + 'ms'}   t_B = ${frame.timerB === null ? '-' : frame.timerB.toFixed(3) + 'ms'}`);
     lines.push(`  first solver: ${frame.firstSolver}`);
     lines.push(`  hits: A=[${frame.hitsA.map((h) => h.id).join(',')}] B=[${frame.hitsB.map((h) => h.id).join(',')}]`);
-    lines.push(`  killed: [${frame.killed.join(',')}]  cancelled: A=${frame.cancelledA} B=${frame.cancelledB}`);
+    lines.push(`  killed: [${frame.killed.join(',')}]`);
+    // 攻击执行顺序 + 开火瞬间的 Shooter 存活状态（规则修订 §12/§13）。
+    // 回放必须能展示「先手击杀对方 Shooter → 对方攻击照样执行」这条链条，
+    // 而不是像旧规则那样显示 SHOT CANCELLED。
+    lines.push(`  attacks executed: [${frame.attacksExecuted.join(' → ')}]`);
+    for (const t of frame.attacksExecuted) {
+      const alive = frame.shooterAliveAtAttack[t];
+      lines.push(
+        `    ${t} fired with shooter ${alive ? 'alive' : 'ELIMINATED'}` +
+          (alive ? '' : ' — locked attack right, shot is NOT cancelled')
+      );
+    }
+    if (frame.mutualElimination) lines.push('  *** MUTUAL ELIMINATION — round ended with both teams at zero ***');
+    // cancelled 字段保留为历史/兼容语义：规则修订后它只能是运行器自身的显式取消，
+    // 与 TIMEOUT / INVALID / CRASH 无关，因此这里明确区分，不再打印成「取消」。
+    if (frame.cancelledA || frame.cancelledB) {
+      lines.push(`  runner cancelled (historical field): A=${frame.cancelledA} B=${frame.cancelledB}`);
+    }
     lines.push(`  alive after: ${frame.aliveAfter.map((p) => p.id).join(',') || '(none)'}`);
     return lines.join('\n');
   }

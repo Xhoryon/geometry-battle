@@ -55,11 +55,36 @@ export interface RoundLog {
     | 'TIMEOUT_B'
     | 'INVALID_A'
     | 'INVALID_B'
-    /** Shooter 被先手方击杀，本轮攻击被取消（Plan V1 §25）—— 与 INVALID 语义不同 */
+    /**
+     * **历史/兼容**（V1.1 规则修订 §11）：旧规则下「Shooter 被先手方击杀 →
+     * 本轮攻击被取消」的结果码。规则修订后这条路径已不存在，
+     * 生产路径不会再产出这两个值；保留联合成员以兼容旧日志与旧回放。
+     */
     | 'CANCELLED_A'
     | 'CANCELLED_B'
     | 'TECHNICAL_INVALID';
   firstSolver: 'A' | 'B' | 'tie' | 'none';
+  /**
+   * 本轮**实际执行**了攻击的队伍，按执行顺序（V1.1 规则修订 §12）。
+   *
+   * 与 `firstSolver` 的区别是实质性的：`firstSolver` 说的是「谁先解出」，
+   * 而这里说的是「谁的攻击真的落地了」—— 后手方算法 TIMEOUT / INVALID / CRASH
+   * 时它不会出现在这个数组里，尽管 firstSolver 仍可能指向它。
+   */
+  attacksExecuted: ('A' | 'B')[];
+  /**
+   * 该队攻击执行**那一瞬间**其 Shooter 是否仍存活（未攻击则为 null）。
+   *
+   * 这是规则修订 §12 要求的可证明性：`shooterAliveAtAttack.B === false`
+   * 且 `attacksExecuted` 含 'B'，就从日志本身证明了
+   * 「Shooter 在攻击前已被击杀，但本轮的锁定攻击权仍然生效」。
+   */
+  shooterAliveAtAttack: { A: boolean | null; B: boolean | null };
+  /** 本轮结算完成后，各方 Shooter 是否仍存活——决定它下一轮能否再被选中（§5） */
+  shooterAAliveAfterRound: boolean;
+  shooterBAliveAfterRound: boolean;
+  /** 本轮结算后双方同时归零 → MATCH DRAW（§8） */
+  mutualElimination: boolean;
 }
 
 export interface MatchLog {
@@ -77,6 +102,17 @@ export interface MatchLog {
   startTime: string;
   endTime: string;
   winner: 'A' | 'B' | 'draw';
+  /**
+   * 结束原因（V1.1 规则修订 §8）。
+   *   - `ELIMINATION`：一方归零、另一方存活，正常分胜负
+   *   - `MUTUAL_ELIMINATION`：同一轮结束后双方都归零 → 平局（`winner = 'draw'`）
+   *   - `NONE`：比赛尚未结束
+   *
+   * `MUTUAL_ELIMINATION` 是在取消规则废止后**才可能出现**的局面：先手方清零对方、
+   * 后手方凭锁定攻击权再清零先手方。它必须被判为平局，不得因为谁是 First Solver
+   * 就自动判谁赢。
+   */
+  endReason: 'ELIMINATION' | 'MUTUAL_ELIMINATION' | 'NONE';
   rounds: RoundLog[];
   finalAlive: { A: number; B: number };
 }
@@ -119,9 +155,16 @@ export interface ReplayFrame {
   blockedB: Point | null;
   timerA: number | null;
   timerB: number | null;
+  /** 历史/兼容：规则修订后恒为 false（§11） */
   cancelledA: boolean;
   cancelledB: boolean;
   firstSolver: 'A' | 'B' | 'tie' | 'none';
+  /** 实际执行了攻击的队伍，按执行顺序（§12/§13） */
+  attacksExecuted: ('A' | 'B')[];
+  /** 攻击执行瞬间该方 Shooter 是否存活 —— 回放据此展示「被击杀后仍然开火」（§13） */
+  shooterAliveAtAttack: { A: boolean | null; B: boolean | null };
+  /** 本轮结算后双方同时归零（§8） */
+  mutualElimination: boolean;
   aliveAfter: { id: string; team: 'A' | 'B'; position: Point }[];
 }
 

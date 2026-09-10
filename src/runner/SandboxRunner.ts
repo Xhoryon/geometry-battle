@@ -198,8 +198,6 @@ export interface DuelOptions {
   denyReadPaths?: string[];
   timeoutMs?: number;
   memoryLimitMb?: number;
-  /** 收到先手结果后的回调；返回 true 表示要取消另一方 */
-  onFirstResult?: (team: 'A' | 'B', outcome: RunnerOutcome) => Promise<boolean> | boolean;
 }
 
 export interface DuelResult {
@@ -1107,25 +1105,12 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
   const runnerA = spawnRunner({ team: 'A', sandbox: sandboxA, timeoutMs, memoryLimitMb });
   const runnerB = spawnRunner({ team: 'B', sandbox: sandboxB, timeoutMs, memoryLimitMb });
 
-  let a: RunnerOutcome | null = null;
-  let b: RunnerOutcome | null = null;
-  let firstResultHandled = false;
-
-  const settleFirst = async (outcome: RunnerOutcome) => {
-    if (firstResultHandled) return;
-    firstResultHandled = true;
-    if (opts.onFirstResult) {
-      const shouldCancel = await opts.onFirstResult(outcome.team, outcome);
-      if (shouldCancel) {
-        if (outcome.team === 'A') runnerB.cancel();
-        else runnerA.cancel();
-      }
-    }
-  };
-
-  runnerA.done.then((o) => { a = o; void settleFirst(o); });
-  runnerB.done.then((o) => { b = o; void settleFirst(o); });
-
+  // 每一方的进程生命周期只由它自己决定：valid result / timeout / crash /
+  // invalid output / 正常清理（V1.1 规则修订 §10）。
+  // 规则修订前这里有一个 onFirstResult 钩子，先手方一旦击杀对方 Shooter 就
+  // 同步 cancel() 掉对方的沙箱 —— 那条进程终止路径已随取消规则一并废止，
+  // 钩子本身也删掉了，避免它成为规则回流的暗门：现在双方一律跑到各自的
+  // deadline 或产出结果为止，下面那次 Promise.all 就是唯一的汇合点。
   let readySkewMs = 0;
   try {
     const [ra, rb] = await Promise.all([runnerA.ready, runnerB.ready]);

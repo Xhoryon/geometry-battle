@@ -129,7 +129,14 @@ export interface RoundResult {
   shooterA: string;
   shooterB: string;
   killed: string[];
+  /** 历史/兼容：规则修订后恒为 false，见 `RoundLog.cancelledA` 的说明（§11） */
   cancelled: { A: boolean; B: boolean };
+  /** 本轮实际执行了攻击的队伍，按执行顺序（§12） */
+  attacksExecuted: ('A' | 'B')[];
+  /** 攻击执行瞬间该方 Shooter 是否存活（未攻击为 null）（§12） */
+  shooterAliveAtAttack: { A: boolean | null; B: boolean | null };
+  /** 本轮结算后双方同时归零（§8） */
+  mutualElimination: boolean;
   hits: { A: string[]; B: string[] };
   computeTimeMs: { A: number | null; B: number | null };
   aliveAfter: { A: number; B: number };
@@ -741,7 +748,6 @@ export class MatchEngine {
     this.audit.log('RoundComputeStart', { round, ...hashes });
 
     // ---- 运行双方算法 ----
-    const cancelled: { A: boolean; B: boolean } = { A: false, B: false };
     // 一份**冻结的**字节，两个沙箱 —— 队别只经 --team argv 分化（规范 §11/§12/§19）
     const input: RunnerInput = {
       publicJson: this.pendingPublic.json,
@@ -763,27 +769,10 @@ export class MatchEngine {
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
-      onFirstResult: (team, outcome) => {
-        // 先手立即结算；若击杀了对方 Shooter 则立即取消对方进程（Plan V1 §25）
-        if (!outcome.success) return false;
-        // 结果只来自 output/result.json（规范 §24）；stdout 不参与判定。
-        const parsed = parseCanonicalDSL(outcome.dslText ?? '');
-        if (!parsed.ok || !parsed.ast) return false;
-        const check = this.validateAst(parsed.ast, team, core);
-        if (!check.ok) return false;
-
-        const enemies = this.aliveEnemies(team);
-        const preview = judgeShot(parsed.ast, this.shooters[team]!.position, team, enemies, this.map!.obstacles);
-        const killedEnemyShooter = preview.hits.includes(this.shooters[team === 'A' ? 'B' : 'A']!.id);
-        if (killedEnemyShooter) {
-          const other = team === 'A' ? 'B' : 'A';
-          cancelled[other] = true;
-          this.audit.log('ShotCancelled', { reason: 'shooter eliminated by first solver', round }, other);
-          return true;
-        }
-        return false;
-      },
     });
+    // 本轮**不再**有 onFirstResult 取消钩子：先手方击杀对方 Shooter 不再终止对方进程。
+    // 双方的进程生命周期只由 valid result / timeout / crash / invalid output / 正常清理
+    // 决定（V1.1 规则修订 §10），Shooter 死亡不再是 Runner termination signal。
 
     this.lastIsolation = duel.isolation;
     // 审计三件套（规范 §23）：两个 release 时刻与它们的偏差。
@@ -842,17 +831,18 @@ export class MatchEngine {
     const simultaneous = firstSolver === 'tie';
     // 必须在结算**之前**取快照：resolveOrderedShots 会就地修改 alive 标记
     const snapshot = this.points.filter((p) => p.alive);
-    const { shots, killed } = resolveOrderedShots({
+    const { shots, killed, shooterAliveAtAttack } = resolveOrderedShots({
       order,
       simultaneous,
       points: this.points,
       shooters: { A: shooterA, B: shooterB },
       ast: { A: finalA, B: finalB },
       obstacles: this.map.obstacles,
-      cancelled,
-      onCancelled: (team, reason) => this.audit.log('ShotCancelled', { reason, round }, team),
     });
     const killedSet = new Set(killed);
+    // 实际执行了攻击的队伍，按执行顺序（规则修订 §12：必须能从日志明确证明
+    // 「Shooter 在第二击前已死但第二击仍然执行」）。
+    const attacksExecuted = order.filter((t) => shots[t] !== null);
 
     // 阶段推进（无解时走 noSolution，不伪造 FIRST_SOLUTION）
     if (finalA || finalB) {
@@ -874,9 +864,17 @@ export class MatchEngine {
     const aKills = shots.A ? shots.A.killed.filter((id) => id.startsWith('B')).length : 0;
     const bKills = shots.B ? shots.B.killed.filter((id) => id.startsWith('A')).length : 0;
 
-    // 取消是独立语义，不能与「算法非法」共用同一个 result 码（P2-A）
-    const cancelledA = cancelled.A || outcomeA.errorCode === 'CANCELLED';
-    const cancelledB = cancelled.B || outcomeB.errorCode === 'CANCELLED';
+    // 双方同归于尽：本轮结算完成后两队都归零 → MATCH DRAW，而不是因为
+    // A 是 First Solver 就判 A 赢（V1.1 规则修订 §8）。
+    const mutualElimination = aliveAfter.A === 0 && aliveAfter.B === 0;
+
+    // cancelled 字段保留为**历史/兼容**语义（规则修订 §11/§23）：
+    // 规则修订后「Shooter 被击杀 → 攻击取消」已不存在，这里只可能由运行器自身的
+    // 显式取消（例如 READY 握手失败被 cancel()）置位，不再有先手击杀这条路径。
+    // 新规则下 shot cancellation rate 恒为 0 by design；TIMEOUT / INVALID / CRASH
+    // 绝不记作 cancellation（§23）。
+    const cancelledA = outcomeA.errorCode === 'CANCELLED';
+    const cancelledB = outcomeB.errorCode === 'CANCELLED';
 
     // 运行器成功、但输出构不成合法函数时，运行器自身没有错误码 —— 补一个与回合
     // 结果一致的诊断码，避免出现「result = INVALID_A 但 aErrorCode = null」
@@ -918,6 +916,11 @@ export class MatchEngine {
       aliveBAfter: aliveAfter.B,
       result: deriveRoundResult(outcomeA, outcomeB, finalA, finalB, cancelledA, cancelledB),
       firstSolver,
+      attacksExecuted,
+      shooterAliveAtAttack,
+      shooterAAliveAfterRound: shooterA.alive,
+      shooterBAliveAfterRound: shooterB.alive,
+      mutualElimination,
     };
 
     this.frames.push({
@@ -945,9 +948,12 @@ export class MatchEngine {
       blockedB: shots.B?.blocked ? shots.B.blocked.at : null,
       timerA: tA,
       timerB: tB,
-      cancelledA: cancelled.A,
-      cancelledB: cancelled.B,
+      cancelledA,
+      cancelledB,
       firstSolver,
+      attacksExecuted: [...attacksExecuted],
+      shooterAliveAtAttack: { ...shooterAliveAtAttack },
+      mutualElimination,
       aliveAfter: this.points.filter((p) => p.alive).map((p) => ({ id: p.id, team: p.team, position: p.position })),
     });
 
@@ -969,7 +975,13 @@ export class MatchEngine {
     if (winner) {
       this.phase = 'MATCH_END';
       machine.matchEnd();
-      this.audit.log('MatchEnded', { winner });
+      if (mutualElimination) {
+        this.audit.log('MutualElimination', { round, aliveAfter });
+      }
+      this.audit.log('MatchEnded', {
+        winner,
+        endReason: mutualElimination ? 'MUTUAL_ELIMINATION' : 'ELIMINATION',
+      });
     } else {
       this.phase = 'SELECT_SHOOTER';
       machine.nextRound();
@@ -984,7 +996,10 @@ export class MatchEngine {
       shooterA: shooterA.id,
       shooterB: shooterB.id,
       killed: [...killedSet],
-      cancelled,
+      cancelled: { A: cancelledA, B: cancelledB },
+      attacksExecuted,
+      shooterAliveAtAttack,
+      mutualElimination,
       hits: { A: shots.A?.hits ?? [], B: shots.B?.hits ?? [] },
       computeTimeMs: { A: tA, B: tB },
       aliveAfter,
@@ -1006,6 +1021,23 @@ export class MatchEngine {
     if (a === 0) return 'B';
     if (b === 0) return 'A';
     return null;
+  }
+
+  /**
+   * 结束原因（V1.1 规则修订 §8）。
+   *
+   * 双方同时归零必须判为平局：先手方清零对方、后手方凭已锁定的攻击权再清零先手方，
+   * 这个局面在取消规则废止后才可能出现。**不得**因为谁是 First Solver 就自动判谁赢。
+   */
+  endReason(): MatchLog['endReason'] {
+    const winner = this.getWinner();
+    if (!winner) return 'NONE';
+    if (winner !== 'draw') return 'ELIMINATION';
+    // winner === 'draw' 有两个来源：双方同时归零，或点集为空。
+    // 后者（points.length === 0）不是同归于尽，但也不属于 ELIMINATION 的语义，
+    // 记 MUTUAL_ELIMINATION 会让审计误读 —— 用最后一轮记录的 mutualElimination 判定。
+    const last = this.rounds[this.rounds.length - 1];
+    return last?.mutualElimination ? 'MUTUAL_ELIMINATION' : 'NONE';
   }
 
   getSnapshot(): MatchSnapshot {
@@ -1050,6 +1082,7 @@ export class MatchEngine {
       startTime: this.startedAt.toISOString(),
       endTime: new Date().toISOString(),
       winner: this.getWinner() ?? 'draw',
+      endReason: this.endReason(),
       rounds: [...this.rounds],
       finalAlive: {
         A: this.points.filter((p) => p.team === 'A' && p.alive).length,
@@ -1335,29 +1368,36 @@ export interface OrderedShotInput {
   shooters: { A: PointState; B: PointState };
   ast: { A: CanonicalNode | null; B: CanonicalNode | null };
   obstacles: Obstacle[];
-  /** 被取消的队伍会被置为 true */
-  cancelled: { A: boolean; B: boolean };
-  onCancelled?: (team: 'A' | 'B', reason: string) => void;
 }
 
 export interface OrderedShotResult {
   shots: Record<'A' | 'B', ShotOutcome | null>;
   killed: string[];
+  /** 该队攻击执行**那一瞬间**其 Shooter 是否仍存活（未攻击则为 null） */
+  shooterAliveAtAttack: Record<'A' | 'B', boolean | null>;
 }
 
 /**
- * 按先手顺序结算攻击（Plan V1 §23-§25）。
+ * 按先手顺序结算攻击（Plan V1 §23-§25 + V1.1 规则修订 §2/§3）。
  *
- * 语义要点（Re-Gate Cycle 1 P2-B）：
- *   - 非并列时严格串行：**先手方的击杀立即生效**，因此后手方的
- *     `shooter.alive` 守卫是可达的。早期实现把守卫放在循环内、
- *     把击杀应用放在循环之后，守卫恒为真，取消只能靠进程 kill。
+ * 语义要点：
+ *   - **START 之后双方获得本轮独立且不可撤销的攻击权**（V1.1 规则修订 §2）。
+ *     Shooter 是本轮攻击函数的数学发射锚点，**不要求存活到攻击执行瞬间**：
+ *     Shooter 被先手方击杀不再删除后手方本轮的整个攻击。函数仍必须满足
+ *     `f(x_shooter) = y_shooter`，锚点用的是 START 快照里的 Shooter（§3）。
+ *   - 这里**没有**「Shooter 已死 → 跳过该方射击」的守卫，也**没有** cancelled
+ *     出参 —— 取消语义在结构上就不存在，无法被悄悄重新引入（§11/§16）。
+ *     攻击不执行的唯一原因是算法侧 TIMEOUT / INVALID / CRASH（§9/§10），
+ *     而 `ast[team] === null` 正是这条路径。
+ *   - 非并列时严格串行：先手方的击杀**立即生效**，后手方看到的敌方存活集合
+ *     已经扣除先手方的战果（Live Resolution State，§7）。
  *   - 并列先手时双方同时开火：都基于同一个开战前快照，
  *     击杀在双方都结算完之后统一应用。
  */
 export function resolveOrderedShots(input: OrderedShotInput): OrderedShotResult {
-  const { order, simultaneous, points, shooters, ast, obstacles, cancelled } = input;
+  const { order, simultaneous, points, shooters, ast, obstacles } = input;
   const shots: Record<'A' | 'B', ShotOutcome | null> = { A: null, B: null };
+  const shooterAliveAtAttack: Record<'A' | 'B', boolean | null> = { A: null, B: null };
   const killedSet = new Set<string>();
   const snapshot = points.filter((p) => p.alive);
 
@@ -1372,12 +1412,8 @@ export function resolveOrderedShots(input: OrderedShotInput): OrderedShotResult 
     const fn = ast[team];
     if (!fn) continue;
     const shooter = shooters[team];
-    if (!shooter.alive) {
-      // 后手方 Shooter 已被先手方击杀 —— 攻击取消
-      cancelled[team] = true;
-      input.onCancelled?.(team, 'shooter eliminated before its shot');
-      continue;
-    }
+    // 在解析用哪份存活集合**之前**记录，才是「攻击执行瞬间」的真实状态。
+    shooterAliveAtAttack[team] = shooter.alive;
     const enemies = (simultaneous ? snapshot : points.filter((p) => p.alive))
       .filter((p) => p.team !== team)
       .map((p) => ({ id: p.id, position: p.position }));
@@ -1388,7 +1424,7 @@ export function resolveOrderedShots(input: OrderedShotInput): OrderedShotResult 
   }
 
   if (simultaneous) markDead(killedSet);
-  return { shots, killed: [...killedSet] };
+  return { shots, killed: [...killedSet], shooterAliveAtAttack };
 }
 
 export function generateMatchId(): string {
