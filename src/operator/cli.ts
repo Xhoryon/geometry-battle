@@ -212,45 +212,52 @@ async function main(): Promise<void> {
   const ask = async (q: string) => (await rl.question(q)).trim();
 
   try {
-    console.log('═══ 0. 固定算法槽位（规范 §2/§33）═══');
-    console.log(setup.renderSlotPanel());
-    console.log(setup.renderRuntimePanel());
+    if (!opts.audience) {
+      // 观众模式（§25）不显示槽位面板（含绝对路径）与 Runtime 诊断
+      console.log('═══ 0. 固定算法槽位（规范 §2/§33）═══');
+      console.log(setup.renderSlotPanel());
+      console.log(setup.renderRuntimePanel());
+    }
 
     // ---- 上传：staging → validate → preflight → hash → seal → replace（§31/§32）----
     let installedAny = false;
     for (const team of ['A', 'B'] as const) {
       const src = team === 'A' ? opts.a : opts.b;
       if (!src) continue;
-      console.log(`\n安装 Team ${team} ← ${path.resolve(src)}`);
-      console.log('  staging → validate → preflight → hash → seal → replace');
+      if (!opts.audience) console.log(`\n安装 Team ${team} ← ${path.resolve(src)}`);
+      if (!opts.audience) console.log('  staging → validate → preflight → hash → seal → replace');
       const inst = await setup.installAlgorithm(team, path.resolve(src));
       if (!inst.success) {
         // 非破坏性：安装失败时槽位仍是安装前那一份
         throw new Error(`Team ${team} 算法安装失败（槽位未改动）: ${inst.errors.join('; ')}`);
       }
       installedAny = true;
-      console.log(`  ✓ 槽位已替换  hash=${inst.hash}  decoySeed=${inst.detail.decoySeed}`);
+      if (!opts.audience) console.log(`  ✓ 槽位已替换  hash=${inst.hash}  decoySeed=${inst.detail.decoySeed}`);
     }
-    if (installedAny) console.log('\n' + setup.renderSlotPanel());
+    if (installedAny && !opts.audience) console.log('\n' + setup.renderSlotPanel());
 
     console.log('\n═══ 1. 上传与密封（从槽位密封副本）═══');
     const upA = setup.uploadFromSlot('A');
     if (!upA.success) throw new Error(`Team A 上传失败: ${upA.errors.join('; ')}`);
     const upB = setup.uploadFromSlot('B');
     if (!upB.success) throw new Error(`Team B 上传失败: ${upB.errors.join('; ')}`);
-    console.log(`  A hash: ${upA.hash}`);
-    console.log(`  B hash: ${upB.hash}`);
+    if (!opts.audience) {
+      console.log(`  A hash: ${upA.hash}`);
+      console.log(`  B hash: ${upB.hash}`);
+    }
 
-    console.log('\n═══ 2. Preflight（decoy 世界 —— 与比赛种子无关，不泄漏本轮任何信息）═══');
+    if (!opts.audience) console.log('\n═══ 2. Preflight（decoy 世界 —— 与比赛种子无关，不泄漏本轮任何信息）═══');
     const pre = await setup.preflight();
-    console.log(`  decoy seed: ${pre.detail.decoySeed}   比赛 seed: ${opts.seed}`);
-    console.log(`  ${pre.success ? '✓ PASSED' : '✕ FAILED'}`);
+    if (!opts.audience) {
+      console.log(`  decoy seed: ${pre.detail.decoySeed}   比赛 seed: ${opts.seed}`);
+      console.log(`  ${pre.success ? '✓ PASSED' : '✕ FAILED'}`);
+    }
     if (!pre.success) throw new Error(`Preflight 失败: ${pre.errors.join('; ')}`);
 
-    console.log('\n═══ 3. 开始比赛 ═══');
+    if (!opts.audience) console.log('\n═══ 3. 开始比赛 ═══');
     const started = setup.startMatch();
     if (!started.success) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
-    console.log(setup.renderStatusTable());
+    if (!opts.audience) console.log(setup.renderStatusTable());
     persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）
 
     let played = 0;
@@ -267,7 +274,7 @@ async function main(): Promise<void> {
       // ---- 1. PUBLIC：生成 public_state.json，算法进程不存在（规范 §14/§15）----
       const pre = engine.beginRound();
       console.log('\n' + audience.renderPreRevealBoard(engine.getSnapshot()));
-      console.log(`  public_state.json  sha256 = ${pre.publicStateHash}`);
+      if (!opts.audience) console.log(`  public_state.json  sha256 = ${pre.publicStateHash}`);
 
       // Rule Revision 3 §5：这里曾经是「双方轮流选择 Shooter 并锁定」。
       // 那一步已从正式流程删除 —— 发射锚点是整场固定的 Emitter。

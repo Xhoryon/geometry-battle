@@ -23,7 +23,12 @@ const ALGO_B = path.join(REPO, 'playtest', 'competitors', 'solver-hybrid');
 
 const TIMEOUT_MS = 10 * 60 * 1000;
 
-/** 跑一场完整比赛，返回产物目录 */
+/**
+ * 跑一场完整比赛，返回**这场比赛**的产物目录。
+ *
+ * 注意 CLI 的 `Artifacts:` 打的就是 `matches/<matchId>` 这一层，
+ * 不是 artifacts 根目录 —— 早先这里多套了一层 `matches/` 才去找，于是 ENOENT。
+ */
 function runMatch(opts: { root: string; seed: number; extra?: string[] }): string {
   const artifacts = path.join(opts.root, 'artifacts');
   const r = spawnSync(
@@ -53,19 +58,9 @@ function readMatch(dir: string): MatchLog {
   return JSON.parse(fs.readFileSync(path.join(dir, 'match.json'), 'utf-8')) as MatchLog;
 }
 
-function findArtifactDir(artifactsRoot: string): string {
-  const matches = path.join(artifactsRoot, 'matches');
-  const dirs = fs
-    .readdirSync(matches)
-    .map((d) => path.join(matches, d))
-    .filter((d) => fs.statSync(d).isDirectory());
-  assertEqual(dirs.length, 1, '应恰好产出一场比赛的目录');
-  return dirs[0];
-}
-
 test('operator-e2e: 一场完整比赛从干净启动跑到终止并落盘（§33）', () => {
   const root = tmpDir('op-e2e');
-  const dir = findArtifactDir(runMatch({ root, seed: 700001 }));
+  const dir = runMatch({ root, seed: 700001 });
   const match = readMatch(dir);
 
   // 终止保证：四类 endReason 之一，且一定是有限回合
@@ -103,7 +98,7 @@ test('operator-e2e: 一场完整比赛从干净启动跑到终止并落盘（§3
 
 test('operator-e2e: 回放是只读的，且能表达 Revision 3 的终局（§22）', () => {
   const root = tmpDir('op-replay');
-  const dir = findArtifactDir(runMatch({ root, seed: 700002 }));
+  const dir = runMatch({ root, seed: 700002 });
 
   const r = spawnSync('npx', ['ts-node', CLI, '--replay', dir], {
     cwd: REPO,

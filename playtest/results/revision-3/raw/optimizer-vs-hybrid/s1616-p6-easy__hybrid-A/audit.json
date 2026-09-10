@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "matchId": "MATCH-MTVNDXBV-9LCA8",
+  "events": [
+    {
+      "at": "2026-09-10T14:53:50.203Z",
+      "seq": 1,
+      "type": "MatchCreated",
+      "details": {
+        "seed": 1616,
+        "pointCount": 6
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:50.265Z",
+      "seq": 2,
+      "type": "PackageSealed",
+      "team": "A",
+      "details": {
+        "hash": "1284e279e683c20fb3586307f2df8bee1744a88f21610df8ce1aa52838a319ac",
+        "files": 10,
+        "entry": "solver.py"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:50.268Z",
+      "seq": 3,
+      "type": "PackageSealed",
+      "team": "B",
+      "details": {
+        "hash": "02a679343286f535b7a214e27cf3ec3765c7148329217920c27d82b7857dbbab",
+        "files": 12,
+        "entry": "solver.py"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.013Z",
+      "seq": 4,
+      "type": "Preflight",
+      "details": {
+        "ok": true,
+        "errors": [],
+        "decoySeed": 306795939,
+        "decoyMapSeed": 306795940,
+        "decoyMapHash": "0938708d5eb1d77514220e1205cf9778be883b019c795d0630a66d19da63efe9",
+        "matchSeed": 1616
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.013Z",
+      "seq": 5,
+      "type": "MatchStarted",
+      "details": {
+        "seed": 1616,
+        "mapHash": "9d85afb97640da7b44c36583af8ecb61cdda96c7fe75c793353bffd624618d00",
+        "points": 6
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.068Z",
+      "seq": 6,
+      "type": "RuntimeFrozen",
+      "details": {
+        "frozen": "CPython 3.9.6 (darwin) | 第三方包: NONE | cpu=1核 mem=512MB threads=1 timeout=500ms",
+        "detected": {
+          "python": "3.9.6",
+          "implementation": "CPython",
+          "platform": "darwin",
+          "packages": {
+            "numpy": "2.0.2",
+            "scipy": "1.13.1",
+            "sympy": null
+          },
+          "probed": true
+        },
+        "mismatches": []
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.069Z",
+      "seq": 7,
+      "type": "PublicStateGenerated",
+      "details": {
+        "round": 1,
+        "publicStateHash": "d2f9ff366d5aa9c655fe705c0e95db12a84aa2969ddfc8af9c815f0e5d173e74"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.069Z",
+      "seq": 8,
+      "type": "RevealStateGenerated",
+      "details": {
+        "round": 1,
+        "publicStateHash": "d2f9ff366d5aa9c655fe705c0e95db12a84aa2969ddfc8af9c815f0e5d173e74",
+        "revealStateHash": "6cc43d3a891ab214a747e3e6504d42aa48018da857835edfd65e6afd10ce0439",
+        "roundStateHash": "c307f870bd4f4ea921f730aed033407ec1734d4cc6548fd1a1ef5aaf662ce4c0",
+        "obstacleCount": 2
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.070Z",
+      "seq": 9,
+      "type": "JudgeStartRound",
+      "details": {
+        "round": 1,
+        "publicStateHash": "d2f9ff366d5aa9c655fe705c0e95db12a84aa2969ddfc8af9c815f0e5d173e74",
+        "revealStateHash": "6cc43d3a891ab214a747e3e6504d42aa48018da857835edfd65e6afd10ce0439",
+        "roundStateHash": "c307f870bd4f4ea921f730aed033407ec1734d4cc6548fd1a1ef5aaf662ce4c0"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.071Z",
+      "seq": 10,
+      "type": "RoundComputeStart",
+      "details": {
+        "round": 1,
+        "publicStateHash": "d2f9ff366d5aa9c655fe705c0e95db12a84aa2969ddfc8af9c815f0e5d173e74",
+        "revealStateHash": "6cc43d3a891ab214a747e3e6504d42aa48018da857835edfd65e6afd10ce0439",
+        "roundStateHash": "c307f870bd4f4ea921f730aed033407ec1734d4cc6548fd1a1ef5aaf662ce4c0"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.808Z",
+      "seq": 11,
+      "type": "RoundComputeEnd",
+      "details": {
+        "round": 1,
+        "releaseA_ns": "2310529820355166",
+        "releaseB_ns": "2310529820362041",
+        "startSkew_ns": "6875",
+        "readySkewMs": 148.322708,
+        "isolation": {
+          "mechanism": "sandbox-exec",
+          "networkDenied": true,
+          "filesystemScoped": true,
+          "envScrubbed": true,
+          "memoryLimited": true,
+          "processGroupIsolated": true,
+          "childProcessDenied": true
+        }
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.822Z",
+      "seq": 12,
+      "type": "RoundResult",
+      "details": {
+        "round": 1,
+        "firstSolver": "A",
+        "aKills": 2,
+        "bKills": 4,
+        "aliveAfter": {
+          "A": 2,
+          "B": 4
+        },
+        "killed": [
+          "B1",
+          "B5",
+          "A2",
+          "A1",
+          "A5",
+          "A3"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.824Z",
+      "seq": 13,
+      "type": "PublicStateGenerated",
+      "details": {
+        "round": 2,
+        "publicStateHash": "80a914a081d6e0e7f31c0bf90a54aa0c05b84936a9d07cc230ffa69e90e956d1"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.824Z",
+      "seq": 14,
+      "type": "RevealStateGenerated",
+      "details": {
+        "round": 2,
+        "publicStateHash": "80a914a081d6e0e7f31c0bf90a54aa0c05b84936a9d07cc230ffa69e90e956d1",
+        "revealStateHash": "ce31016b572dee519e2222e6ce28fec3034f59e20cdbd7bd9d3d310d42d11777",
+        "roundStateHash": "257ffedaf0e4e04f7c8ccc92dea88145f97975df151287d06b047ddc46637851",
+        "obstacleCount": 2
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.824Z",
+      "seq": 15,
+      "type": "JudgeStartRound",
+      "details": {
+        "round": 2,
+        "publicStateHash": "80a914a081d6e0e7f31c0bf90a54aa0c05b84936a9d07cc230ffa69e90e956d1",
+        "revealStateHash": "ce31016b572dee519e2222e6ce28fec3034f59e20cdbd7bd9d3d310d42d11777",
+        "roundStateHash": "257ffedaf0e4e04f7c8ccc92dea88145f97975df151287d06b047ddc46637851"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:51.825Z",
+      "seq": 16,
+      "type": "RoundComputeStart",
+      "details": {
+        "round": 2,
+        "publicStateHash": "80a914a081d6e0e7f31c0bf90a54aa0c05b84936a9d07cc230ffa69e90e956d1",
+        "revealStateHash": "ce31016b572dee519e2222e6ce28fec3034f59e20cdbd7bd9d3d310d42d11777",
+        "roundStateHash": "257ffedaf0e4e04f7c8ccc92dea88145f97975df151287d06b047ddc46637851"
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:52.409Z",
+      "seq": 17,
+      "type": "RoundComputeEnd",
+      "details": {
+        "round": 2,
+        "releaseA_ns": "2310530644506833",
+        "releaseB_ns": "2310530644516166",
+        "startSkew_ns": "9333",
+        "readySkewMs": 232.071917,
+        "isolation": {
+          "mechanism": "sandbox-exec",
+          "networkDenied": true,
+          "filesystemScoped": true,
+          "envScrubbed": true,
+          "memoryLimited": true,
+          "processGroupIsolated": true,
+          "childProcessDenied": true
+        }
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:52.415Z",
+      "seq": 18,
+      "type": "RoundResult",
+      "details": {
+        "round": 2,
+        "firstSolver": "A",
+        "aKills": 1,
+        "bKills": 2,
+        "aliveAfter": {
+          "A": 0,
+          "B": 3
+        },
+        "killed": [
+          "B6",
+          "A6",
+          "A4"
+        ]
+      }
+    },
+    {
+      "at": "2026-09-10T14:53:52.415Z",
+      "seq": 19,
+      "type": "MatchEnded",
+      "details": {
+        "winner": "B",
+        "endReason": "ELIMINATION"
+      }
+    }
+  ]
+}
