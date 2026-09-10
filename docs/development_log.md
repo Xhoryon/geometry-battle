@@ -194,7 +194,51 @@ STALEMATE / HARD_ROUND_LIMIT → 判和且双方都还有点）。
 
 ---
 
-## 阶段 7 — 最终验证与交付
+## 阶段 7 — UI/UX 与赛事操作
 
-（见 `Plans/Output/V1.1 Completion Wave Report.md` 与
-`Plans/Output/V1.1 Release Candidate Handoff.md`）
+**目标**：把 §23–§27 的 UI/UX 面落到实处。
+
+| 面 | 交付 |
+|---|---|
+| Audience Screen | `src/ui/ArenaView.ts`：真实几何的等宽字符渲染（场地/障碍物/固定 Emitter/战斗点生死/A·B 轨迹）+ 图例 + 坐标标尺 |
+| 观众模式 | `--audience`：只输出观众屏，隐藏槽位路径、包哈希、decoy seed、状态哈希、产物目录、回放命令 |
+| Team Interface | `TeamControllerUI` 重写为只读面板；旧的点位控制器删除 |
+| Judge Console | 现有操作台覆盖 §24 的全部动作；`tests/operator-e2e.ts` 盯着「不需要开发者介入」 |
+| Error UX | `renderRoundStatus()` 明确说出 TIMEOUT / INVALID / CRASH / RUNNER CANCELLED |
+
+**踩到的坑**：`--audience` 第一版只挡了「产物目录」一处，槽位面板、包哈希、
+decoy seed、public/reveal 状态哈希**全都还在打**。是 `operator-e2e` 的
+「不得出现 `/Users/` 或 `/var/folders/`」与「不得出现 `sha256 =`」两条断言把它逼出来的
+—— 观众模式的正确性只能靠**黑盒扫描输出文本**来保证，不能靠「我记得挡了」。
+
+**未做（如实记录）**：没有动画（`computeAnimationFrames` 仍未接线）；没有键盘驱动的 TUI；
+没有引入任何前端依赖。
+
+---
+
+## 阶段 8 — 终止保证的逐边界回归
+
+**动机**：180 场最终 playtest 里 `HARD_ROUND_LIMIT` **一次都没触发** ——
+「四类穷举」的代码路径里有一条从没被执行过。这在审计里是典型的
+「写了但没验证」风险。
+
+**做法**：给 `MatchOptions` 加**测试专用**的阈值覆盖
+（`stalemateNoProgressLimit` / `hardRoundLimit`，默认仍是冻结的 20 / 60；
+操作台 CLI **不暴露**这两个参数），然后新增 `tests/termination.ts`（5 条）
+把两条边界都逼出来：
+
+- 双方都打不中 → 连续零击杀达标 → `STALEMATE` / DRAW，逐轮 streak 可复核；
+- 把僵持阈值抬到硬上限之上 → 必须由 `HARD_ROUND_LIMIT` 收场；
+- 一条击杀就把计数清零（逐轮比对定义）；
+- 多组条件下 `endReason` 必须落在四类之内，且 winner 与 endReason 对应正确。
+
+---
+
+## 阶段 9 — 最终验证与交付
+
+见 `Plans/Output/V1.1 Completion Wave Report.md` 与
+`Plans/Output/V1.1 Release Candidate Handoff.md`。
+
+**本轮新增/重写的套件**：`fixed-emitter`(11) / `locked-attack-right`(10) /
+`termination`(5) / `arena-view`(7) / `operator-e2e`(4)；
+删除 `dual-shooter-selection`。

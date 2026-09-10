@@ -54,9 +54,10 @@ test('roundstate-equality: 两份输入不含队别字段，双方拿到的是�
   assert(r.team_id === undefined, 'reveal_state 不得含 team_id（规范 §12）');
   assert(p.team === undefined, 'public_state 顶层不得含 team（规范 §12）');
 
-  // 两份文件都是**双方共用**的，所以 reveal 必须同时列出 A/B 的 Shooter，
-  // public 必须同时列出双方的点 —— 否则就意味着某一份是「为某一队定制」的。
-  assertEqual(Object.keys(r.shooters).sort(), ['A', 'B'], 'reveal 必须同时给出双方 Shooter');
+  // 两份文件都是**双方共用**的：public 必须同时列出双方的点，
+  // 并给出双方**固定 Emitter** 的坐标（Rule Revision 3 §6）。
+  // reveal 不再承担任何 Shooter/Emitter —— 它只剩障碍物（§5）。
+  assertEqual(Object.keys(p.emitters).sort(), ['A', 'B'], 'public 必须同时给出双方固定 Emitter');
   assert(p.points.some((x: PublicStatePoint) => x.team === 'A'), 'public 必须含 A 队点');
   assert(p.points.some((x: PublicStatePoint) => x.team === 'B'), 'public 必须含 B 队点');
 
@@ -80,15 +81,28 @@ test('roundstate-equality: roundStateHash 稳定且对任何改动敏感（规�
   assert(moved.pub.sha256 !== pub.sha256, '点位移必须改变 public hash');
   assert(roundStateHash(moved.pub.sha256, rev.sha256) !== h, '点位移必须改变 roundStateHash');
 
-  // reveal 侧变化（Shooter 换成另一个点）同样必须改变 roundStateHash
-  const otherShooter = buildRevealState({
+  // reveal 侧变化同样必须改变 roundStateHash。
+  // Rule Revision 3 §5 之后 reveal 只剩障碍物，因此这里改的就是障碍物配置。
+  const otherObstacles = buildRevealState({
     matchId: MATCH_ID,
     round: 1,
     publicStateSha256: pub.sha256,
-    obstacles: obstacles(),
+    obstacles: [
+      { type: 'rectangle', xmin: -3, xmax: -1, ymin: -2, ymax: 2 },
+    ],
   });
-  assert(otherShooter.sha256 !== rev.sha256, 'Shooter 变化必须改变 reveal hash');
-  assert(roundStateHash(pub.sha256, otherShooter.sha256) !== h, 'Shooter 变化必须改变 roundStateHash');
+  assert(otherObstacles.sha256 !== rev.sha256, '障碍物变化必须改变 reveal hash');
+  assert(roundStateHash(pub.sha256, otherObstacles.sha256) !== h, '障碍物变化必须改变 roundStateHash');
+
+  // public 侧变化（Emitter 坐标）同样必须改变 roundStateHash
+  const movedEmitter = buildPublicState({
+    matchId: MATCH_ID,
+    round: 1,
+    emitters: { A: { x: -17, y: 0 }, B: { x: 18, y: 0 } },
+    points: roster(),
+  });
+  assert(movedEmitter.sha256 !== pub.sha256, 'Emitter 坐标变化必须改变 public hash');
+  assert(roundStateHash(movedEmitter.sha256, rev.sha256) !== h, 'Emitter 坐标变化必须改变 roundStateHash');
 
   // round 变化必须改变两个 hash（防止跨轮复用输入）
   const nextRound = build(2);
@@ -129,7 +143,11 @@ test('roundstate-equality: 输入不泄漏宿主信息', () => {
   assert(Array.isArray(p.points) && p.points.length > 0, 'public 应包含点表');
   const r = JSON.parse(rev.json);
   assert(Array.isArray(r.obstacles), 'reveal 应包含障碍物');
-  assert(typeof r.shooters.A === 'string' && typeof r.shooters.B === 'string', 'reveal 应包含双方 Shooter id');
+  assert(
+    typeof p.emitters.A.x === 'number' && typeof p.emitters.B.x === 'number',
+    'public 应包含双方固定 Emitter 的坐标'
+  );
+  assert(!('shooters' in r), 'reveal 不得再含 shooters（§5 已删除 Shooter Selection）');
 });
 
 void runAll('roundstate-equality');

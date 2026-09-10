@@ -12,6 +12,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PLATFORM_ROOT } from '../src/core/Match';
+import { EMITTERS } from '../src/core/Rules';
 import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
 import { sealPackage } from '../src/submission/Package';
