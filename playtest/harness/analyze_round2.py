@@ -170,12 +170,15 @@ def load_cf():
     """Counterfactual results, if the CF stage has run."""
     out = {}
     for pair in PAIRS:
-        p = os.path.join(ROUND2, "cf", "sim-%s.json" % pair)
-        if os.path.isfile(p):
-            out[pair] = read_json(p)
+        sim = os.path.join(ROUND2, "cf", "sim-%s" % pair, "sim-summary.json")
+        entry = {}
+        if os.path.isfile(sim):
+            entry["sim"] = read_json(sim)
         r = os.path.join(ROUND2, "cf", "rounds-%s.json" % pair)
         if os.path.isfile(r):
-            out.setdefault(pair, {})["roundLevel"] = read_json(r)
+            entry["roundLevel"] = read_json(r)
+        if entry:
+            out[pair] = entry
     return out
 
 
@@ -184,8 +187,8 @@ def cf_block(cf):
     out = {}
     for pair, data in cf.items():
         modes = {}
-        sim = data if isinstance(data, dict) and "results" in data else data.get("results")
-        results = (sim or {}).get("results") if isinstance(sim, dict) else None
+        sim = (data.get("sim") or {}) if isinstance(data, dict) else {}
+        results = sim.get("results")
         if not results:
             continue
         for mode in ("cf-no-cancel", "cf-simultaneous"):

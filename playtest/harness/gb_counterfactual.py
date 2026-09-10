@@ -36,12 +36,19 @@ Three jobs
 
 Modes
 -----
-``official``         frozen rules, unchanged (the control)
 ``cf-no-cancel``     Playtest Rules §38 removed: a shot that kills the opponent
                      Shooter no longer cancels their attack; any side that
                      produced a legal function inside the budget still fires.
 ``cf-simultaneous``  §36 and §38 both removed: there is no first solver at all.
                      Both legal functions resolve against the START snapshot.
+
+                     These two are OUTCOME-EQUIVALENT BY CONSTRUCTION, not by
+                     discovery.  Under §40/§41 the round snapshot is frozen at
+                     START and the second solver does not recompute, so the two
+                     functions always resolve against the same state; ordering
+                     has no channel of influence other than §38 itself.  The
+                     harness still runs both paths, as a check that the model
+                     is encoded faithfully -- it is not independent evidence.
 
 Note on documented ambiguity: the frozen specification names CF-NO-CANCEL and
 CF-SIMULTANEOUS and states their purpose (§39/§55) but deliberately does NOT
@@ -423,7 +430,10 @@ def cmd_rounds(args):
         if not order:
             continue
         points = points_of(frames[order[0]])
-        alive = set(p["id"] for p in frames[order[0]]["aliveBefore"])
+        # Points that were still standing when the OFFICIAL match ended.  Used
+        # to separate "kills the cancelled shot would really have scored" from
+        # "kills on points that died anyway".
+        final_alive = set(p["id"] for p in (frames[order[-1]].get("aliveAfter") or []))
 
         for r in match["rounds"]:
             rnd = r["round"]
@@ -432,9 +442,15 @@ def cmd_rounds(args):
                 continue
             obstacles = obstacles_of(frame)
             shooters = {"A": r.get("shooterA"), "B": r.get("shooterB")}
+            # THE OFFICIAL WORLD for this round.  Each round is evaluated on
+            # exactly the state the real match used, so a re-run solver sees
+            # what it would have seen and the "would have hit" answer is
+            # about this round rather than about a counterfactually evolved
+            # board.  (An earlier revision carried a counterfactual alive set
+            # forward here, which biased the counts downwards.)
+            alive = set(p["id"] for p in frame["aliveBefore"])
             public, reveal = build_world(match.get("matchId"), rnd, points, alive,
                                          obstacles, shooters, -20, 20, -12, 12)
-            kills = set()
             for slot in ("A", "B"):
                 alg = slot_alg[slot]
                 a = per_alg[alg]
@@ -449,30 +465,25 @@ def cmd_rounds(args):
                 fn = provider.function(match.get("matchId"), rnd, slot, alg,
                                        public, reveal, rec_fn)
                 hits, contact, _blk, _stop = resolve(fn, slot, shooters[slot], points,
-                                                 alive, obstacles)
+                                                     alive, obstacles)
                 enemy_shooter = shooters["B" if slot == "A" else "A"]
                 if fn is None:
                     a["noFunction"] += 1
                     continue
                 if cancelled:
+                    gained = list(hits or [])
                     a["cancelledRounds"] += 1
-                    a["cancelledKillsIfExecuted"] += len(hits or [])
-                    if hits:
+                    a["cancelledKillsIfExecuted"] += len(gained)
+                    a["cancelledKillsOnFinalSurvivors"] += sum(
+                        1 for h in gained if h in final_alive)
+                    a["cancelledKillEvents"].extend(gained)
+                    if gained:
                         a["cancelledRoundsWithKills"] += 1
-                    if enemy_shooter in (hits or []):
+                    if enemy_shooter in gained:
                         a["cancelledShooterKills"] += 1
                     a["cancelledTimes"].append(r.get(slot.lower() + "TimeMs"))
-                # Under CF-NO-CANCEL both sides execute.  Kills are the union.
-                for h in (hits or []):
-                    kills.add(h)
-            # how many points that were alive actually died in the CF round
-            per_alg[slot_alg["A"]]["cfKills"] += sum(
-                1 for k in kills if k.startswith("B"))
-            per_alg[slot_alg["B"]]["cfKills"] += sum(
-                1 for k in kills if k.startswith("A"))
-            alive = alive - kills
             detail.append({"match": name, "round": rnd,
-                           "cfKills": sorted(kills), "aliveAfter": sorted(alive)})
+                           "officialAliveBefore": sorted(alive)})
 
     provider.save()
     print("=" * 72)
@@ -480,13 +491,15 @@ def cmd_rounds(args):
     print("=" * 72)
     for alg in (a_alg, b_alg):
         a = per_alg[alg]
-        print("  %-10s rounds=%d cancelled=%d (%.1f%%)  cancelledRoundsWithKills=%d  "
-              "killsLostToCancellation=%d  shooterKillsLost=%d"
+        lost = a["cancelledKillsIfExecuted"]
+        surv = a["cancelledKillsOnFinalSurvivors"]
+        print("  %-10s rounds=%d cancelled=%d (%.1f%%)  cancelledRoundsWithKills=%d"
               % (alg, a["rounds"], a["cancelledRounds"],
                  100.0 * a["cancelledRounds"] / max(1, a["rounds"]),
-                 a["cancelledRoundsWithKills"], a["cancelledKillsIfExecuted"],
-                 a["cancelledShooterKills"]))
-        print("             offline re-runs of cancelled rounds are included in the counts above")
+                 a["cancelledRoundsWithKills"]))
+        print("             killsLostToCancellation=%d  ofWhichOnPointsThatSurvived=%d (%.1f%%)"
+              % (lost, surv, 100.0 * surv / lost if lost else 0.0))
+        print("             shooterKillsLost=%d" % a["cancelledShooterKills"])
     print("  offline solver re-runs: %d   recorded functions reused: %d"
           % (provider.reruns, provider.hits))
     print("=" * 72)
@@ -500,7 +513,8 @@ def cmd_rounds(args):
 def _acc():
     return {"rounds": 0, "noFunction": 0, "cancelledRounds": 0,
             "cancelledRoundsWithKills": 0, "cancelledKillsIfExecuted": 0,
-            "cancelledShooterKills": 0, "cancelledTimes": [], "cfKills": 0}
+            "cancelledKillsOnFinalSurvivors": 0, "cancelledShooterKills": 0,
+            "cancelledTimes": [], "cancelledKillEvents": []}
 
 
 # ---------------------------------------------------------------------------
@@ -587,8 +601,16 @@ def _simulate_one(cond, arr, slot_alg, mode, provider, max_rounds, pair, ref_roo
             hits[slot] = set(h or [])
             fired[slot] = fns[slot] is not None
 
-        # ---- the two counterfactuals are implemented as separate code paths,
-        # ---- so that "they agree" is a measurement and not an assumption.
+        # ---- The two modes are written as separate branches for clarity, but
+        # ---- they are OUTCOME-EQUIVALENT BY CONSTRUCTION, and that is a fact
+        # ---- about the rules rather than an empirical discovery:
+        # ---- §40/§41 freeze the round snapshot, so each side's function
+        # ---- resolves against the same START state no matter who is deemed
+        # ---- first.  "Who goes first" therefore has no channel through which
+        # ---- to change the result except §38 cancellation, which
+        # ---- cf-simultaneous also removes.  Running both anyway is a check
+        # ---- that the implementation faithfully encodes that model -- not
+        # ---- independent evidence that the equivalence holds.
         if mode == "cf-simultaneous":
             # No first solver exists at all: both legal functions resolve
             # against the frozen START snapshot.  Order never enters.
