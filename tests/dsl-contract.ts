@@ -14,6 +14,7 @@ import {
   parseCanonicalDSL,
   toMathString,
 } from '../src/core/Ast';
+import { EMITTERS } from '../src/core/Rules';
 import { buildPublicState, buildRevealState } from '../src/core/InputProtocol';
 import { assert, assertClose, assertEqual, runAll, test } from './harness';
 import { runSolver } from './protocol-fixture';
@@ -131,14 +132,20 @@ test('dsl-contract: 官方 Starter 输出的是合法 DSL（P0-3 回归）', asy
     matchId: 'DSL-CONTRACT',
     round: 1,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: [],
   });
   const out = runSolver(starter, 'A', { publicJson: pub.json, revealJson: rev.json });
   const parsed = JSON.parse(out);
   const r = parseCanonicalDSL(typeof parsed.dsl === 'string' ? parsed.dsl : JSON.stringify(parsed.dsl));
   assert(r.ok, `官方 Starter 的 DSL 必须合法: ${r.issues.map((i) => i.message).join('; ')}`);
-  assertClose(evaluateNode(r.ast!, -12), 3, 1e-9, 'Starter 函数必须经过自己的 Shooter');
+  // Rule Revision 3 §4：锚点是**固定 Emitter**（常量坐标），不再是用例里那个
+  // 「Shooter 点」。断言必须跟着锚点走，否则测的是旧语义。
+  assertClose(
+    evaluateNode(r.ast!, EMITTERS.A.x),
+    EMITTERS.A.y,
+    1e-9,
+    'Starter 函数必须经过自己的固定 Emitter'
+  );
 });
 
 test('dsl-contract: 超深嵌套必须被干净拒绝，绝不抛异常（P0-A 回归）', () => {

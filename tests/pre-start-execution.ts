@@ -37,7 +37,7 @@ with open(args.reveal, "r") as f:
     reveal = json.load(f)
 
 by_id = {p["id"]: p for p in public["points"]}
-me = by_id[reveal["shooters"][args.team]]
+me = public["emitters"][args.team]
 # f(x) = y0 + 0 * x —— 严格经过自己的 Shooter
 dsl = {
     "type": "add",
@@ -68,7 +68,6 @@ function input(): RunnerInput {
     matchId: 'PRE-START',
     round: 1,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: [],
   });
   return { publicJson: pub.json, revealJson: rev.json };

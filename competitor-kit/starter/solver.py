@@ -87,9 +87,12 @@ def emit(args, dsl):
 
 
 def shooter_of(public, reveal, team):
-    """Shooter 在 reveal 里只给 id，坐标从 public 的点表里查。"""
-    by_id = {p["id"]: p for p in public["points"]}
-    return by_id[reveal["shooters"][team]]
+    """发射锚点 = 固定 Emitter（Rule Revision 3 §4）。
+
+    Emitter 的坐标**直接在 public_state.json 里**，不再是 reveal 里的一个 id、
+    也不再从 points 表里查 —— 它整场比赛固定、不可死亡、不是战斗点（§3/§6）。
+    """
+    return public["emitters"][team]
 
 
 def alive_enemies_of(public, team):

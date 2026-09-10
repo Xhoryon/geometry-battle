@@ -112,27 +112,30 @@ export function pointsToSvgPath(points: Point[], config: VisualizerConfig): stri
 }
 
 /**
+ * 一支队伍在观众屏上的状态。
+ *
+ * `emitter` 取代了旧的 `shooter`：Rule Revision 3 §2–§4 之后发射锚点整场固定，
+ * 不再是「每轮选出来的那个点」。
+ */
+export interface AudienceTeamState {
+  name: string;
+  /** 剩余**战斗点**数（不含 Emitter —— 它不是战斗点，§3/§9） */
+  alive: number;
+  /** 固定 Emitter 的标识（恒为 'A0' / 'B0'） */
+  emitter: string | null;
+  computing: boolean;
+  computeTime: number | null;
+  function: string | null;
+}
+
+/**
  * Audience Screen 显示状态
  */
 export interface AudienceState {
   roundNumber: number;
   phase: string;
-  teamA: {
-    name: string;
-    alive: number;
-    shooter: string | null;
-    computing: boolean;
-    computeTime: number | null;
-    function: string | null;
-  };
-  teamB: {
-    name: string;
-    alive: number;
-    shooter: string | null;
-    computing: boolean;
-    computeTime: number | null;
-    function: string | null;
-  };
+  teamA: AudienceTeamState;
+  teamB: AudienceTeamState;
   trajectoryA: Point[] | null;
   trajectoryB: Point[] | null;
   hits: string[];
@@ -154,9 +157,9 @@ export function formatAudienceState(state: AudienceState): string {
   lines.push(``);
 
   // Shooter status
-  const shooterA = state.teamA.shooter || '???';
-  const shooterB = state.teamB.shooter || '???';
-  lines.push(`  Shooter: ${shooterA}              Shooter: ${shooterB}`);
+  const emitterA = state.teamA.emitter || '???';
+  const emitterB = state.teamB.emitter || '???';
+  lines.push(`  Emitter: ${emitterA}              Emitter: ${emitterB}   (fixed)`);
   lines.push(``);
 
   // Compute status

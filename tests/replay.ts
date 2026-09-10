@@ -42,13 +42,6 @@ async function playAndPersist(matchId: string, seed: number, pointCount = 6): Pr
 
   let rounds = 0;
   while (engine.getWinner() === null) {
-    const snap = engine.getSnapshot();
-    for (const team of ['A', 'B'] as const) {
-      const pick = snap.points.find((p) => p.team === team && p.alive);
-      assert(pick, `${team} 应有可用点`);
-      assert(engine.selectShooter(team, pick!.id).ok, `${team} 选择 Shooter 应成功`);
-      assert(engine.lockShooter(team).ok, `${team} 锁定应成功`);
-    }
     assert(engine.judgeStartRound().ok, 'START ROUND 应成功');
     await engine.runRound();
     if (++rounds > 40) throw new Error('回合数异常');
@@ -80,7 +73,9 @@ test('replay: 删除算法包与沙箱后，回放仍可完整加载', async () 
     assert(frame.obstacles.length >= 0, '帧必须自带地图障碍物');
     assert(frame.aliveBefore.length > 0, '帧必须自带开战前存活点');
     assert(frame.aliveAfter.length >= 0, '帧必须自带结算后存活点');
-    assert(frame.shooterA && frame.shooterB, '帧必须自带双方 Shooter');
+    // Rule Revision 3 §22：回放必须能画出整场不变的固定 Emitter。
+    assert(frame.emitters && frame.emitters.A && frame.emitters.B, '帧必须自带双方固定 Emitter');
+    assert(frame.emitters!.A.id === 'A0', 'Emitter 标识必须是固定的 A0');
   }
 });
 

@@ -39,7 +39,6 @@ function build(round = 1, points = roster()) {
     matchId: MATCH_ID,
     round,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: obstacles(),
   });
   return { pub, rev };
@@ -86,7 +85,6 @@ test('roundstate-equality: roundStateHash 稳定且对任何改动敏感（规�
     matchId: MATCH_ID,
     round: 1,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A2', B: 'B1' },
     obstacles: obstacles(),
   });
   assert(otherShooter.sha256 !== rev.sha256, 'Shooter 变化必须改变 reveal hash');

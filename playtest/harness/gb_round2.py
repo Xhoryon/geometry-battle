@@ -151,6 +151,10 @@ def cmd_run(args):
             cmd = CLI + ["--auto", "--slots", os.path.join(root_all, label),
                          "--seed", str(cond["seed"]), "--points", str(cond["points"]),
                          "--difficulty", cond["difficulty"], "--max-rounds", str(args.max_rounds)]
+            # Rule Revision 3 §11 的 timeout benchmark 需要在不改默认值的前提下
+            # 扫 250 / 500 / 750 三档 —— CLI 的 --timeout 是唯一开关。
+            if getattr(args, "timeout", None):
+                cmd += ["--timeout", str(args.timeout)]
             rc, out, secs = sh(cmd)
             m = ART_RE.search(out)
             os.makedirs(dest, exist_ok=True)
@@ -496,6 +500,8 @@ def main(argv):
     p.add_argument("--conditions", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--max-rounds", type=int, default=30, dest="max_rounds")
+    p.add_argument("--timeout", type=int, default=None,
+                   help="单轮计算超时（ms）。省略则用平台默认值")
     p.set_defaults(func=cmd_run)
 
     p = sub.add_parser("analyze")

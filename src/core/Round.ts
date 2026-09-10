@@ -1,5 +1,11 @@
 /**
- * Round 状态机 —— 19 阶段，真实运行（不是死代码）
+ * Round 状态机 —— **16 阶段**，真实运行（不是死代码）
+ *
+ * Rule Revision 3 §5 把每轮的 Shooter Selection 整个删掉了：
+ *   - `SHOOTER_SELECTION` → 换成 `PUBLIC`（本轮 public_state 冻结的停留点）
+ *   - `A_LOCKED` / `B_LOCKED` 删除（不再有「选中/锁定 Shooter」这个动作）
+ *   - `CHECK_SHOOTER` 删除（Emitter 不会死，「检查 Shooter 是否存活」失去意义）
+ * 阶段数 19 → 16。这是规则变更的**直接后果**，不是重构。
  *
  * 修复的 Finding：
  *   P1-20 17 状态机未集成
@@ -21,9 +27,8 @@
 
 export type RoundPhase =
   | 'ROUND_INTRO'
-  | 'SHOOTER_SELECTION'
-  | 'A_LOCKED'
-  | 'B_LOCKED'
+  /** 本轮 public_state.json 已冻结，等待 REVEAL（Rule Revision 3 §5 的新阶段） */
+  | 'PUBLIC'
   | 'WAITING_FOR_JUDGE'
   | 'START_ROUND'
   | 'COUNTDOWN'
@@ -33,7 +38,6 @@ export type RoundPhase =
   | 'B_COMPUTING'
   | 'FIRST_SOLUTION'
   | 'FIRST_SHOT'
-  | 'CHECK_SHOOTER'
   | 'SECOND_SOLUTION'
   | 'SECOND_SHOT'
   | 'ROUND_RESULT'
@@ -42,10 +46,8 @@ export type RoundPhase =
 
 /** 允许的转换表 */
 const TRANSITIONS: Record<RoundPhase, RoundPhase[]> = {
-  ROUND_INTRO: ['SHOOTER_SELECTION'],
-  SHOOTER_SELECTION: ['A_LOCKED', 'B_LOCKED'],
-  A_LOCKED: ['WAITING_FOR_JUDGE'],
-  B_LOCKED: ['WAITING_FOR_JUDGE'],
+  ROUND_INTRO: ['PUBLIC'],
+  PUBLIC: ['WAITING_FOR_JUDGE'],
   WAITING_FOR_JUDGE: ['REVEAL'],
   REVEAL: ['START_ROUND'],
   START_ROUND: ['COUNTDOWN'],
@@ -54,8 +56,9 @@ const TRANSITIONS: Record<RoundPhase, RoundPhase[]> = {
   A_COMPUTING: ['B_COMPUTING', 'FIRST_SOLUTION', 'ROUND_RESULT'],
   B_COMPUTING: ['A_COMPUTING', 'FIRST_SOLUTION', 'ROUND_RESULT'],
   FIRST_SOLUTION: ['FIRST_SHOT'],
-  FIRST_SHOT: ['CHECK_SHOOTER'],
-  CHECK_SHOOTER: ['SECOND_SOLUTION', 'SECOND_SHOT', 'ROUND_RESULT'],
+  // 不再有 CHECK_SHOOTER：Emitter 不会死，双方攻击权在 START 时已锁定，
+  // 第一击之后没有任何「需要检查某方是否还能开火」的判断。
+  FIRST_SHOT: ['SECOND_SOLUTION', 'SECOND_SHOT', 'ROUND_RESULT'],
   SECOND_SOLUTION: ['SECOND_SHOT'],
   SECOND_SHOT: ['ROUND_RESULT'],
   ROUND_RESULT: ['NEXT_ROUND', 'MATCH_END'],
@@ -74,7 +77,6 @@ export class RoundMachine {
   readonly roundNumber: number;
   private phase: RoundPhase = 'ROUND_INTRO';
   private history: PhaseTransition[] = [];
-  private locked: { A: boolean; B: boolean } = { A: false, B: false };
   private submitted: { A: boolean; B: boolean } = { A: false, B: false };
   private countdown: number | null = null;
 
@@ -94,10 +96,6 @@ export class RoundMachine {
     return this.countdown;
   }
 
-  isLocked(team: 'A' | 'B'): boolean {
-    return this.locked[team];
-  }
-
   /**
    * 唯一转换入口。非法转换抛错（调用方不得吞掉）。
    */
@@ -114,27 +112,19 @@ export class RoundMachine {
 
   // ---- 阶段动作 ----
 
-  beginSelection(): void {
-    this.transition('SHOOTER_SELECTION', 'round intro complete');
+  /**
+   * ROUND_INTRO → PUBLIC。本轮输入已经冻结，等待揭盲。
+   *
+   * 旧的 `beginSelection()` 在这里停下等双方选 Shooter；Rule Revision 3 §5
+   * 删除了那个动作，因此这里直接推进到「本轮输入已就绪」的状态。
+   */
+  beginPublic(): void {
+    this.transition('PUBLIC', 'round input frozen');
   }
 
-  /** 人工选择 Shooter 并锁定。返回是否双方已锁定。 */
-  lockShooter(team: 'A' | 'B'): boolean {
-    if (this.phase !== 'SHOOTER_SELECTION' && this.phase !== 'A_LOCKED' && this.phase !== 'B_LOCKED') {
-      throw new Error(`当前阶段 ${this.phase} 不允许选择 Shooter`);
-    }
-    if (this.locked[team]) {
-      throw new Error(`${team} 已经锁定，Lock 后不可修改`);
-    }
-    this.locked[team] = true;
-    const bothLocked = this.locked.A && this.locked.B;
-    if (bothLocked) {
-      // 第二个锁定的人直接进入 WAITING_FOR_JUDGE
-      this.transition('WAITING_FOR_JUDGE', `${team} shooter locked; both teams locked`);
-      return true;
-    }
-    this.transition(team === 'A' ? 'A_LOCKED' : 'B_LOCKED', `${team} shooter locked`);
-    return false;
+  /** PUBLIC → WAITING_FOR_JUDGE：进入揭盲/START 前的等待点（裁判可停任意久）。 */
+  readyForJudge(): void {
+    this.transition('WAITING_FOR_JUDGE', 'awaiting judge');
   }
 
   /** 裁判开始本轮。双方 READY 不会自动触发。 */
@@ -211,12 +201,8 @@ export class RoundMachine {
     this.transition('FIRST_SHOT', 'first shot');
   }
 
-  checkShooter(): void {
-    this.transition('CHECK_SHOOTER', 'check shooter alive');
-  }
-
   secondSolution(): void {
-    if (this.phase === 'CHECK_SHOOTER') {
+    if (this.phase === 'FIRST_SHOT') {
       this.transition('SECOND_SOLUTION', 'second solution available');
       return;
     }
@@ -232,12 +218,7 @@ export class RoundMachine {
   }
 
   roundResult(): void {
-    if (this.phase === 'CHECK_SHOOTER' || this.phase === 'SECOND_SHOT' || this.phase === 'SECOND_SOLUTION') {
-      this.transition('ROUND_RESULT', 'round settled');
-      return;
-    }
-    if (this.phase === 'FIRST_SHOT') {
-      this.transition('CHECK_SHOOTER', 'check shooter alive');
+    if (this.phase === 'FIRST_SHOT' || this.phase === 'SECOND_SHOT' || this.phase === 'SECOND_SOLUTION') {
       this.transition('ROUND_RESULT', 'round settled');
       return;
     }

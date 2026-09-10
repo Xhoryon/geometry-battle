@@ -27,8 +27,14 @@ export interface RoundLog {
   roundStateHash: string;
   mapSeed: number;
   mapHash: string;
-  shooterA: string;
-  shooterB: string;
+  /**
+   * 固定 Emitter 的标识（恒为 'A0' / 'B0'）—— 本轮的发射锚点。
+   *
+   * Rule Revision 3 §3 起锚点是常量，不再是「本轮从存活点里选出的那个 Shooter」，
+   * 因此这里记录的是**整场不变**的结构，而不是每轮可变的选点结果。
+   */
+  emitterA: string;
+  emitterB: string;
   aTimeMs: number | null;
   bTimeMs: number | null;
   aFunction: string | null;
@@ -72,19 +78,10 @@ export interface RoundLog {
    * 时它不会出现在这个数组里，尽管 firstSolver 仍可能指向它。
    */
   attacksExecuted: ('A' | 'B')[];
-  /**
-   * 该队攻击执行**那一瞬间**其 Shooter 是否仍存活（未攻击则为 null）。
-   *
-   * 这是规则修订 §12 要求的可证明性：`shooterAliveAtAttack.B === false`
-   * 且 `attacksExecuted` 含 'B'，就从日志本身证明了
-   * 「Shooter 在攻击前已被击杀，但本轮的锁定攻击权仍然生效」。
-   */
-  shooterAliveAtAttack: { A: boolean | null; B: boolean | null };
-  /** 本轮结算完成后，各方 Shooter 是否仍存活——决定它下一轮能否再被选中（§5） */
-  shooterAAliveAfterRound: boolean;
-  shooterBAliveAfterRound: boolean;
   /** 本轮结算后双方同时归零 → MATCH DRAW（§8） */
   mutualElimination: boolean;
+  /** 本轮结束时连续零击杀回合数（Rule Revision 3 §15/§16） */
+  noProgressStreak: number;
 }
 
 export interface MatchLog {
@@ -106,13 +103,19 @@ export interface MatchLog {
    * 结束原因（V1.1 规则修订 §8）。
    *   - `ELIMINATION`：一方归零、另一方存活，正常分胜负
    *   - `MUTUAL_ELIMINATION`：同一轮结束后双方都归零 → 平局（`winner = 'draw'`）
+   *   - `STALEMATE`：连续零击杀回合数达到上限 → 平局（Rule Revision 3 §16）
+   *   - `HARD_ROUND_LIMIT`：到达硬回合上限 → 平局（Rule Revision 3 §17）
    *   - `NONE`：比赛尚未结束
    *
    * `MUTUAL_ELIMINATION` 是在取消规则废止后**才可能出现**的局面：先手方清零对方、
    * 后手方凭锁定攻击权再清零先手方。它必须被判为平局，不得因为谁是 First Solver
    * 就自动判谁赢。
+   *
+   * **终止保证**（Rule Revision 3 §17）：`ELIMINATION` / `MUTUAL_ELIMINATION` /
+   * `STALEMATE` / `HARD_ROUND_LIMIT` 四者覆盖了所有结束方式 —— 每场合法比赛
+   * 都在有限时间内终止。
    */
-  endReason: 'ELIMINATION' | 'MUTUAL_ELIMINATION' | 'NONE';
+  endReason: 'ELIMINATION' | 'MUTUAL_ELIMINATION' | 'STALEMATE' | 'HARD_ROUND_LIMIT' | 'NONE';
   rounds: RoundLog[];
   finalAlive: { A: number; B: number };
 }
@@ -140,8 +143,12 @@ export interface ReplayFrame {
   roundStateHash: string;
   obstacles: Obstacle[];
   aliveBefore: { id: string; team: 'A' | 'B'; position: Point }[];
-  shooterA: { id: string; position: Point } | null;
-  shooterB: { id: string; position: Point } | null;
+  /**
+   * 固定 Emitter（Rule Revision 3 §22）：回放必须能画出整场不变的发射锚点。
+   * 与战斗点分开存放 —— 它们不是同一类实体，混在一起会让「剩余战斗点数」
+   * 这类统计出错。
+   */
+  emitters: { A: { id: string; position: Point }; B: { id: string; position: Point } } | null;
   functionA: unknown | null;
   functionB: unknown | null;
   functionMathA: string | null;
@@ -161,10 +168,12 @@ export interface ReplayFrame {
   firstSolver: 'A' | 'B' | 'tie' | 'none';
   /** 实际执行了攻击的队伍，按执行顺序（§12/§13） */
   attacksExecuted: ('A' | 'B')[];
-  /** 攻击执行瞬间该方 Shooter 是否存活 —— 回放据此展示「被击杀后仍然开火」（§13） */
-  shooterAliveAtAttack: { A: boolean | null; B: boolean | null };
   /** 本轮结算后双方同时归零（§8） */
   mutualElimination: boolean;
+  /** 本帧终结比赛时的结束原因；比赛仍继续时为 'NONE'（§22） */
+  endReason: MatchLog['endReason'];
+  /** 连续零击杀回合数（§15） */
+  noProgressStreak: number;
   aliveAfter: { id: string; team: 'A' | 'B'; position: Point }[];
 }
 
@@ -175,6 +184,8 @@ export interface Replay {
   teamAName: string;
   teamBName: string;
   winner: 'A' | 'B' | 'draw';
+  /** 回放的结束原因与 MatchLog 一致（§22：回放必须能表达 stalemate 与 mutual elimination） */
+  endReason: MatchLog['endReason'];
   frames: ReplayFrame[];
 }
 

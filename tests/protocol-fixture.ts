@@ -81,7 +81,6 @@ export function runnerInputFromCore(core: RoundStateCore, matchId = 'M-TEST'): R
     matchId,
     round: core.round,
     publicStateSha256: publicState.sha256,
-    shooters: { A: core.shooters.A.id, B: core.shooters.B.id },
     obstacles: core.obstacles,
   });
 

@@ -13,6 +13,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { EMITTERS } from '../src/core/Rules';
 import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
 import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
@@ -67,7 +68,7 @@ with open(args.reveal, "r") as f:
     reveal = json.load(f)
 team = args.team
 by_id = {pt["id"]: pt for pt in public["points"]}
-me = by_id[reveal["shooters"][team]]
+me = public["emitters"][team]
 x0 = me["x"]
 y0 = me["y"]
 
@@ -143,9 +144,10 @@ function coreFor(seed: number): RoundStateCore {
       ...map!.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, position: p })),
       ...map!.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, position: p })),
     ],
-    shooters: {
-      A: { id: 'A1', position: map!.teamA[0] },
-      B: { id: 'B1', position: map!.teamB[0] },
+    // Rule Revision 3 §3/§4：发射锚点是固定 Emitter，不是从点表里挑出来的点。
+    emitters: {
+      A: { id: 'A0', position: EMITTERS.A },
+      B: { id: 'B0', position: EMITTERS.B },
     },
     teamAXRange: [-20, -4],
     teamBXRange: [4, 20],
@@ -282,7 +284,7 @@ function writeProbePackage(dir: string, targets: Record<string, { path: string; 
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
-y0 = by_id[reveal["shooters"][args.team]]["y"]
+y0 = public["emitters"][args.team]["y"]
 TARGETS = ${JSON.stringify(targets)}
 
 for name, spec in TARGETS.items():

@@ -11,6 +11,7 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EMITTERS } from '../src/core/Rules';
 import { PLATFORM_ROOT } from '../src/core/Match';
 import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
@@ -40,9 +41,10 @@ function coreFor(seed: number): RoundStateCore {
       ...map!.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, position: p })),
       ...map!.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, position: p })),
     ],
-    shooters: {
-      A: { id: 'A1', position: map!.teamA[0] },
-      B: { id: 'B1', position: map!.teamB[0] },
+    // Rule Revision 3 §3/§4：发射锚点是固定 Emitter，不是从点表里挑出来的点。
+    emitters: {
+      A: { id: 'A0', position: EMITTERS.A },
+      B: { id: 'B0', position: EMITTERS.B },
     },
     teamAXRange: [-20, -4],
     teamBXRange: [4, 20],
@@ -142,7 +144,7 @@ ${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
-y0 = by_id[reveal["shooters"][args.team]]["y"]
+y0 = public["emitters"][args.team]["y"]
 report = {}
 try:
     os.fork()
@@ -211,7 +213,7 @@ test('process-tree-cleanup: 沙箱环境变量被清理（P1-13）', async () =>
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
-y0 = by_id[reveal["shooters"][args.team]]["y"]
+y0 = public["emitters"][args.team]["y"]
 env = {k: v for k, v in os.environ.items()}
 # 环境变量快照只能走 stderr（规范 §30），不能混进 result.json（规范 §26）
 sys.stderr.write("${PROBE_REPORT_PREFIX}" + json.dumps(env) + "\\n")

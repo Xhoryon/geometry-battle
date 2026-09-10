@@ -12,10 +12,15 @@
 import { MatchEngine, MatchSnapshot } from '../core/Match';
 import { Replay, ReplayFrame, RoundLog } from '../core/Logs';
 import { Obstacle } from '../obstacle/Obstacle';
+import { Point } from '../field/Field';
 import { AudienceState, formatAudienceState } from '../visualizer/AudienceDisplay';
 import { parseCanonicalDSL, toMathString } from '../core/Ast';
 
 /** 看板一行：内宽 61 字符，超长截断，保证边框不被撑破 */
+function fmtPt(p: Point | undefined): string {
+  return p ? `${p.x.toFixed(1)}, ${p.y.toFixed(1)}` : '-';
+}
+
 function row(text: string): string {
   return `│  ${text}`.padEnd(62).slice(0, 62) + '│';
 }
@@ -63,7 +68,7 @@ export class AudienceScreenUI {
       teamA: {
         name: 'Team A',
         alive: snap.alive.A,
-        shooter: snap.shooters.A?.id ?? null,
+        emitter: snap.emitters?.A.id ?? null,
         computing: snap.phase === 'COMPUTING',
         computeTime: last ? last.aTimeMs : null,
         function: fnText(last, 'A'),
@@ -71,7 +76,7 @@ export class AudienceScreenUI {
       teamB: {
         name: 'Team B',
         alive: snap.alive.B,
-        shooter: snap.shooters.B?.id ?? null,
+        emitter: snap.emitters?.B.id ?? null,
         computing: snap.phase === 'COMPUTING',
         computeTime: last ? last.bTimeMs : null,
         function: fnText(last, 'B'),
@@ -94,8 +99,8 @@ export class AudienceScreenUI {
     lines.push(`│  ROUND ${String(snap.round).padEnd(3)} ${snap.phase.padEnd(51)}│`);
     lines.push('├─────────────────────────────────────────────────────────────┤');
     lines.push(`│  TEAM A  alive=${String(snap.alive.A).padEnd(3)}   TEAM B  alive=${String(snap.alive.B).padEnd(3)}                │`);
-    lines.push(`│  Shooter A: ${(snap.shooters.A?.id ?? '???').padEnd(6)}        Shooter B: ${(snap.shooters.B?.id ?? '???').padEnd(6)}      │`);
-    lines.push(`│  Locked: A=${snap.locked.A ? 'Y' : 'N'} B=${snap.locked.B ? 'Y' : 'N'}                                            │`);
+    lines.push(`│  Emitter A: ${(snap.emitters?.A.id ?? '???').padEnd(4)}        Emitter B: ${(snap.emitters?.B.id ?? '???').padEnd(4)}      │`);
+    lines.push(`│  (fixed emitters — this match)                                        │`);
     if (snap.phase === 'MATCH_END') {
       lines.push(`│  WINNER: ${(snap.winner ?? 'draw').toUpperCase()}`.padEnd(62) + '│');
     }
@@ -112,9 +117,13 @@ export class AudienceScreenUI {
   renderPreRevealBoard(snap: MatchSnapshot): string {
     const lines: string[] = [];
     lines.push('┌─────────────────────────────────────────────────────────────┐');
-    lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} PRE-REVEAL — SELECT SHOOTER`.padEnd(62) + '│');
+    lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} PUBLIC`.padEnd(62) + '│');
     lines.push('├─────────────────────────────────────────────────────────────┤');
-    lines.push(row('PUBLIC STATE  (obstacles / shooters 仍未揭盲)'));
+    lines.push(row('PUBLIC STATE  (obstacles 仍未揭盲；Emitter 已公开且整场不变)'));
+    if (snap.emitters) {
+      lines.push(row(`  Emitter A0 (${snap.emitters.A.position.x.toFixed(1)}, ${snap.emitters.A.position.y.toFixed(1)})  [FIXED]`));
+      lines.push(row(`  Emitter B0 (${snap.emitters.B.position.x.toFixed(1)}, ${snap.emitters.B.position.y.toFixed(1)})  [FIXED]`));
+    }
     for (const p of snap.points) {
       const mark = p.alive ? ' ' : '×';
       lines.push(row(`${mark} ${p.id.padEnd(4)} (${p.position.x.toFixed(1)}, ${p.position.y.toFixed(1)})`));
@@ -134,7 +143,7 @@ export class AudienceScreenUI {
     lines.push('┌─────────────────────────────────────────────────────────────┐');
     lines.push(`│  ROUND ${String(snap.round + 1).padEnd(3)} REVEAL`.padEnd(62) + '│');
     lines.push('├─────────────────────────────────────────────────────────────┤');
-    lines.push(row(`TEAM A SHOOTER: ${(snap.shooters.A?.id ?? '-').padEnd(6)}   TEAM B SHOOTER: ${(snap.shooters.B?.id ?? '-').padEnd(6)}`));
+    lines.push(row(`A EMITTER: ${(snap.emitters?.A.id ?? '-').padEnd(4)} (${(snap.emitters?.A.position.x ?? 0).toFixed(1)}, ${(snap.emitters?.A.position.y ?? 0).toFixed(1)})   B EMITTER: ${(snap.emitters?.B.id ?? '-').padEnd(4)} (${(snap.emitters?.B.position.x ?? 0).toFixed(1)}, ${(snap.emitters?.B.position.y ?? 0).toFixed(1)})`));
     lines.push(row(`OBSTACLES REVEALED: ${snap.map?.obstacles.length ?? 0}`));
     for (const o of snap.map?.obstacles ?? []) {
       lines.push(row(`  ${formatObstacle(o)}`));
@@ -154,25 +163,23 @@ export class AudienceScreenUI {
     const lines: string[] = [];
     lines.push(`═══ REPLAY ${replay.matchId} — ROUND ${frame.round} (${index + 1}/${replay.frames.length}) ═══`);
     lines.push(`  roundStateHash: ${frame.roundStateHash.substring(0, 16)}…`);
-    lines.push(`  Shooter A: ${frame.shooterA?.id ?? '-'}   Shooter B: ${frame.shooterB?.id ?? '-'}`);
+    lines.push(
+      `  Emitter A: ${frame.emitters?.A.id ?? '-'} (${fmtPt(frame.emitters?.A.position)})   ` +
+        `Emitter B: ${frame.emitters?.B.id ?? '-'} (${fmtPt(frame.emitters?.B.position)})`
+    );
     lines.push(`  f_A(x) = ${frame.functionMathA ?? '(invalid)'}`);
     lines.push(`  f_B(x) = ${frame.functionMathB ?? '(invalid)'}`);
     lines.push(`  t_A = ${frame.timerA === null ? '-' : frame.timerA.toFixed(3) + 'ms'}   t_B = ${frame.timerB === null ? '-' : frame.timerB.toFixed(3) + 'ms'}`);
     lines.push(`  first solver: ${frame.firstSolver}`);
     lines.push(`  hits: A=[${frame.hitsA.map((h) => h.id).join(',')}] B=[${frame.hitsB.map((h) => h.id).join(',')}]`);
     lines.push(`  killed: [${frame.killed.join(',')}]`);
-    // 攻击执行顺序 + 开火瞬间的 Shooter 存活状态（规则修订 §12/§13）。
-    // 回放必须能展示「先手击杀对方 Shooter → 对方攻击照样执行」这条链条，
-    // 而不是像旧规则那样显示 SHOT CANCELLED。
+    // 攻击执行顺序（Rule Revision 3 §22）。这里**不再**有
+    // 「Shooter killed / Shot cancelled / New Shooter selected」任何一种表述：
+    // 发射锚点是固定 Emitter，它不会死，所以这三种情形都不存在。
     lines.push(`  attacks executed: [${frame.attacksExecuted.join(' → ')}]`);
-    for (const t of frame.attacksExecuted) {
-      const alive = frame.shooterAliveAtAttack[t];
-      lines.push(
-        `    ${t} fired with shooter ${alive ? 'alive' : 'ELIMINATED'}` +
-          (alive ? '' : ' — locked attack right, shot is NOT cancelled')
-      );
-    }
     if (frame.mutualElimination) lines.push('  *** MUTUAL ELIMINATION — round ended with both teams at zero ***');
+    if (frame.endReason === 'STALEMATE') lines.push('  *** STALEMATE — no progress within the limit ***');
+    if (frame.endReason === 'HARD_ROUND_LIMIT') lines.push('  *** HARD ROUND LIMIT reached ***');
     // cancelled 字段保留为历史/兼容语义：规则修订后它只能是运行器自身的显式取消，
     // 与 TIMEOUT / INVALID / CRASH 无关，因此这里明确区分，不再打印成「取消」。
     if (frame.cancelledA || frame.cancelledB) {

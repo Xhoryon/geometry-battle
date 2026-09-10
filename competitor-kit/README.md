@@ -33,8 +33,8 @@ python3 competitor-kit/tools/validate_submission.py ./my-algorithm
   Input              PASS public_state.json (1439 B) + reveal_state.json (680 B)，sha256 绑定已由启动壳复核
   Result JSON        PASS schema_version="1.1"，键集合恰好为 {schema_version, dsl}
   DSL                PASS 结构合法（7 个节点）
-  Function legality  PASS f(-6.4859) = 6.7318（Shooter 残差 0.00e+0），凸性变号 0，采样 2649 点
-  Timeout            PASS 耗时 19.4 ms（上限 2000 ms）
+  Function legality  PASS f(-18) = 0（Emitter 残差 0.00e+0），凸性变号 0，采样 2649 点
+  Timeout            PASS 耗时 19.4 ms（上限 500 ms）
 ── Team B ──
   …（同上）
 PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
@@ -65,9 +65,9 @@ PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
 1. **入口固定**：包根目录的 `solver.py`，四个参数 `--team / --public / --reveal / --output`。
 2. **输入只走文件**：两份 JSON，由参数给出路径；stdin 不是输入通道。
 3. **结果只走文件**：`{"schema_version":"1.1","dsl":<AST>}` 写进 `--output`；顶层只有这两个键，stdout 不是结果通道。
-4. **函数必须经过自己的 Shooter**：`|f(x_s) − y_s| ≤ 1e-6`。用 `f(x) = y_s + g(x − x_s)` 这种增量写法最稳。
+4. **函数必须经过自己的固定 Emitter**：`|f(x_e) − y_e| ≤ 1e-6`。Emitter 是常量（A `(-18,0)`、B `(18,0)`），用 `f(x) = y_e + g(x − x_e)` 这种增量写法最稳。
 5. **没有第三方包**：`numpy` / `scipy` 在沙箱里**不可用**，只用标准库。
-6. **2000 ms 内出结果**，每轮沙箱重建、不跨轮保存状态。
+6. **500 ms 内出结果**，每轮沙箱重建、不跨轮保存状态。
 
 ---
 
@@ -134,7 +134,7 @@ parseCanonicalDSL / validateAttackFunction
 Runtime       CPython 3.9.6，第三方包 NONE
 DSL           14 个白名单节点，节点 ≤128 / 深度 ≤12 / 常数 ≤1000
 结果通道      output/result.json（唯一）
-计时          各自 GO 起算，2000 ms
+计时          各自 GO 起算，500 ms
 比赛终止      ELIMINATION（STALEMATE: NOT YET IMPLEMENTED）
 ```
 

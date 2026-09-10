@@ -9,7 +9,7 @@
  * 不出现贯通单方区域的墙；生成失败必须返回 null 而不是强行放置。
  */
 
-import { POINT_OBSTACLE_CLEARANCE } from '../src/core/Rules';
+import { EMITTERS, POINT_OBSTACLE_CLEARANCE } from '../src/core/Rules';
 import { distanceToObstacle } from '../src/obstacle/Obstacle';
 import {
   GeneratedMap,
@@ -98,6 +98,8 @@ test('map-fairness: validateMap 拒绝紧贴障碍物的点', () => {
     teamA: [{ x: -10, y: 0 }],
     teamB: [{ x: 10, y: 0 }],
     obstacles: [{ type: 'rectangle', xmin: -10.5, xmax: -9.5, ymin: -0.5, ymax: 0.5 }],
+    emitterA: EMITTERS.A,
+    emitterB: EMITTERS.B,
     stateHash: 'x',
   };
   // 点在矩形外，但距离只有 0 —— 属于「紧贴」，必须被拒绝
@@ -115,6 +117,8 @@ test('map-fairness: validateMap 拒绝位于障碍物内部的点', () => {
     teamA: [{ x: -10, y: 0 }],
     teamB: [{ x: 10, y: 0 }],
     obstacles: [{ type: 'circle', center: [-10, 0], radius: 2 }],
+    emitterA: EMITTERS.A,
+    emitterB: EMITTERS.B,
     stateHash: 'x',
   };
   const v = validateMap(map);
@@ -177,6 +181,8 @@ test('map-fairness: validateMap 拒绝越出场地边界的障碍物（P3-7）',
     teamB: [{ x: 10, y: 0 }],
     // 圆心在场地内，但半径让它伸到 x=23 > 20
     obstacles: [{ type: 'circle', center: [18, 0], radius: 5 }],
+    emitterA: EMITTERS.A,
+    emitterB: EMITTERS.B,
     stateHash: 'x',
   };
   const v = validateMap(map);

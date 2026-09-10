@@ -232,7 +232,7 @@ export {
 
 // ---- UI 接线 ----
 export { MatchSetupUI, MatchSetupState } from './ui/MatchSetupUI';
-export { TeamControllerUI, JudgeControllerUI, ShooterSelectionState } from './ui/TeamControllerUI';
+export { TeamControllerUI, JudgeControllerUI, TeamPanelState } from './ui/TeamControllerUI';
 export { AudienceScreenUI, MatchResultSummary } from './ui/AudienceScreenUI';
 export {
   AudienceState,

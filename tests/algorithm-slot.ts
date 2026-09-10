@@ -38,7 +38,7 @@ public = json.loads(public_bytes.decode("utf-8"))
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {p["id"]: p for p in public["points"]}
-me = by_id[reveal["shooters"][args.team]]
+me = public["emitters"][args.team]
 emit({"type": "add", "args": [
     {"type": "number", "value": me["y"]},
     {"type": "mul", "args": [{"type": "number", "value": 0}, {"type": "variable", "value": "x"}]},

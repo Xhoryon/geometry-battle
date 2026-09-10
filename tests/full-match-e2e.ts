@@ -58,17 +58,11 @@ async function playFullMatch(opts: { seed: number; pointCount?: number }): Promi
   let rounds = 0;
   while (engine.getWinner() === null) {
     const snap = engine.getSnapshot();
-    assert(snap.phase === 'SELECT_SHOOTER', `预期 SELECT_SHOOTER，实际 ${snap.phase}`);
-
-    // 人工选择：各自选第一个存活点（模拟工作人员在操作台点击）
-    for (const team of ['A', 'B'] as const) {
-      const pick = snap.points.find((p) => p.team === team && p.alive);
-      assert(pick, `${team} 没有可用点`);
-      const sel = engine.selectShooter(team, pick.id);
-      assert(sel.ok, `${team} 选择 Shooter 失败: ${sel.error}`);
-      const lock = engine.lockShooter(team);
-      assert(lock.ok, `${team} 锁定失败: ${lock.error}`);
-    }
+    // Rule Revision 3 §5：这里曾经断言 `SELECT_SHOOTER` 并模拟人工选点。
+    // 现在每轮唯一的停留点是 PUBLIC（本轮输入已冻结、等待揭盲）。
+    assert(snap.phase === 'PUBLIC', `预期 PUBLIC，实际 ${snap.phase}`);
+    assert(snap.emitters !== null, '每轮都应能取到固定的 Emitter');
+    assert(snap.emitters!.A.id === 'A0' && snap.emitters!.B.id === 'B0', 'Emitter 标识必须固定');
 
     const judge = engine.judgeStartRound();
     assert(judge.ok, `START ROUND 失败: ${judge.error}`);
@@ -114,12 +108,6 @@ test('full-match-e2e: 存活数严格单调递减，且 winner 只在结算后�
   let prevAlive = engine.getSnapshot().alive.A + engine.getSnapshot().alive.B;
   let guard = 0;
   while (engine.getWinner() === null && guard++ < 40) {
-    const snap = engine.getSnapshot();
-    for (const team of ['A', 'B'] as const) {
-      const pick = snap.points.find((p) => p.team === team && p.alive)!;
-      engine.selectShooter(team, pick.id);
-      engine.lockShooter(team);
-    }
     engine.judgeStartRound();
     await engine.runRound();
     const alive = engine.getSnapshot().alive.A + engine.getSnapshot().alive.B;
@@ -171,20 +159,12 @@ test('full-match-e2e: 阶段守卫 —— 未锁定/未裁决时不允许开跑'
   engine.upload('B', ALGO_B);
   assert((await engine.preflight()).ok, 'preflight 应通过');
 
-  // 未 startMatch 就选 Shooter
-  assert(!engine.selectShooter('A', 'A1').ok, '比赛未开始不应允许选择 Shooter');
-
+  // 比赛尚未开始时不得 START（阶段门禁）
+  assert(!engine.judgeStartRound().ok, '比赛未开始时不应允许 START ROUND');
   engine.startMatch();
-  // 只锁一方就想开跑
-  engine.selectShooter('A', 'A1');
-  engine.lockShooter('A');
-  assert(!engine.judgeStartRound().ok, '只有一方锁定不应允许 START ROUND');
-
-  const snap = engine.getSnapshot();
-  const b = snap.points.find((p) => p.team === 'B' && p.alive)!;
-  engine.selectShooter('B', b.id);
-  engine.lockShooter('B');
-  assert(engine.judgeStartRound().ok, '双方锁定后应允许 START ROUND');
+  // Rule Revision 3 §5 之后没有「锁定」这个动作：开始比赛即进入 PUBLIC，
+  // START 的前置条件是 PUBLIC → REVEAL，而不是「双方 LOCK」。
+  assert(engine.judgeStartRound().ok, '进入 PUBLIC 后应允许 START ROUND');
 });
 
 void runAll('full-match-e2e');

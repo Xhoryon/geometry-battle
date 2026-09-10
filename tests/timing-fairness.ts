@@ -12,6 +12,7 @@
  */
 
 import * as path from 'path';
+import { EMITTERS } from '../src/core/Rules';
 import { CanonicalNode, parseCanonicalDSL } from '../src/core/Ast';
 import { judgeShot } from '../src/core/Judge';
 import { PLATFORM_ROOT } from '../src/core/Match';
@@ -63,9 +64,10 @@ function coreFor(map: GeneratedMap): RoundStateCore {
       ...map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, position: p })),
       ...map.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, position: p })),
     ],
-    shooters: {
-      A: { id: 'A1', position: map.teamA[0] },
-      B: { id: 'B1', position: map.teamB[0] },
+    // Rule Revision 3 §3/§4：发射锚点是固定 Emitter，不是从点表里挑出来的点。
+    emitters: {
+      A: { id: 'A0', position: EMITTERS.A },
+      B: { id: 'B0', position: EMITTERS.B },
     },
     teamAXRange: [-20, -4],
     teamBXRange: [4, 20],

@@ -45,8 +45,24 @@ def load_input():
 
 
 def shooter_of(public, reveal, team):
-    by_id = {p["id"]: p for p in public["points"]}
-    return by_id[reveal["shooters"][team]]
+    """发射锚点 = 固定 Emitter（Rule Revision 3 §4）。
+
+    Emitter 的坐标**直接在 public_state.json 里**，不再是 reveal 里的一个 id、
+    也不再从 points 表里查 —— 它整场比赛固定、不可死亡、不是战斗点（§3/§6）。
+    """
+    return public["emitters"][team]
+
+
+def first_enemy(public, team):
+    """aim 的目标：**敌方**存活战斗点里 id 最小的那个（team 是本队）。
+
+    Revision 3 之前这里瞄的是「敌方 Shooter」—— 那条规则下击杀对方 Shooter
+    可以取消对方整轮攻击，是一击必杀。现在发射锚点是不可击杀的 Emitter，
+    该概念已不存在（§7 明文禁止 Shooter assassination），因此改为普通战斗点。
+    """
+    foes = sorted((p for p in public["points"]
+                   if p["team"] != team and p.get("alive", True)), key=lambda p: p["id"])
+    return foes[0] if foes else None
 
 
 def num(v):
@@ -58,7 +74,11 @@ def main():
     team = args.team
     other = "B" if team == "A" else "A"
     me = shooter_of(public, reveal, team)
-    tgt = shooter_of(public, reveal, other)
+    # 注意传的是 team 而不是 other：first_enemy 自己会取「非本队」的点。
+    tgt = first_enemy(public, team)
+    if tgt is None:
+        # 没有可打的战斗点（理论上比赛已结束）—— 交一条只穿过 Emitter 的常函数
+        tgt = me
     dx = tgt["x"] - me["x"]
     m = 0.0 if abs(dx) < 1e-9 else (tgt["y"] - me["y"]) / dx
     dsl = {"type": "add", "args": [

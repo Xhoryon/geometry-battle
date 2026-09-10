@@ -55,7 +55,6 @@ function build(): { pub: ReturnType<typeof buildPublicState>; rev: ReturnType<ty
     matchId: MATCH_ID,
     round: 4,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B2' },
     obstacles: obstacles(),
   });
   return { pub, rev };
@@ -66,14 +65,23 @@ test('input-protocol: 两份文件的字段集合是封闭白名单', () => {
   const p = JSON.parse(pub.json);
   const r = JSON.parse(rev.json);
 
-  assertEqual(Object.keys(p).sort(), ['map', 'match_id', 'points', 'round', 'schema_version'], 'public 顶层字段');
+  // Rule Revision 3 §6：`emitters` **新增在 public**（固定 Emitter 是公开结构），
+  // 并从 reveal 中移除 `shooters`（§5：不再有每轮 Shooter Selection）。
+  assertEqual(
+    Object.keys(p).sort(),
+    ['emitters', 'map', 'match_id', 'points', 'round', 'schema_version'],
+    'public 顶层字段'
+  );
   assertEqual(Object.keys(p.map).sort(), ['xmax', 'xmin', 'ymax', 'ymin'], 'public.map 字段');
   assertEqual(Object.keys(p.points[0]).sort(), ['alive', 'id', 'team', 'x', 'y'], 'public.points[] 字段');
+  assertEqual(Object.keys(p.emitters).sort(), ['A', 'B'], 'public.emitters 字段');
+  assertEqual(Object.keys(p.emitters.A).sort(), ['x', 'y'], 'public.emitters.A 字段');
 
-  assertEqual(Object.keys(r).sort(), [
-    'match_id', 'obstacles', 'public_state_sha256', 'round', 'schema_version', 'shooters',
-  ], 'reveal 顶层字段');
-  assertEqual(Object.keys(r.shooters).sort(), ['A', 'B'], 'reveal.shooters 字段');
+  assertEqual(
+    Object.keys(r).sort(),
+    ['match_id', 'obstacles', 'public_state_sha256', 'round', 'schema_version'],
+    'reveal 顶层字段（不再有 shooters）'
+  );
 
   assertEqual(p.schema_version, PROTOCOL_VERSION, 'schema_version 必须与协议版本一致');
   assertEqual(r.schema_version, PROTOCOL_VERSION, 'reveal 的 schema_version 必须一致');
@@ -83,8 +91,8 @@ test('input-protocol: 两份文件的字段集合是封闭白名单', () => {
 
 test('input-protocol: public 不包含任何隐藏信息（§6/§7）', () => {
   const { pub } = build();
-  // 注意：点的 id（A1/B2）**本来就该出现** —— 被禁止的是把它们当作 Shooter 声明，
-  // 以及任何障碍物 / seed 的痕迹。字段白名单（上一条用例）已经证明没有 shooters 键。
+  // 注意：点的 id（A1/B2）与 `emitters` **本来就该出现** —— Emitter 是整场公开的
+  // 固定结构（Rule Revision 3 §6）；被禁止的是障碍物 / seed 的痕迹。
   for (const forbidden of [
     'obstacles', 'obstacle', 'rectangle', 'circle', '"type"', '"id":"O',
     'radius', '"cx"', '"cy"',
@@ -98,9 +106,12 @@ test('input-protocol: public 不包含任何隐藏信息（§6/§7）', () => {
 
 test('input-protocol: 正向对照 —— reveal 确实包含隐藏信息（否则上面的断言是空转）', () => {
   const { rev } = build();
-  for (const expected of ['obstacles', 'shooters', 'public_state_sha256', '"O1"', '"O2"', 'radius', '"cx"']) {
+  for (const expected of ['obstacles', 'public_state_sha256', '"O1"', '"O2"', 'radius', '"cx"']) {
     assert(rev.json.includes(expected), `reveal_state 必须包含 "${expected}"`);
   }
+  // 反向对照：reveal 不得再夹带任何 Shooter 概念（§5）
+  assert(!rev.json.includes('shooters'), 'reveal_state 不得再包含 shooters');
+  assert(!rev.json.includes('emitter'), 'reveal_state 不得包含 emitters（那是 public 的内容）');
 });
 
 test('input-protocol: reveal 是 Delta —— 不复制 points / map / alive（§9）', () => {
@@ -119,12 +130,10 @@ test('input-protocol: 两份文件对 A/B 字节级相同（§11/§12）', () =>
   assertEqual(a.sha256, b.sha256, 'public_state 的 hash 必须相同');
 
   const ra = buildRevealState({
-    matchId: MATCH_ID, round: 4, publicStateSha256: a.sha256,
-    shooters: { A: 'A1', B: 'B2' }, obstacles: obstacles(),
+    matchId: MATCH_ID, round: 4, publicStateSha256: a.sha256, obstacles: obstacles(),
   });
   const rb = buildRevealState({
-    matchId: MATCH_ID, round: 4, publicStateSha256: b.sha256,
-    shooters: { A: 'A1', B: 'B2' }, obstacles: obstacles(),
+    matchId: MATCH_ID, round: 4, publicStateSha256: b.sha256, obstacles: obstacles(),
   });
   assertEqual(ra.json, rb.json, 'reveal_state 必须逐字节相同');
   assertEqual(ra.sha256, rb.sha256, 'reveal_state 的 hash 必须相同');
@@ -217,8 +226,7 @@ test('input-protocol: 序列化是确定性的，非法数值直接抛错', () =
 test('input-protocol: 障碍物转成规范形态（circle → cx/cy/radius，§8）', () => {
   const pub = buildPublicState({ matchId: MATCH_ID, round: 1, points: roster() });
   const rev = buildRevealState({
-    matchId: MATCH_ID, round: 1, publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' }, obstacles: obstacles(),
+    matchId: MATCH_ID, round: 1, publicStateSha256: pub.sha256, obstacles: obstacles(),
   });
   const r = JSON.parse(rev.json);
   assertEqual(r.obstacles[0], { id: 'O1', type: 'rectangle', xmin: -1, xmax: 2, ymin: -5, ymax: 1 }, '矩形形态');
@@ -229,7 +237,6 @@ test('input-protocol: 障碍物转成规范形态（circle → cx/cy/radius，§
   try {
     buildRevealState({
       matchId: MATCH_ID, round: 1, publicStateSha256: pub.sha256,
-      shooters: { A: 'A1', B: 'B1' },
       obstacles: [{ type: 'segment', x1: 0, y1: 0, x2: 1, y2: 1 }],
     });
   } catch {
@@ -269,8 +276,7 @@ test('input-protocol: 真实地图也能走完整协议且不泄漏 seed', () =>
   assert(!pub.json.includes(map.stateHash), 'public_state 不得包含 map hash');
 
   const rev = buildRevealState({
-    matchId: MATCH_ID, round: 1, publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' }, obstacles: map.obstacles,
+    matchId: MATCH_ID, round: 1, publicStateSha256: pub.sha256, obstacles: map.obstacles,
   });
   assert(verifyRevealBinding(pub.json, rev.json), '真实地图的配对必须通过');
   assertEqual(JSON.parse(rev.json).obstacles.length, map.obstacles.length, '全部障碍物都必须出现在 reveal 中');

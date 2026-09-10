@@ -19,6 +19,7 @@ import {
   DIFFICULTY_OBSTACLES,
   FIELD,
   MIN_POINT_DISTANCE,
+  EMITTERS,
   POINT_COUNT_RANGE,
   POINT_OBSTACLE_CLEARANCE,
 } from '../core/Rules';
@@ -33,6 +34,16 @@ export interface GeneratedMap {
   seed: number;
   teamA: Point[];
   teamB: Point[];
+  /**
+   * 固定 Emitter（Rule Revision 3 §3）：本队函数在整个 Match 的发射锚点。
+   *
+   * **刻意不进 `teamA` / `teamB`** —— 它不是战斗点：不计入存活数、不能被击杀、
+   * 不能作为胜利目标。把它放在数组外，`getWinner()` / `aliveAfter` /
+   * 敌人筛选 / `markDead()` 这些「遍历 Points」的地方就**天然**碰不到它，
+   * 不需要在每处加 `role !== 'emitter'` 判断（那是漏判的温床）。
+   */
+  emitterA: Point;
+  emitterB: Point;
   obstacles: Obstacle[];
   /** 地图内容哈希（供 RoundState 使用） */
   stateHash: string;
@@ -238,15 +249,22 @@ export function tryGenerateMap(config: MapConfig): GeneratedMap | null {
     obstacles.push(obs);
   }
 
-  const teamA = placeTeam(rng, FIELD.teamAXRange, config.pointCount, [], obstacles);
+  // Emitter 位置是全局常量，但出生点必须与它保持 MIN_POINT_DISTANCE，
+  // 否则会在锚点上叠一个战斗点（几何上毫无意义，回放里也画不开）。
+  const emitterA = EMITTERS.A;
+  const emitterB = EMITTERS.B;
+
+  const teamA = placeTeam(rng, FIELD.teamAXRange, config.pointCount, [emitterA], obstacles);
   if (!teamA) return null;
-  const teamB = placeTeam(rng, FIELD.teamBXRange, config.pointCount, [], obstacles);
+  const teamB = placeTeam(rng, FIELD.teamBXRange, config.pointCount, [emitterB], obstacles);
   if (!teamB) return null;
 
   const map: GeneratedMap = {
     seed: config.seed,
     teamA,
     teamB,
+    emitterA,
+    emitterB,
     obstacles,
     stateHash: '',
   };
@@ -285,6 +303,10 @@ export function computeMapHash(map: Omit<GeneratedMap, 'stateHash'>): string {
     seed: map.seed,
     teamA: map.teamA,
     teamB: map.teamB,
+    // Emitter 是常量，但**必须进哈希**：地图哈希是「这一局是什么世界」的
+    // 完整承诺，事后改常量而不改哈希会让归档世界不可复核。
+    emitterA: map.emitterA,
+    emitterB: map.emitterB,
     obstacles: map.obstacles,
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
@@ -336,6 +358,31 @@ export function validateMap(map: GeneratedMap): MapValidation {
       const d = distanceToObstacle(p, o);
       if (d < POINT_OBSTACLE_CLEARANCE) {
         errors.push(`点 ${p.id} 紧贴障碍物（间距 ${d.toFixed(3)} < ${POINT_OBSTACLE_CLEARANCE}）`);
+      }
+    }
+  }
+
+  // ---- Emitter 的公平性（Rule Revision 3 §3/§7）----
+  // 与任何出生点享受同一套保护：不落在障碍物内部、不紧贴障碍物，
+  // 且与所有战斗点保持 MIN_POINT_DISTANCE。Emitter 被障碍物封死等同于
+  // 该队永远无法命中任何东西 —— 这是必须整局作废的公平性缺陷，不是 warning。
+  for (const team of ['A', 'B'] as const) {
+    const e = team === 'A' ? map.emitterA : map.emitterB;
+    const label = `Emitter ${team}`;
+    if (e.x < FIELD.xMin || e.x > FIELD.xMax || e.y < FIELD.yMin || e.y > FIELD.yMax) {
+      errors.push(`${label} 坐标越出场地: (${e.x}, ${e.y})`);
+    }
+    if (isInsideObstacle(e, map.obstacles)) errors.push(`${label} 位于障碍物内部`);
+    for (const o of map.obstacles) {
+      const d = distanceToObstacle(e, o);
+      if (d < POINT_OBSTACLE_CLEARANCE) {
+        errors.push(`${label} 紧贴障碍物（间距 ${d.toFixed(3)} < ${POINT_OBSTACLE_CLEARANCE}）`);
+      }
+    }
+    for (const p of all) {
+      const d = distance(e, p);
+      if (d < MIN_POINT_DISTANCE) {
+        errors.push(`${label} 与 ${p.id} 距离过近: ${d.toFixed(2)}`);
       }
     }
   }

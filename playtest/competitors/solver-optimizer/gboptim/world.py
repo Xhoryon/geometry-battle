@@ -42,8 +42,14 @@ def build(team, public, reveal):
     for p in public.get("points") or ():
         by_id[p["id"]] = p
 
+    # ---- Rule Revision 3 I/O 适配（唯一改动）----
+    # 发射锚点从「reveal.shooters 里的 id → 查 public.points」改成
+    # 「public.emitters 直接给坐标」。策略 / 搜索 / 打分一律未改。
+    # `shooters` 仍按旧字段读，因此在新输入下恒为空 →
+    # `enemy_shooter_id` 恒为 None，即「刺杀敌方 Shooter」的加成分支自然失效
+    # （Revision 3 下 Emitter 不可击杀、也不在 points 里，本就无此目标）。
     shooters = reveal.get("shooters") or {}
-    me = by_id[shooters[team]]
+    me = (public.get("emitters") or {}).get(team)
     other = "B" if team == "A" else "A"
     enemy_shooter_id = shooters.get(other)
 
@@ -69,7 +75,7 @@ def build(team, public, reveal):
     ctx.length = length
     ctx.x_end = x_end
     ctx.obstacles = list(reveal.get("obstacles") or ())
-    ctx.shooter_id = shooters[team]
+    ctx.shooter_id = team  # 恒定的 Emitter 标识（'A0'/'B0' 语义）
     ctx.enemy_shooter_id = enemy_shooter_id
     ctx.map_bounds = (xmin, xmax, float(bounds.get("ymin", -12.0)), float(bounds.get("ymax", 12.0)))
     ctx.match_id = str(public.get("match_id", ""))

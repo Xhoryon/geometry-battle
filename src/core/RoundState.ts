@@ -28,10 +28,16 @@ export interface RoundStateCore {
   mapSeed: number;
   mapHash: string;
   obstacles: Obstacle[];
-  /** 本轮开始前仍存活的点 */
+  /** 本轮开始前仍存活的**战斗点**（不含 Emitter —— 它不是战斗点） */
   points: AlivePoint[];
-  /** 本轮 Shooter（Reveal 后为公开信息） */
-  shooters: { A: { id: string; position: Point }; B: { id: string; position: Point } };
+  /**
+   * 固定 Emitter（Rule Revision 3 §2–§4）。
+   *
+   * 与旧的 `shooters` 的本质区别：它是**常量**，不是从本轮存活点里选出来的。
+   * 没有 `alive` 字段 —— Emitter 不会死，所以「它是否存活」这个问题不再存在，
+   * 类型层面就堵住了「alive Shooter」这类旧语义的回流（§3 明文要求）。
+   */
+  emitters: { A: { id: string; position: Point }; B: { id: string; position: Point } };
   teamAXRange: [number, number];
   teamBXRange: [number, number];
 }

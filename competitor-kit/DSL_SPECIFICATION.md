@@ -163,13 +163,13 @@ lt  gt  lte  gte  eq  neq  and  or  not
 结构合法的 AST 还要通过数值校验。校验在**有效攻击范围**上进行：
 
 ```text
-Team A：x ∈ [x_s, 20]
-Team B：x ∈ [-20, x_s]
+Team A：x ∈ [x_e, 20]（x_e 为 Emitter 的 x 坐标）
+Team B：x ∈ [-20, x_e]
 ```
 
 | 要求 | 判定 | 错误码 |
 |---|---|---|
-| 必须经过自己的 Shooter | `|f(x_s) − y_s| ≤ 1e-6` | `NOT_THROUGH_SHOOTER` |
+| 必须经过自己的固定 Emitter | `|f(x_e) − y_e| ≤ 1e-6` | `NOT_THROUGH_SHOOTER` |
 | 在攻击范围内有限 | 采样点上 `|f(x)|` 有限且 ≤ 1e6 | `NOT_FINITE` |
 | 定义域合法 | 例如 `sqrt` 负数、`log` 非正、除零 | `DOMAIN_ERROR` |
 | 连续 | 跳变检测 | `DISCONTINUOUS` |
@@ -179,10 +179,10 @@ Team B：x ∈ [-20, x_s]
 | 凸性变号次数 | ≤ 100 | `CONVEXITY_LIMIT` |
 | 振荡可采样 | 抗混叠采样点数 ≤ 400000 | `OSCILLATION_LIMIT` |
 
-### Shooter 容差
+### Emitter 容差
 
 ```text
-|f(x_s) − y_s| ≤ 1e-6
+|f(x_e) − y_e| ≤ 1e-6
 ```
 
 这是**函数合法性**的容差，与「命中判定」是**两个不同的概念**：命中判定属于 Judge 规则，
@@ -190,10 +190,10 @@ Team B：x ∈ [-20, x_s]
 
 <!-- AST-INVALID: NOT_THROUGH_SHOOTER -->
 ```json
-{ "type": "number", "value": 0 }
+{ "type": "number", "value": 2 }
 ```
 
-> 上例在 `x_s = -14, y_s = 2` 的设定下 `f(x_s) = 0 ≠ 2`，因此不通过。
+> 上例在 Team A 的 Emitter `(-18, 0)` 下 `f(x_e) = 2 ≠ 0`，因此不通过。
 
 ---
 
@@ -202,27 +202,27 @@ Team B：x ∈ [-20, x_s]
 以下示例统一采用：
 
 ```text
-Team A，Shooter S = (x_s, y_s) = (-14, 2)
-有效攻击范围 x ∈ [-14, 20]
+Team A，固定 Emitter E = (-18, 0)
+有效攻击范围 x ∈ [-18, 20]
 ```
 
 ### 8.1 常数
 
 <!-- AST-VALID -->
 ```json
-{ "type": "number", "value": 2 }
+{ "type": "number", "value": 0 }
 ```
 
 ### 8.2 线性
 
-`f(x) = y_s + 0.3·(x − x_s)`
+`f(x) = y_e + 0.3·(x − x_e)`
 
 <!-- AST-VALID -->
 ```json
 {
   "type": "add",
   "args": [
-    { "type": "number", "value": 2 },
+    { "type": "number", "value": 0 },
     {
       "type": "mul",
       "args": [
@@ -231,7 +231,7 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
           "type": "sub",
           "args": [
             { "type": "variable", "value": "x" },
-            { "type": "number", "value": -14 }
+            { "type": "number", "value": -18 }
           ]
         }
       ]
@@ -242,14 +242,14 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
 
 ### 8.3 多项式
 
-`f(x) = y_s + 0.01·(x − x_s)³`
+`f(x) = y_e + 0.01·(x − x_e)³`
 
 <!-- AST-VALID -->
 ```json
 {
   "type": "add",
   "args": [
-    { "type": "number", "value": 2 },
+    { "type": "number", "value": 0 },
     {
       "type": "mul",
       "args": [
@@ -261,7 +261,7 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
               "type": "sub",
               "args": [
                 { "type": "variable", "value": "x" },
-                { "type": "number", "value": -14 }
+                { "type": "number", "value": -18 }
               ]
             },
             { "type": "number", "value": 3 }
@@ -275,14 +275,14 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
 
 ### 8.4 三角函数
 
-`f(x) = y_s + 0.5·sin(0.2·(x − x_s))`
+`f(x) = y_e + 0.5·sin(0.2·(x − x_e))`
 
 <!-- AST-VALID -->
 ```json
 {
   "type": "add",
   "args": [
-    { "type": "number", "value": 2 },
+    { "type": "number", "value": 0 },
     {
       "type": "mul",
       "args": [
@@ -298,7 +298,7 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
                   "type": "sub",
                   "args": [
                     { "type": "variable", "value": "x" },
-                    { "type": "number", "value": -14 }
+                    { "type": "number", "value": -18 }
                   ]
                 }
               ]
@@ -313,14 +313,14 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
 
 ### 8.5 复合
 
-`f(x) = y_s + 0.1·(exp(0.05·(x − x_s)) − 1) + 0.3·sin(0.4·(x − x_s))`
+`f(x) = y_e + 0.1·(exp(0.05·(x − x_e)) − 1) + 0.3·sin(0.4·(x − x_e))`
 
 <!-- AST-VALID -->
 ```json
 {
   "type": "add",
   "args": [
-    { "type": "number", "value": 2 },
+    { "type": "number", "value": 0 },
     {
       "type": "add",
       "args": [
@@ -342,7 +342,7 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
                           "type": "sub",
                           "args": [
                             { "type": "variable", "value": "x" },
-                            { "type": "number", "value": -14 }
+                            { "type": "number", "value": -18 }
                           ]
                         }
                       ]
@@ -369,7 +369,7 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
                       "type": "sub",
                       "args": [
                         { "type": "variable", "value": "x" },
-                        { "type": "number", "value": -14 }
+                        { "type": "number", "value": -18 }
                       ]
                     }
                   ]
@@ -386,19 +386,19 @@ Team A，Shooter S = (x_s, y_s) = (-14, 2)
 
 ---
 
-## 9. 构造技巧：让函数严格经过 Shooter
+## 9. 构造技巧：让函数严格经过 Emitter
 
-数值上最稳的写法是把函数写成「以 Shooter 为原点的增量」：
+数值上最稳的写法是把函数写成「以 Emitter 为原点的增量」：
 
 ```text
-u = x − x_s
-f(x) = y_s + g(u)，其中 g(0) = 0
+u = x − x_e
+f(x) = y_e + g(u)，其中 g(0) = 0
 ```
 
-这样 `f(x_s) = y_s + g(0) = y_s` 是**恒等式**，不受浮点累积误差影响。
+这样 `f(x_e) = y_e + g(0) = y_e` 是**恒等式**，不受浮点累积误差影响。
 上文 §8.2–§8.5 全部采用这种形式。
 
-不要用「先算系数再回代」的方式硬凑 `f(x_s) = y_s`，容易在 1e-6 容差边缘失败。
+不要用「先算系数再回代」的方式硬凑 `f(x_e) = y_e`，容易在 1e-6 容差边缘失败。
 
 ---
 
@@ -422,7 +422,7 @@ f(x) = y_s + g(u)，其中 g(0) = 0
 | `NOT_C2` | 不满足 C¹ / C²，或斜率过大 |
 | `CONVEXITY_LIMIT` | 凸性变号次数超过 100 |
 | `OSCILLATION_LIMIT` | 振荡过快，无法可靠采样 |
-| `NOT_THROUGH_SHOOTER` | `|f(x_s) − y_s| > 1e-6` |
+| `NOT_THROUGH_SHOOTER` | `|f(x_e) − y_e| > 1e-6` |
 
 ---
 

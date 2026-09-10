@@ -13,6 +13,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { EMITTERS } from '../src/core/Rules';
 import { parseCanonicalDSL, type ErrorCode } from '../src/core/Ast';
 import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
 import { firingDomain } from '../src/core/Rules';
@@ -27,8 +28,13 @@ import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 const KIT = path.join(PLATFORM_ROOT, 'competitor-kit');
 const STARTER_SRC = path.join(PLATFORM_ROOT, 'starter');
 
-/** 文档示例的统一约定（DSL_SPECIFICATION.md §8）：Team A，S = (-14, 2) */
-const DOC_SHOOTER = { x: -14, y: 2 };
+/**
+ * 文档示例的统一约定（DSL_SPECIFICATION.md §8）。
+ *
+ * Rule Revision 3 §4：锚点是**固定 Emitter**，坐标是常量 —— Team A 为 (-18, 0)。
+ * 文档里的示例值必须与这个常量一致，否则「示例通过校验」就成了空转。
+ */
+const DOC_SHOOTER = { x: EMITTERS.A.x, y: EMITTERS.A.y };
 const DOC_DOMAIN = firingDomain(DOC_SHOOTER.x, 'A');
 
 function readDoc(name: string): string {
@@ -251,12 +257,18 @@ test('competitor-kit: JSON_SCHEMA 的字段表与真实样例键集合一致', (
   assertEqual(Object.keys(publicState).sort(), [...schema.public_state.required].sort(), 'public_state 顶层键应等于字段表');
   assertEqual(Object.keys(publicState.map).sort(), [...schema.public_state.map_fields].sort(), 'map 键应等于字段表');
   assertEqual(Object.keys(publicState.points[0]).sort(), [...schema.public_state.point_fields].sort(), 'point 键应等于字段表');
+  // Rule Revision 3 §6：固定 Emitter 在 public 里，字段表必须随之更新
+  assertEqual(Object.keys(publicState.emitters).sort(), [...schema.public_state.emitter_fields].sort(), 'emitters 键应等于字段表');
+  assertEqual(Object.keys(publicState.emitters.A).sort(), [...schema.public_state.emitter_point_fields].sort(), 'emitters.A 键应等于字段表');
+  assert(!publicState.points.some((p: { id: string }) => p.id === 'A0' || p.id === 'B0'), 'points 里不得出现 Emitter（它不是战斗点）');
   for (const forbidden of schema.public_state.forbidden) {
     assert(!(forbidden in publicState), `public_state 不得含 ${forbidden}`);
   }
 
   assertEqual(Object.keys(revealState).sort(), [...schema.reveal_state.required].sort(), 'reveal_state 顶层键应等于字段表');
-  assertEqual(Object.keys(revealState.shooters).sort(), [...schema.reveal_state.shooter_fields].sort(), 'shooters 键应等于字段表');
+  // Rule Revision 3 §5/§6：reveal 不再承担 Shooter/Emitter，只补障碍物
+  assert(!('shooters' in revealState), 'reveal_state 不得再含 shooters（§5 已删除 Shooter Selection）');
+  assert(!('emitters' in revealState), 'emitters 属 public_state，不得出现在 reveal_state');
   for (const ob of revealState.obstacles) {
     const expected = ob.type === 'circle'
       ? schema.reveal_state.obstacle_circle_fields
@@ -296,12 +308,11 @@ test('competitor-kit: examples/result.json 通过当前 Validator', () => {
   const parsed = parseCanonicalDSL(typeof obj.dsl === 'string' ? obj.dsl : JSON.stringify(obj.dsl));
   assert(parsed.ok && parsed.ast, `示例 DSL 必须合法: ${parsed.issues.map((i) => i.code).join(',')}`);
 
-  // 示例的 Shooter 取自 reveal_state 的 shooters.A
+  // 示例的发射锚点是 public_state 里的**固定 Emitter**（Rule Revision 3 §4/§6）
   const publicState = JSON.parse(fs.readFileSync(path.join(KIT, 'examples', 'public_state.json'), 'utf-8'));
-  const revealState = JSON.parse(fs.readFileSync(path.join(KIT, 'examples', 'reveal_state.json'), 'utf-8'));
-  const shooter = publicState.points.find((p: { id: string }) => p.id === revealState.shooters.A);
-  assert(shooter, '示例的 Shooter 必须能在 public_state.points 里找到');
-  const v = validateAttackFunction(parsed.ast!, firingDomain(shooter.x, 'A'), { x: shooter.x, y: shooter.y });
+  const emitter = publicState.emitters.A;
+  assert(emitter && typeof emitter.x === 'number', '示例必须能在 public_state.emitters 里取到 A 的锚点');
+  const v = validateAttackFunction(parsed.ast!, firingDomain(emitter.x, 'A'), { x: emitter.x, y: emitter.y });
   assert(v.valid, `示例函数必须通过校验: ${v.issues.map((i) => `${i.code}: ${i.message}`).join('; ')}`);
 });
 
@@ -430,7 +441,7 @@ function writeMultiFilePackage(dir: string): void {
       '',
       'def shooter_of(public, reveal, team):',
       '    by_id = {p["id"]: p for p in public["points"]}',
-      '    return by_id[reveal["shooters"][team]]',
+      '    return public["emitters"][team]',
       '',
       'def alive_enemies(public, team):',
       '    return [p for p in public["points"] if p["team"] != team and p.get("alive", True)]',
@@ -521,7 +532,6 @@ async function runCrashCase(c: CrashCase): Promise<{ error: string; errorCode: s
     matchId: 'CRASH',
     round: 0,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: [],
   });
   const sandbox = prepareSandbox({

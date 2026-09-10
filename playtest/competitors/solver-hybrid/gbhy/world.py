@@ -35,8 +35,11 @@ class World(object):
         self.ymax = float(m["ymax"])
 
         by_id = {p["id"]: p for p in public["points"]}
+        # ---- Rule Revision 3 I/O 适配（唯一改动）----
+        # 锚点改为 public.emitters 直给坐标；策略 / 搜索 / 打分未改。
+        # `shooters` 仍按旧字段读，新输入下恒为空 → `enemy_shooter` 恒为 None。
         shooters = reveal.get("shooters") or {}
-        me = by_id.get(shooters.get(team))
+        me = (public.get("emitters") or {}).get(team)
         if me is None:
             raise KeyError("no shooter for team %s" % team)
         self.xs = float(me["x"])

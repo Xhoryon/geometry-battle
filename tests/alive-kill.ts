@@ -93,8 +93,6 @@ test('alive-kill: MatchEngine 中存活数严格递减且只作用于敌人', as
     const snap = engine.getSnapshot();
     for (const team of ['A', 'B'] as const) {
       const pick = snap.points.find((p) => p.team === team && p.alive)!;
-      engine.selectShooter(team, pick.id);
-      engine.lockShooter(team);
     }
     engine.judgeStartRound();
     const r = await engine.runRound();
@@ -142,8 +140,6 @@ test('alive-kill: 击杀在整场比赛中只被应用一次', async () => {
     const snap = engine.getSnapshot();
     for (const team of ['A', 'B'] as const) {
       const pick = snap.points.find((p) => p.team === team && p.alive)!;
-      engine.selectShooter(team, pick.id);
-      engine.lockShooter(team);
     }
     engine.judgeStartRound();
     const r = await engine.runRound();

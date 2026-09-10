@@ -5,8 +5,8 @@
  *
  * 一轮的算法输入拆成两个文件 + 一个 START 信号：
  *
- *   public_state.json   揭盲前的公开世界（不含障碍物 / seed / 任何 Shooter）
- *   reveal_state.json   揭盲增量（Shooter + 障碍物），以 public_state_sha256 绑定
+ *   public_state.json   揭盲前的公开世界（不含障碍物 / seed；含固定 Emitter）
+ *   reveal_state.json   揭盲增量（**只有障碍物**），以 public_state_sha256 绑定
  *   START               裁判事件 —— 之前参赛代码绝不运行
  *
  * 三个不可退让的原则（规范 §25）：
@@ -29,7 +29,7 @@
 
 import * as crypto from 'crypto';
 import { Obstacle } from '../obstacle/Obstacle';
-import { FIELD } from './Rules';
+import { EMITTERS, FIELD } from './Rules';
 
 export const PROTOCOL_VERSION = '1.1';
 
@@ -78,8 +78,18 @@ function str(s: string): string {
 export function buildPublicState(o: {
   matchId: string;
   round: number;
+  /**
+   * 固定 Emitter 坐标（Rule Revision 3 §6）—— 公开结构，从第 1 轮就可见。
+   *
+   * 省略时取全局常量 `Rules.EMITTERS`：Emitter 位置是**游戏的常量**，
+   * 不是地图的性质（`MapGenerator` 也写的是同一对常量，并按构造相同）。
+   * 生产路径（`MatchEngine.buildRunnerInput`）显式传地图携带的值，
+   * 好让「地图哈希 ↔ 输入字节」的链条在代码里看得见。
+   */
+  emitters?: { A: { x: number; y: number }; B: { x: number; y: number } };
   points: readonly PublicStatePoint[];
 }): BuiltInputFile {
+  const em = o.emitters ?? EMITTERS;
   const points = o.points
     .map(
       (p) =>
@@ -94,6 +104,11 @@ export function buildPublicState(o: {
     `,"round":${num(o.round)}` +
     `,"map":{"xmin":${num(FIELD.xMin)},"xmax":${num(FIELD.xMax)}` +
     `,"ymin":${num(FIELD.yMin)},"ymax":${num(FIELD.yMax)}}` +
+    // Emitter 是**公开**结构：它整场比赛不变，不是隐藏信息，所以放在 public
+    // 而不是 reveal（Rule Revision 3 §6）。放在 points 之前，让「场地 → 锚点 →
+    // 战斗点」的阅读顺序与语义层次一致。
+    `,"emitters":{"A":{"x":${num(em.A.x)},"y":${num(em.A.y)}}` +
+    `,"B":{"x":${num(em.B.x)},"y":${num(em.B.y)}}}` +
     `,"points":[${points}]}`;
 
   return { json, sha256: sha256Hex(json) };
@@ -102,7 +117,7 @@ export function buildPublicState(o: {
 /**
  * 构造 reveal_state.json（规范 §8 / §9 / §10）。
  *
- * 这是 **Delta**：只补 Shooter 与障碍物，不重复 points / map / alive，
+ * 这是 **Delta**：只补障碍物，不重复 points / map / alive / emitters，
  * 避免两个来源不一致（规范 §9）。
  *
  * `public_state_sha256` 把本文件绑定到唯一一份 public state，
@@ -112,7 +127,6 @@ export function buildRevealState(o: {
   matchId: string;
   round: number;
   publicStateSha256: string;
-  shooters: { A: string; B: string };
   obstacles: readonly Obstacle[];
 }): BuiltInputFile {
   const obstacles = o.obstacles.map((obstacle, i) => obstacleJson(obstacle, i)).join(',');
@@ -122,7 +136,8 @@ export function buildRevealState(o: {
     `,"match_id":${str(o.matchId)}` +
     `,"round":${num(o.round)}` +
     `,"public_state_sha256":${str(o.publicStateSha256)}` +
-    `,"shooters":{"A":${str(o.shooters.A)},"B":${str(o.shooters.B)}}` +
+    // 这里**不再**有 shooters：Rule Revision 3 §5 删除了每轮 Shooter Selection，
+    // Emitter 已上移到 public。REVEAL 现在只补障碍物这一项隐藏信息。
     `,"obstacles":[${obstacles}]}`;
 
   return { json, sha256: sha256Hex(json) };
@@ -186,7 +201,7 @@ export function verifyPublicState(publicStateJson: string, expectedSha256: strin
  * Preflight 的 decoy 地图种子（规范 §14 / §15）。
  *
  * Preflight 只是赛前冒烟测试，**绝不能**使用比赛种子 —— 否则双方算法在
- * Shooter 选择之前就看到了本轮真实的障碍物布局，等于开放的 preprocessing 窗口。
+ * REVEAL 之前就看到了本轮真实的障碍物布局，等于开放的 preprocessing 窗口。
  *
  * 由 `matchId` 派生：确定性（可测试）、每场不同、与操作员指定的 `seed` 无关。
  * 调用方仍需断言 `derivePreflightSeed(id) !== 比赛 seed`（见 MatchEngine.preflight）。

@@ -45,7 +45,6 @@ function input(): RunnerInput {
     matchId: 'RESULT-IPC',
     round: 1,
     publicStateSha256: pub.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: [],
   });
   return { publicJson: pub.json, revealJson: rev.json };

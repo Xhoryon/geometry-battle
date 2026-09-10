@@ -1,23 +1,27 @@
 /**
  * locked-attack-right —— START 之后双方获得本轮独立且不可撤销的攻击权
  *
- * V1.1 规则修订（Plans/Input/Geometry Battle V1.1 — Shooter Cancellation Rule
- * Amendment & Rebalance.md）§2/§3/§8/§9/§10/§17：
+ * 规则沿革：
+ *   - V1.0 / V1.1 Rev 1：先手击杀对方 Shooter ⇒ 对方本轮攻击被取消。
+ *   - V1.1 Rev 2：取消规则废止，改为「锁定攻击权」；Shooter 成为数学发射锚点，
+ *     但仍从每轮的存活点里选，仍可能被击杀。
+ *   - **V1.1 Rev 3（本文件对齐的版本）**：发射锚点变成**固定 Emitter** ——
+ *     整场不变、不可击杀、不是战斗点（§2–§4/§7）。因此「Shooter 死了攻击还打不打」
+ *     这个问题在 Rev 3 下**不再存在**：Emitter 不会死。
  *
- *   旧规则：先手击杀对方 Shooter ⇒ 对方本轮攻击被取消。
- *   新规则：Shooter 只是本轮攻击函数的**数学发射锚点**，不要求存活到攻击执行瞬间。
- *           攻击不执行的唯一原因是算法侧 TIMEOUT / INVALID / CRASH。
+ * 那这个套件还测什么？测**锁定攻击权的实质**：
+ *   - 双方合法函数都必须完成本轮攻击，不论对方这一轮打掉了什么；
+ *   - 攻击不执行的唯一原因是算法侧 TIMEOUT / INVALID / CRASH；
+ *   - 先手顺序由实测耗时决定，不是常量；
+ *   - 双方同时归零判 DRAW，不得因为谁是先手就判谁赢。
  *
- * 本套件取代旧的 `shooter-cancel`。旧套件里「因取消而必然成立」的断言按规则修订
- * §18 归类为 *obsolete due to authorized rule change*，逐条改写为新语义；
- * 与规则无关的覆盖（并列先手、方向约束）原样保留。
- *
- * 用例编号对应规则修订 §17 的 R1–R8。
+ * 「Emitter 不可击杀 / 不计入存活」这类**结构**断言在 `fixed-emitter` 套件里。
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { CanonicalNode, parseCanonicalDSL } from '../src/core/Ast';
+import { EMITTERS } from '../src/core/Rules';
 import { judgeShot } from '../src/core/Judge';
 import { MatchEngine, PointState, resolveOrderedShots } from '../src/core/Match';
 import { generateMapOrNull } from '../src/map/MapGenerator';
@@ -53,21 +57,6 @@ function mkPoint(id: string, team: 'A' | 'B', x: number, y: number): PointState 
   return { id, team, position: { x, y }, alive: true };
 }
 
-/** 找一个「A1 到 B1 的直线不被障碍物阻挡」的种子 */
-function findClearSeed(pointCount = 6): { seed: number; a: any; b: any; obstacles: any[] } {
-  for (let seed = 1; seed < 4000; seed++) {
-    const map = generateMapOrNull({ seed, pointCount, difficulty: 'easy' });
-    if (!map) continue;
-    const a = map.teamA[0];
-    const b = map.teamB[0];
-    const outcome = judgeShot(lineAst(a, b), a, 'A', [{ id: 'B1', position: b }], map.obstacles);
-    if (outcome.hits.includes('B1') && !outcome.blocked) {
-      return { seed, a, b, obstacles: map.obstacles };
-    }
-  }
-  throw new Error('未能找到 A1→B1 直线畅通的种子');
-}
-
 // ---------------------------------------------------------------------------
 // 内联算法包
 // ---------------------------------------------------------------------------
@@ -83,17 +72,14 @@ function writePkg(dir: string, source: string, name: string): string {
 }
 
 /**
- * 「瞄准存活敌人中 id 最小者画直线」——脚本化对局用。
+ * 「从固定 Emitter 瞄准存活敌人中 id 最小者画直线」——脚本化对局用。
  *
- * 双方用同一份代码：每一轮各自把对方的 Shooter 打成筛子，于是每轮双方各少一个点。
+ * 双方用同一份代码：每一轮各自打掉对方一个战斗点，于是双方同步衰减。
  */
 const AIM_LOWEST_ALIVE = `import json, os
 ${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
-with open(args.reveal, "r") as f:
-    reveal = json.load(f)
-by_id = {pt["id"]: pt for pt in public["points"]}
-me = by_id[reveal["shooters"][args.team]]
+me = public["emitters"][args.team]
 enemy = "B" if args.team == "A" else "A"
 targets = sorted((pt for pt in public["points"] if pt["team"] == enemy and pt["alive"]),
                  key=lambda pt: pt["id"])
@@ -121,10 +107,7 @@ emit({"type": "add", "args": [
 const TIMEOUT_IN_ROUND = `import json, os, time
 ${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
-with open(args.reveal, "r") as f:
-    reveal = json.load(f)
-by_id = {pt["id"]: pt for pt in public["points"]}
-me = by_id[reveal["shooters"][args.team]]
+me = public["emitters"][args.team]
 enemy = "B" if args.team == "A" else "A"
 targets = sorted((pt for pt in public["points"] if pt["team"] == enemy and pt["alive"]),
                  key=lambda pt: pt["id"])
@@ -148,10 +131,7 @@ emit({"type": "add", "args": [
 const INVALID_IN_ROUND = `import json, os
 ${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
-with open(args.reveal, "r") as f:
-    reveal = json.load(f)
-by_id = {pt["id"]: pt for pt in public["points"]}
-me = by_id[reveal["shooters"][args.team]]
+me = public["emitters"][args.team]
 if public.get("round", 0) != 0:
     emit({"type": "variable", "value": "y"})
 else:
@@ -160,6 +140,38 @@ else:
         {"type": "mul", "args": [{"type": "number", "value": 0.0},
                                  {"type": "variable", "value": "x"}]}]})
 `;
+
+
+/**
+ * 找一个「从固定 Emitter 出发的狙击线畅通且确实命中」的种子。
+ *
+ * 发射锚点改成常量之后，能否命中完全取决于该局的地图 —— 因此必须搜种子，
+ * 不能像旧版那样假定「A1→B1 直线」总有解。
+ */
+function findEmitterHitSeed(): number {
+  for (let seed = 1; seed < 20000; seed++) {
+    const map = generateMapOrNull({ seed, pointCount: 6, difficulty: 'easy' });
+    if (!map) continue;
+    const enemies = map.teamB.map((p, i) => ({ id: `B${i + 1}`, position: p }));
+    const out = judgeShot(lineAst(EMITTERS.A, map.teamB[0]), EMITTERS.A, 'A', enemies, map.obstacles);
+    if (!out.blocked && out.hits.includes('B1')) return seed;
+  }
+  throw new Error('未找到「Emitter A → B1」畅通且命中的种子');
+}
+
+/** 找一个「双方都能从各自 Emitter 命中对方」的种子（R6 之外的端到端用例用） */
+function findMutualHitSeed(): number {
+  for (let seed = 1; seed < 20000; seed++) {
+    const map = generateMapOrNull({ seed, pointCount: 6, difficulty: 'easy' });
+    if (!map) continue;
+    const ea = map.teamB.map((p, i) => ({ id: `B${i + 1}`, position: p }));
+    const eb = map.teamA.map((p, i) => ({ id: `A${i + 1}`, position: p }));
+    const oa = judgeShot(lineAst(EMITTERS.A, map.teamB[0]), EMITTERS.A, 'A', ea, map.obstacles);
+    const ob = judgeShot(lineAst(EMITTERS.B, map.teamA[0]), EMITTERS.B, 'B', eb, map.obstacles);
+    if (!oa.blocked && oa.hits.includes('B1') && !ob.blocked && ob.hits.includes('A1')) return seed;
+  }
+  throw new Error('未找到双方都能命中的种子');
+}
 
 // ---------------------------------------------------------------------------
 // 引擎驱动
@@ -199,112 +211,84 @@ async function playOneRound(
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
   engine.startMatch();
 
-  assert(engine.selectShooter('A', 'A1').ok, 'A1 应可被选中');
-  assert(engine.lockShooter('A').ok, 'A 应可锁定');
-  assert(engine.selectShooter('B', 'B1').ok, 'B1 应可被选中');
-  assert(engine.lockShooter('B').ok, 'B 应可锁定');
-
+  // Rule Revision 3 §5：没有任何选点/锁定动作，直接开一轮。
   const result = await engine.runRound();
   return { engine, result };
 }
 
 // ===========================================================================
-// R1 —— 先手击杀对方 Shooter，已有合法解的后手仍然开火
+// R1 —— 先手打掉对方一个战斗点，后手的攻击照样执行（结构性）
 // ===========================================================================
 
-test('R1: 先手击杀对方 Shooter 后，后手仍然开火（结构性）', () => {
-  // 旧的 P2-B 用例断言的是反面（「守卫必须可达」）。规则修订后守卫本身已删除，
-  // 这条回归锁的是新语义：Shooter 死了，攻击照打。
+test('R1: 先手打掉对方战斗点后，后手的攻击仍然执行（结构性）', () => {
   const points = [mkPoint('A1', 'A', -10, 0), mkPoint('B1', 'B', 10, 0), mkPoint('B2', 'B', 15, 5)];
-  const shooters = { A: points[0], B: points[1] };
   const r = resolveOrderedShots({
     order: ['A', 'B'],
     simultaneous: false,
     points,
-    shooters,
     ast: {
-      A: lineAst({ x: -10, y: 0 }, { x: 10, y: 0 }), // A 命中 B1（B 的 Shooter）
-      B: lineAst({ x: 10, y: 0 }, { x: -10, y: 0 }), // B 命中 A1
+      A: lineAst(EMITTERS.A, { x: 10, y: 0 }), // A 命中 B1
+      B: lineAst(EMITTERS.B, { x: -10, y: 0 }), // B 命中 A1
     },
     obstacles: [],
+    emitters: { A: EMITTERS.A, B: EMITTERS.B },
   });
 
   assert(r.shots.A !== null, '先手方必须完成射击');
-  assert(r.killed.includes('B1'), 'A 的射击必须击杀 B 的 Shooter');
-  assertEqual(
-    r.shooterAliveAtAttack.B,
-    false,
-    '前提：B 攻击执行时它的 Shooter 已经死了'
-  );
+  assert(r.killed.includes('B1'), 'A 的射击必须击杀 B1');
   assert(
     r.shots.B !== null,
-    'Shooter 在攻击执行前被击杀 **不再**取消本队的攻击 —— B 必须开火'
+    '先手打掉了对方一个点 **不再**影响对方本轮的攻击 —— B 必须开火'
   );
   assert(r.killed.includes('A1'), 'B 的攻击必须真的落地（命中 A1），而不是被跳过');
   assertEqual(points.find((p) => p.id === 'B2')!.alive, true, 'B2 不在弹道上，不应被误杀');
 });
 
-// ===========================================================================
-// R5（结构性）—— 双方 Shooter 互杀，两次攻击都结算
-// ===========================================================================
-
-test('R5: 双方 Shooter 互相击杀时，两次攻击都结算', () => {
+test('R5: 双方互相击杀时，两次攻击都结算', () => {
   const points = [mkPoint('A1', 'A', -10, 0), mkPoint('B1', 'B', 10, 0)];
   const r = resolveOrderedShots({
     order: ['A', 'B'],
     simultaneous: false,
     points,
-    shooters: { A: points[0], B: points[1] },
     ast: {
-      A: lineAst({ x: -10, y: 0 }, { x: 10, y: 0 }),
-      B: lineAst({ x: 10, y: 0 }, { x: -10, y: 0 }),
+      A: lineAst(EMITTERS.A, { x: 10, y: 0 }),
+      B: lineAst(EMITTERS.B, { x: -10, y: 0 }),
     },
     obstacles: [],
+    emitters: { A: EMITTERS.A, B: EMITTERS.B },
   });
 
   assert(r.shots.A !== null && r.shots.B !== null, '双方都必须开火');
-  assertEqual([...r.killed].sort(), ['A1', 'B1'], '两边的 Shooter 都应阵亡');
-  assertEqual(r.shooterAliveAtAttack.A, true, '先手开火时自己的 Shooter 还活着');
-  assertEqual(r.shooterAliveAtAttack.B, false, '后手开火时它的 Shooter 已被击杀');
-  assertEqual(points.filter((p) => p.alive).length, 0, '双方点数都应归零');
+  assertEqual([...r.killed].sort(), ['A1', 'B1'], '两边的战斗点都应阵亡');
+  assertEqual(points.filter((p) => p.alive).length, 0, '双方战斗点都应归零');
 });
 
 // ===========================================================================
-// R2 —— 先手击杀对方 Shooter，后手稍后才返回合法解，仍然开火（端到端）
+// R2 —— 后手慢一拍交卷，仍然开火（端到端）
 // ===========================================================================
 
-test('R2: 后手在其 Shooter 阵亡后才返回合法解 —— 仍然开火', async () => {
-  const clear = findClearSeed();
-  const { result } = await playOneRound('LOCKED-R2', clear.seed, SNIPER, SLOW_SNIPER);
+test('R2: 后手较晚才交出合法解 —— 仍然开火', async () => {
+  const { result } = await playOneRound('LOCKED-R2', findMutualHitSeed(), SNIPER, SLOW_SNIPER);
 
   assertEqual(result.firstSolver, 'A', 'A（立即求解）应是先手');
-  assert(result.hits.A.includes('B1'), `A 应命中 B1，实际 [${result.hits.A.join(',')}]`);
-  assert(result.killed.includes('B1'), 'B1 应被击杀');
-
+  assert(result.killed.length > 0, `先手应至少击杀一个战斗点，实际 [${result.killed.join(',')}]`);
   assertEqual(result.log.attacksExecuted, ['A', 'B'], '两次攻击都必须执行');
-  assertEqual(
-    result.log.shooterAliveAtAttack.B,
-    false,
-    '日志必须能证明 B 开火时它的 Shooter 已经死了'
-  );
   assert(result.hits.B.length > 0, `B 的攻击必须落到实地，实际 [${result.hits.B.join(',')}]`);
-  assertEqual(result.cancelled.B, false, '规则修订后不存在取消');
+  assertEqual(result.cancelled.B, false, 'Rev 2 起不存在取消；Rev 3 下 Emitter 根本不会死');
   assertEqual(result.log.cancelledB, false, '日志中 B 也不得被记成取消');
   assert(result.log.result !== 'CANCELLED_B', '结果码不得再出现 CANCELLED_B');
 });
 
 // ===========================================================================
-// R3 —— 先手击杀对方 Shooter，后手超时 → 不攻击，原因是 TIMEOUT 不是 CANCELLED
+// R3 —— 后手超时 → 不攻击，原因是 TIMEOUT 不是 CANCELLED
 // ===========================================================================
 
 test('R3: 后手超时 —— 不攻击，原因是 TIMEOUT 而不是 CANCELLED', async () => {
-  const clear = findClearSeed();
   const root = tmpDir('locked-r3');
   const slowPkg = writePkg(path.join(root, 'slow'), TIMEOUT_IN_ROUND, 'timeout-in-round');
 
-  const { result } = await playOneRound('LOCKED-R3', clear.seed, SNIPER, slowPkg, 2000);
+  const { result } = await playOneRound('LOCKED-R3', findEmitterHitSeed(), SNIPER, slowPkg, 2000);
 
-  assert(result.killed.includes('B1'), '先手仍应击杀 B 的 Shooter');
   assertEqual(result.log.bErrorCode, 'TIMEOUT', 'B 的错误码必须是 TIMEOUT');
   assertEqual(result.log.result, 'TIMEOUT_B', '回合结果码必须是 TIMEOUT_B');
   assertEqual(result.cancelled.B, false, 'TIMEOUT 绝不能被记成取消');
@@ -314,17 +298,15 @@ test('R3: 后手超时 —— 不攻击，原因是 TIMEOUT 而不是 CANCELLED'
 });
 
 // ===========================================================================
-// R4 —— 先手击杀对方 Shooter，后手输出非法 → 不攻击
+// R4 —— 后手输出非法 → 不攻击
 // ===========================================================================
 
 test('R4: 后手输出非法 —— 不攻击，且不是取消', async () => {
-  const clear = findClearSeed();
   const root = tmpDir('locked-r4');
   const badPkg = writePkg(path.join(root, 'bad'), INVALID_IN_ROUND, 'invalid-in-round');
 
-  const { result } = await playOneRound('LOCKED-R4', clear.seed, SNIPER, badPkg);
+  const { result } = await playOneRound('LOCKED-R4', findEmitterHitSeed(), SNIPER, badPkg);
 
-  assert(result.killed.includes('B1'), '先手仍应击杀 B 的 Shooter');
   assertEqual(result.log.result, 'INVALID_B', '回合结果码必须是 INVALID_B');
   assertEqual(result.cancelled.B, false, 'INVALID 绝不能被记成取消');
   assert(result.log.result !== 'CANCELLED_B', 'INVALID ≠ 取消');
@@ -333,41 +315,65 @@ test('R4: 后手输出非法 —— 不攻击，且不是取消', async () => {
 });
 
 // ===========================================================================
-// R5 + R6 端到端 —— 脚本化对局：每轮双方 Shooter 互杀，最终同归于尽 → 平局
+// VER-1（Re-Gate Cycle 2 记录的洞）—— 先手顺序必须由**实测耗时**决定
+// ===========================================================================
+
+test('VER-1: A 慢 B 快时，先手必须是 B（先手顺序不是常量）', async () => {
+  // 负向回归：此前套件里 A 用的算法天然更快，因此「先手恒为 A」的实现也能全绿
+  // （Re-Gate Cycle 2 VER-1 记录的逃逸）。这里把慢的放在 A 位，先手必须翻过来。
+  const root = tmpDir('locked-ver1');
+  const slowSrc = AIM_LOWEST_ALIVE.replace('import json, os\n', 'import json, os, time\ntime.sleep(0.25)\n');
+  const slow = writePkg(path.join(root, 'slow'), slowSrc, 'slow-a');
+  const fast = writePkg(path.join(root, 'fast'), AIM_LOWEST_ALIVE, 'fast-b');
+
+  const { result } = await playOneRound('LOCKED-VER1', 880011, slow, fast);
+
+  assertEqual(result.firstSolver, 'B', 'A 慢 B 快时先手必须是 B —— 先手不是常量');
+  assertEqual(
+    result.log.attacksExecuted[0],
+    'B',
+    `实际执行顺序必须由先手开始，实际 [${result.log.attacksExecuted.join(',')}]`
+  );
+  assert(result.log.aTimeMs !== null && result.log.bTimeMs !== null, '双方都应有实测耗时');
+  assert(
+    (result.log.bTimeMs as number) < (result.log.aTimeMs as number),
+    `B 的耗时必须显著更短：A=${result.log.aTimeMs}ms B=${result.log.bTimeMs}ms`
+  );
+});
+
+// ===========================================================================
+// R6 端到端 —— 脚本化对局：每轮双方各掉一个点，最终同归于尽 → 平局
 // ===========================================================================
 
 /**
- * 找一个种子，使「A_k 打 B_k、B_k 打 A_k」（k = 1..6）全部弹道畅通、
+ * 找一个种子，使「从固定 Emitter 到每个敌方战斗点的直线」全部畅通、
  * 且**恰好**只命中目标本身（不顺手多杀）。
  *
- * 这样每一轮双方各损失一个点，第 6 轮结束后双方同时归零 ——
- * 确定性的 MUTUAL_ELIMINATION 局面，不依赖运气。
+ * 发射锚点是常量（±18, 0），因此这里的几何比对旧版简单得多：
+ * 只要每个方向上的射线不穿过第二个点即可。
  */
-function findScriptedSeed(): { seed: number; map: any } {
-  for (let seed = 1; seed < 8000; seed++) {
+function findScriptedSeed(): number {
+  for (let seed = 1; seed < 20000; seed++) {
     const map = generateMapOrNull({ seed, pointCount: 6, difficulty: 'easy' });
     if (!map) continue;
     let ok = true;
     for (let k = 0; k < 6 && ok; k++) {
-      const a = map.teamA[k];
-      const b = map.teamB[k];
       const enemyOfA = map.teamB.slice(k).map((p, i) => ({ id: `B${k + i + 1}`, position: p }));
       const enemyOfB = map.teamA.slice(k).map((p, i) => ({ id: `A${k + i + 1}`, position: p }));
-      const ra = judgeShot(lineAst(a, b), a, 'A', enemyOfA, map.obstacles);
-      const rb = judgeShot(lineAst(b, a), b, 'B', enemyOfB, map.obstacles);
+      const ra = judgeShot(lineAst(EMITTERS.A, map.teamB[k]), EMITTERS.A, 'A', enemyOfA, map.obstacles);
+      const rb = judgeShot(lineAst(EMITTERS.B, map.teamA[k]), EMITTERS.B, 'B', enemyOfB, map.obstacles);
       if (ra.blocked || rb.blocked) ok = false;
       else if (ra.hits.length !== 1 || ra.hits[0] !== `B${k + 1}`) ok = false;
       else if (rb.hits.length !== 1 || rb.hits[0] !== `A${k + 1}`) ok = false;
     }
-    if (ok) return { seed, map };
+    if (ok) return seed;
   }
   throw new Error('未找到可用于同归于尽脚本的种子');
 }
 
 test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW', async () => {
-  const { seed } = findScriptedSeed();
-  const root = tmpDir('locked-r6');
-  const pkg = writePkg(path.join(root, 'aim-lowest'), AIM_LOWEST_ALIVE, 'aim-lowest');
+  const seed = findScriptedSeed();
+  const pkg = writePkg(path.join(tmpDir('locked-r6'), 'aim-lowest'), AIM_LOWEST_ALIVE, 'aim-lowest');
 
   const engine = makeEngine({ matchId: 'LOCKED-R6', seed });
   assert(engine.upload('A', pkg).ok, 'A 应能上传');
@@ -378,41 +384,23 @@ test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW'
 
   const rounds: Awaited<ReturnType<MatchEngine['runRound']>>[] = [];
   for (let k = 1; k <= 6; k++) {
-    assert(engine.selectShooter('A', `A${k}`).ok, `第 ${k} 轮 A${k} 应可被选中`);
-    assert(engine.lockShooter('A').ok, `第 ${k} 轮 A 应可锁定`);
-    assert(engine.selectShooter('B', `B${k}`).ok, `第 ${k} 轮 B${k} 应可被选中`);
-    assert(engine.lockShooter('B').ok, `第 ${k} 轮 B 应可锁定`);
+    // 没有任何选点动作 —— 每轮直接跑（Rule Revision 3 §5）
     rounds.push(await engine.runRound());
   }
 
-  // 每一轮：双方 Shooter 互杀、两次攻击都落地（R5 的事实基础）
   for (const r of rounds) {
-    // 先手顺序由实测耗时决定，两种顺序都合法 —— 只要求「两次都执行」
     assertEqual(
       [...r.log.attacksExecuted].sort(),
       ['A', 'B'],
       `第 ${r.round} 轮两次攻击都必须执行，实际 [${r.log.attacksExecuted.join(',')}]`
     );
-    assert(r.killed.includes(r.shooterA), `第 ${r.round} 轮 A 的 Shooter 应阵亡`);
-    assert(r.killed.includes(r.shooterB), `第 ${r.round} 轮 B 的 Shooter 应阵亡`);
-    if (r.firstSolver !== 'tie') {
-      const second = r.log.attacksExecuted[1];
-      assertEqual(
-        r.log.shooterAliveAtAttack[second],
-        false,
-        `第 ${r.round} 轮：后手 ${second} 开火时它的 Shooter 已被先手击杀`
-      );
-    }
+    assertEqual(r.killed.length, 2, `第 ${r.round} 轮双方应各掉一个点，实际 [${r.killed.join(',')}]`);
   }
 
   const last = rounds[rounds.length - 1];
   assertEqual(last.aliveAfter, { A: 0, B: 0 }, '第 6 轮结束后双方都应归零');
   assertEqual(last.mutualElimination, true, '该轮必须被标记为同归于尽');
-  assertEqual(
-    last.winner,
-    'draw',
-    '同归于尽必须判平局 —— 不得因为 A 是先手就把胜利判给 A'
-  );
+  assertEqual(last.winner, 'draw', '同归于尽必须判平局 —— 不得因为 A 是先手就判 A 胜');
   assertEqual(engine.getWinner(), 'draw', '最终胜者必须是 draw');
   assertEqual(engine.endReason(), 'MUTUAL_ELIMINATION', '结束原因必须是 MUTUAL_ELIMINATION');
   assertEqual(engine.getMatchLog().endReason, 'MUTUAL_ELIMINATION', '落盘日志必须记录结束原因');
@@ -420,47 +408,23 @@ test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW'
 });
 
 // ===========================================================================
-// R7 —— 本轮阵亡的 Shooter 下一轮不可再选
+// R8 —— 每轮锚点恒为同一 Emitter：没有第二次计算，也没有重选
 // ===========================================================================
 
-test('R7: 本轮阵亡的 Shooter 下一轮不可再被选中', async () => {
-  const clear = findClearSeed();
-  const { engine } = await playOneRound('LOCKED-R7', clear.seed, SNIPER, SLOW_SNIPER);
+test('R8: 每轮的发射锚点都是同一个固定 Emitter（不重选、不重算）', async () => {
+  const { engine, result } = await playOneRound('LOCKED-R8', findEmitterHitSeed(), SNIPER, SLOW_SNIPER);
+
+  assertEqual(result.emitterA, 'A0', 'A 的锚点标识整场固定');
+  assertEqual(result.emitterB, 'B0', 'B 的锚点标识整场固定');
+  assertEqual(result.log.emitterA, 'A0', '日志必须记录同一个锚点');
 
   const snap = engine.getSnapshot();
-  const b1 = snap.points.find((p) => p.id === 'B1');
-  assert(b1 && !b1.alive, 'B1 应已被击杀');
-  assertEqual(snap.shooters.B, null, '规则修订不引入同轮/自动替换 —— 下一轮必须重新人工选点');
+  assertEqual(snap.emitters!.A.position, EMITTERS.A, '锚点坐标必须等于全局常量');
+  assertEqual(snap.emitters!.B.position, EMITTERS.B, '锚点坐标必须等于全局常量');
 
-  if (snap.phase !== 'MATCH_END') {
-    const r = engine.selectShooter('B', 'B1');
-    assert(!r.ok, '已死亡的 B1 不应能被选为 Shooter');
-  }
-});
-
-// ===========================================================================
-// R8 —— 同轮不进行 Shooter Replacement
-// ===========================================================================
-
-test('R8: Shooter 阵亡后本轮不做任何替换（不重选、不重算）', async () => {
-  const clear = findClearSeed();
-  const { result } = await playOneRound('LOCKED-R8', clear.seed, SNIPER, SLOW_SNIPER);
-
-  assertEqual(result.shooterB, 'B1', 'B 本轮用的必须仍是 START 快照里的 Shooter');
-  assertEqual(result.log.shooterB, 'B1', '日志必须记录 START 时的 Shooter');
-  assertEqual(
-    result.log.shooterAliveAtAttack.B,
-    false,
-    '前提：B 开火时 B1 已阵亡 —— 即便如此也没有换人'
-  );
-  // 单轮单次计算：B 的耗时仍是它第一次计算的耗时，不存在第二次计算
+  // 单轮单次计算：只有一个耗时记录，输入哈希也只有一份
   assert(result.computeTimeMs.B !== null, 'B 仍只有一次计算的耗时记录');
-  // 没有第二次计算 ⇒ 没有第二次输入的哈希，本轮 public/reveal 只有一份
-  assertEqual(
-    result.log.publicStateHash,
-    result.publicStateHash,
-    '本轮输入必须仍是那一份冻结字节'
-  );
+  assertEqual(result.log.publicStateHash, result.publicStateHash, '本轮输入必须仍是那一份冻结字节');
 });
 
 // ===========================================================================
@@ -473,20 +437,15 @@ test('并列先手时双方基于同一快照同时开火', () => {
     order: ['A', 'B'],
     simultaneous: true,
     points,
-    shooters: { A: points[0], B: points[1] },
     ast: {
-      A: lineAst({ x: -10, y: 0 }, { x: 10, y: 0 }),
-      B: lineAst({ x: 10, y: 0 }, { x: -10, y: 0 }),
+      A: lineAst(EMITTERS.A, { x: 10, y: 0 }),
+      B: lineAst(EMITTERS.B, { x: -10, y: 0 }),
     },
     obstacles: [],
+    emitters: { A: EMITTERS.A, B: EMITTERS.B },
   });
   assert(r.shots.A !== null && r.shots.B !== null, '并列先手时双方都必须开火');
   assert(r.killed.includes('A1') && r.killed.includes('B1'), '双方都应被击杀');
-  assertEqual(
-    r.shooterAliveAtAttack,
-    { A: true, B: true },
-    '并列先手都基于开战前快照 —— 双方开火时各自 Shooter 都还活着'
-  );
   assertEqual(points.filter((p) => p.alive).length, 0, '击杀在双方都结算后统一应用');
 });
 

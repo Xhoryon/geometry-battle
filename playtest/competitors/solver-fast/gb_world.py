@@ -49,8 +49,14 @@ def build_world(team, public, reveal):
         if isinstance(pid, str):
             by_id[pid] = p
 
+    # ---- Rule Revision 3 I/O 适配（唯一改动）----
+    # 发射锚点从「reveal.shooters 里的 id → 查 public.points」改成
+    # 「public.emitters 直接给坐标」。策略 / 搜索 / 打分一律未改。
+    # `shooters` 仍按旧字段读，因此在新输入下恒为空 →
+    # `enemy_shooter_id` 恒为 None，即「刺杀敌方 Shooter」的加成分支自然失效
+    # （Revision 3 下 Emitter 不可击杀、也不在 points 里，本就无此目标）。
     shooters = reveal.get("shooters") or {}
-    me = by_id.get(shooters.get(team))
+    me = (public.get("emitters") or {}).get(team)
     if me is None:
         return None
     xs = float(me["x"])

@@ -66,7 +66,7 @@ function writeRoundGatedPackage(dir: string, name: string, payloadExpr: string):
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
-y0 = by_id[reveal["shooters"][args.team]]["y"]
+y0 = public["emitters"][args.team]["y"]
 if public.get("round", 0) == 0:
     emit({"type": "number", "value": y0})
 else:
@@ -99,7 +99,7 @@ function writeHarmlessPackage(dir: string): void {
 with open(args.reveal, "r") as f:
     reveal = json.load(f)
 by_id = {pt["id"]: pt for pt in public["points"]}
-y0 = by_id[reveal["shooters"][args.team]]["y"]
+y0 = public["emitters"][args.team]["y"]
 emit({"type": "number", "value": y0})
 `
   );
@@ -136,10 +136,6 @@ async function runOneRoundWith(
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
 
   assert(engine.startMatch().ok, 'startMatch 应成功');
-  assert(engine.selectShooter('A', 'A1').ok, 'A1 应可被选中');
-  assert(engine.lockShooter('A').ok, 'A 应可锁定');
-  assert(engine.selectShooter('B', 'B1').ok, 'B1 应可被选中');
-  assert(engine.lockShooter('B').ok, 'B 应可锁定');
   assert(engine.judgeStartRound().ok, '应可 START ROUND');
 
   const result = await engine.runRound();

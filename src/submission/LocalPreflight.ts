@@ -117,14 +117,15 @@ async function checkOneTeam(
   dir: string,
   inspection: PackageInspection,
   input: { publicJson: string; revealJson: string },
-  world: { teamA: { x: number; y: number }[]; teamB: { x: number; y: number }[] },
+  world: { emitters: { A: { x: number; y: number }; B: { x: number; y: number } } },
   opts: Required<Pick<LocalPreflightOptions, 'timeoutMs' | 'memoryLimitMb'>> & {
     sandboxRoot: string;
     denyReadPaths: string[];
   }
 ): Promise<LocalCheck[]> {
   const checks: LocalCheck[] = [];
-  const shooter = team === 'A' ? world.teamA[0] : world.teamB[0];
+  // 发射锚点是固定 Emitter（Rule Revision 3 §4），不是「本队第一个点」。
+  const shooter = world.emitters[team];
 
   const sandbox = prepareSandbox({
     sandboxRoot: opts.sandboxRoot,
@@ -235,7 +236,7 @@ async function checkOneTeam(
         checks.push(
           pass(
             'Function legality',
-            `f(${fmt(shooter.x)}) = ${fmt(shooter.y)}（Shooter 残差 ${legality.metrics.shooterResidual.toExponential(2)}），` +
+            `f(${fmt(shooter.x)}) = ${fmt(shooter.y)}（Emitter 残差 ${legality.metrics.shooterResidual.toExponential(2)}），` +
               `凸性变号 ${legality.metrics.convexityChanges}，采样 ${legality.metrics.sampleCount} 点`
           )
         );
@@ -348,13 +349,13 @@ export async function validateSubmission(
     const publicState = buildPublicState({
       matchId: `local-preflight-${process.pid}`,
       round: 0,
+      emitters: { A: map.emitterA, B: map.emitterB },
       points,
     });
     const revealState = buildRevealState({
       matchId: `local-preflight-${process.pid}`,
       round: 0,
       publicStateSha256: publicState.sha256,
-      shooters: { A: 'A1', B: 'B1' },
       obstacles: map.obstacles,
     });
 
@@ -363,7 +364,7 @@ export async function validateSubmission(
       target,
       inspection,
       { publicJson: publicState.json, revealJson: revealState.json },
-      { teamA: map.teamA, teamB: map.teamB },
+      { emitters: { A: map.emitterA, B: map.emitterB } },
       { timeoutMs, memoryLimitMb, sandboxRoot, denyReadPaths }
     );
     checks.push(...runChecks);

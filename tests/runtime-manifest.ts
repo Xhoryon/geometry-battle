@@ -150,7 +150,6 @@ os.replace(tmp, args.output)
     matchId: 'RUNTIME-MANIFEST',
     round: 0,
     publicStateSha256: publicState.sha256,
-    shooters: { A: 'A1', B: 'B1' },
     obstacles: [],
   });
 

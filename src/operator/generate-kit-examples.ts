@@ -82,19 +82,10 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
   const started = engine.startMatch();
   if (!started.ok) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
 
-  // 人工选点：双方各选自己的第一个存活点（与操作台行为一致）
-  const snap0 = engine.getSnapshot();
-  for (const team of ['A', 'B'] as const) {
-    const pick = snap0.points.find((p) => p.team === team && p.alive);
-    if (!pick) throw new Error(`${team} 没有可用点`);
-    const sel = engine.selectShooter(team, pick.id);
-    if (!sel.ok) throw new Error(`选择 Shooter 失败: ${sel.error}`);
-    const lock = engine.lockShooter(team);
-    if (!lock.ok) throw new Error(`锁定失败: ${lock.error}`);
-  }
-
-  // 锁定之后、START 之前的快照 = 本轮输入的真实来源
+  // Rule Revision 3 §5：每轮不再有人工选点。发射锚点是固定的 Emitter，
+  // 因此这里直接取第一次 beginRound 之后的快照作为本轮输入的真实来源。
   const snap = engine.getSnapshot();
+  if (!snap.emitters) throw new Error('引擎未提供固定 Emitter');
   const judge = engine.judgeStartRound();
   if (!judge.ok) throw new Error(`START ROUND 失败: ${judge.error}`);
   const round = await engine.runRound();
@@ -107,12 +98,16 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
     y: p.position.y,
     alive: p.alive,
   }));
-  const publicState = buildPublicState({ matchId: KIT_EXAMPLE_MATCH_ID, round: 1, points });
+  const publicState = buildPublicState({
+    matchId: KIT_EXAMPLE_MATCH_ID,
+    round: 1,
+    emitters: { A: snap.map!.emitterA, B: snap.map!.emitterB },
+    points,
+  });
   const revealState = buildRevealState({
     matchId: KIT_EXAMPLE_MATCH_ID,
     round: 1,
     publicStateSha256: publicState.sha256,
-    shooters: { A: snap.shooters.A!.id, B: snap.shooters.B!.id },
     obstacles: snap.map!.obstacles,
   });
 
@@ -159,12 +154,8 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
     if (!dsl.ok || !dsl.ast) {
       throw new Error(`例子 DSL 不合法: ${dsl.issues.map((i) => i.code).join(',')}`);
     }
-    const shooter = points.find((p) => p.id === snap.shooters[team]!.id)!;
-    const legality = validateAttackFunction(
-      dsl.ast,
-      firingDomain(shooter.x, team),
-      { x: shooter.x, y: shooter.y }
-    );
+    const emitter = snap.emitters![team].position;
+    const legality = validateAttackFunction(dsl.ast, firingDomain(emitter.x, team), emitter);
     if (!legality.valid) {
       throw new Error(`例子函数不合法: ${legality.issues.map((i) => i.code).join(',')}`);
     }

@@ -196,7 +196,7 @@ if __name__ == "__main__":
             args = parse_args(sys.argv[1:])
             public, reveal, _d = load_inputs(args["public"], args["reveal"])
             by_id = {p.get("id"): p for p in public.get("points", [])}
-            me = by_id.get((reveal.get("shooters") or {}).get(args["team"]))
+            me = (public.get("emitters") or {}).get(args["team"])
             ys = float(me["y"]) if me else 0.0
             emit(args["output"], {"type": "number", "value": ys})
         except BaseException:

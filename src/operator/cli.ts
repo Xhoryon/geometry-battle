@@ -11,8 +11,11 @@
  *   P1-A  产物只在整场结束后一次性落盘 → 开赛后、每回合后、异常退出前都落盘
  *
  * 工作人员只用本入口即可完成一整场比赛：
- *   上传 → Preflight → 开始比赛 →（每轮）PRE-REVEAL 板 → 选择 Shooter → 锁定 →
- *   REVEAL 板 → 裁判 START → 计算 → 结算 → 下一轮 → 胜者 → 落盘
+ *   上传 → Preflight → 开始比赛 →（每轮）PUBLIC 板 → REVEAL 板 → 裁判 START →
+ *   计算 → 结算 → 下一轮 → 终局 → 落盘
+ *
+ * Rule Revision 3 §5：每轮的 Shooter Selection 已删除，因此回合循环里
+ * **不再有任何人工选点步骤**；发射锚点是整场固定的 Emitter。
  *
  * V1.1 三段式：REVEAL 与 START 是两个独立事件，中间可以停任意久；
  * 在裁判按下 START 之前，参赛代码一行都不会执行（规范 §14/§15/§17/§18）。
@@ -29,13 +32,16 @@
  *
  * 选项:
  *   --slots <dir>         算法槽位根目录（默认 <repo>/algorithms）
- *   --max-rounds <n>      最大回合数（默认 50；僵持时停止并报告未决）
+ *   --max-rounds <n>      操作台侧的兜底回合上限（默认 = 引擎的硬上限 60）。
+ *                         **正式终止由引擎保证**：Stalemate / 硬上限 / 全灭都会
+ *                         在引擎内收尾（Rule Revision 3 §16/§17），这个参数只是
+ *                         防止操作台在异常情形下无限循环。
  *   --seed <n>            指定地图种子
  *   --points <6..10>      双方点数（默认 8）
  *   --difficulty <lvl>    easy | medium | hard（默认 medium）
  *   --artifacts <dir>     产物目录（默认 ./artifacts）
- *   --timeout <ms>        单次计算超时（默认 2000）
- *   --auto                无人值守：自动选择每队第一个存活点
+ *   --timeout <ms>        单次计算超时（默认 500，Rule Revision 3 §11）
+ *   --auto                无人值守：跳过所有回车等待（不再有选点动作）
  *   --replay <dir>        只读回放已落盘的比赛（不重跑算法）
  */
 
@@ -43,6 +49,7 @@ import * as path from 'path';
 import * as readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { MatchEngine, PLATFORM_ROOT } from '../core/Match';
+import { COMPUTE_TIMEOUT_MS, HARD_ROUND_LIMIT, STALEMATE_NO_PROGRESS_LIMIT } from '../core/Rules';
 import { loadReplay, persistArtifacts } from '../core/Logs';
 import { MatchSetupUI } from '../ui/MatchSetupUI';
 import { AudienceScreenUI } from '../ui/AudienceScreenUI';
@@ -77,8 +84,10 @@ function parseArgs(argv: string[]): CliOptions {
     difficulty: 'medium',
     artifacts: path.join(process.cwd(), 'artifacts'),
     slots: path.join(PLATFORM_ROOT, 'algorithms'),
-    maxRounds: 50,
-    timeout: 2000,
+    // 兜底上限默认与**引擎的硬上限**一致：正式终止条件在引擎里
+    // （Rule Revision 3 §16/§17），这里只防操作台无限循环。
+    maxRounds: HARD_ROUND_LIMIT,
+    timeout: COMPUTE_TIMEOUT_MS,
     auto: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -108,7 +117,7 @@ function printHelp(): void {
 
   npx ts-node src/operator/cli.ts [--a <pkgA>] [--b <pkgB>] [--slots <dir>]
                                   [--seed n] [--points 8] [--difficulty medium]
-                                  [--max-rounds 50] [--auto] [--artifacts dir]
+                                  [--max-rounds 60] [--auto] [--artifacts dir]
   npx ts-node src/operator/cli.ts --replay <artifactDir>
 
   不给 --a/--b 时直接使用固定槽位 algorithms/team-a|team-b 中的算法。`);
@@ -122,24 +131,23 @@ function replayOnly(dir: string): void {
       const frame = replay.frames[index];
       if (!frame) return;
       console.log(`\n── ROUND ${frame.round} ──`);
-      console.log(`  Shooter A=${frame.shooterA?.id ?? '-'}  B=${frame.shooterB?.id ?? '-'}`);
+      console.log(
+        `  Emitter A=${frame.emitters?.A.id ?? '-'}  B=${frame.emitters?.B.id ?? '-'}  (fixed for the match)`
+      );
       console.log(`  f_A(x) = ${frame.functionMathA ?? '(invalid)'}`);
       console.log(`  f_B(x) = ${frame.functionMathB ?? '(invalid)'}`);
       console.log(`  t_A=${frame.timerA?.toFixed(3) ?? '-'}ms  t_B=${frame.timerB?.toFixed(3) ?? '-'}ms  first=${frame.firstSolver}`);
       console.log(`  hits A=[${frame.hitsA.map((h) => h.id).join(',')}] B=[${frame.hitsB.map((h) => h.id).join(',')}]`);
       console.log(`  killed=[${frame.killed.join(',')}]`);
       console.log(`  attacks executed: [${frame.attacksExecuted.join(' -> ')}]`);
-      for (const t of frame.attacksExecuted) {
-        const alive = frame.shooterAliveAtAttack[t];
-        console.log(
-          `    ${t} fired with shooter ${alive ? 'alive' : 'ELIMINATED (locked attack right — shot not cancelled)'}`
-        );
-      }
       if (frame.mutualElimination) console.log('  *** MUTUAL ELIMINATION — both teams at zero ***');
+      if (frame.endReason === 'STALEMATE') console.log('  *** STALEMATE — no progress within the limit ***');
+      if (frame.endReason === 'HARD_ROUND_LIMIT') console.log('  *** HARD ROUND LIMIT reached ***');
       if (frame.cancelledA || frame.cancelledB) {
         console.log(`  runner cancelled (historical field): A=${frame.cancelledA} B=${frame.cancelledB}`);
       }
-      console.log(`  alive after: ${frame.aliveAfter.map((p) => p.id).join(',') || '(none)'}`);
+      console.log(`  alive combat points after: ${frame.aliveAfter.map((p) => p.id).join(',') || '(none)'}`);
+      console.log(`  no-progress streak: ${frame.noProgressStreak}`);
     },
   };
   console.log(`═══ REPLAY ${replay.matchId} — winner ${replay.winner.toUpperCase()} (${replay.frames.length} rounds) ═══`);
@@ -237,35 +245,24 @@ async function main(): Promise<void> {
 
     let played = 0;
     let stalemate = false;
-    while (engine.getWinner() === null) {
+    // 终止条件来自**引擎**：全灭 / 同归于尽 / Stalemate / 硬上限
+    // （Rule Revision 3 §17）。`getWinner()` 只在有点数归零时给结论，
+    // 因此必须同时看 `endReason()` —— 否则 Stalemate 判和之后循环不会退出。
+    while (engine.getWinner() === null && engine.endReason() === 'NONE') {
       if (played >= opts.maxRounds) {
         stalemate = true;
         break;
       }
       played++;
-      // ---- 1. PRE-REVEAL：生成 public_state.json，算法进程不存在（规范 §14/§15）----
+      // ---- 1. PUBLIC：生成 public_state.json，算法进程不存在（规范 §14/§15）----
       const pre = engine.beginRound();
       console.log('\n' + audience.renderPreRevealBoard(engine.getSnapshot()));
       console.log(`  public_state.json  sha256 = ${pre.publicStateHash}`);
 
-      for (const team of ['A', 'B'] as const) {
-        const ctrl = controllers[team];
-        const alive = ctrl.getAliveShooters();
-        let choice: string;
-        if (opts.auto) {
-          choice = alive[0].id;
-          console.log(`\nTeam ${team} 自动选择: ${choice}`);
-        } else {
-          console.log('\n' + ctrl.renderSelectionUI());
-          choice = await ask(`Team ${team} 选择 Shooter (点 id): `);
-        }
-        const sel = ctrl.selectShooter(choice);
-        if (!sel.success) throw new Error(`Team ${team} 选择失败: ${sel.error}`);
-        const lock = ctrl.lockShooter();
-        if (!lock.success) throw new Error(`Team ${team} 锁定失败: ${lock.error}`);
-      }
+      // Rule Revision 3 §5：这里曾经是「双方轮流选择 Shooter 并锁定」。
+      // 那一步已从正式流程删除 —— 发射锚点是整场固定的 Emitter。
 
-      // ---- 2. REVEAL：双方 LOCK 之后才生成 reveal_state.json（规范 §3/§17）----
+      // ---- 2. REVEAL：生成 reveal_state.json（规范 §3/§17）----
       const rev = engine.revealRound();
       console.log('\n' + audience.renderRevealBoard(engine.getSnapshot()));
       console.log(`  reveal_state.json  sha256 = ${rev.revealStateHash}`);
@@ -282,21 +279,18 @@ async function main(): Promise<void> {
       console.log(`\n── ROUND ${result.round} RESULT ──`);
       console.log(`  roundStateHash: ${result.roundStateHash.substring(0, 16)}…`);
       console.log(`  先解: ${result.firstSolver}`);
-      console.log(`  A: ${result.shooterA}  t=${result.computeTimeMs.A?.toFixed(3) ?? '-'}ms  命中=[${result.hits.A.join(',')}]`);
-      console.log(`  B: ${result.shooterB}  t=${result.computeTimeMs.B?.toFixed(3) ?? '-'}ms  命中=[${result.hits.B.join(',')}]`);
+      console.log(`  A: emitter ${result.emitterA}  t=${result.computeTimeMs.A?.toFixed(3) ?? '-'}ms  命中=[${result.hits.A.join(',')}]`);
+      console.log(`  B: emitter ${result.emitterB}  t=${result.computeTimeMs.B?.toFixed(3) ?? '-'}ms  命中=[${result.hits.B.join(',')}]`);
       console.log(`  击杀: [${result.killed.join(',')}]`);
-      // 攻击权在 START 时已锁定：Shooter 阵亡不取消攻击，因此这里报告的是
-      // 「谁真的开火了」以及「开火那一刻它的 Shooter 还在不在」（规则修订 §12/§13）
+      // 攻击权在 START 时已锁定，而发射锚点是固定 Emitter —— 它不会死，
+      // 所以这里没有「开火时 Shooter 还在不在」这个问题（Rule Revision 3 §8）。
       console.log(`  实际开火: [${result.attacksExecuted.join(' -> ')}]`);
-      for (const t of result.attacksExecuted) {
-        const alive = result.shooterAliveAtAttack[t];
-        console.log(`    ${t} 开火时 Shooter ${alive ? '存活' : '已被击杀（攻击权已锁定，不取消）'}`);
-      }
       if (result.mutualElimination) console.log('  *** 同归于尽 —— 双方同时归零，判平局 ***');
       if (result.cancelled.A || result.cancelled.B) {
         console.log(`  运行器取消（历史字段）: A=${result.cancelled.A} B=${result.cancelled.B}`);
       }
-      console.log(`  存活: A=${result.aliveAfter.A}  B=${result.aliveAfter.B}`);
+      console.log(`  存活战斗点: A=${result.aliveAfter.A}  B=${result.aliveAfter.B}（不含 Emitter）`);
+      console.log(`  连续零击杀: ${result.log.noProgressStreak} / ${STALEMATE_NO_PROGRESS_LIMIT}`);
       persistNow(engine); // 每回合落盘（P1-A）
     }
 
@@ -304,12 +298,15 @@ async function main(): Promise<void> {
     persistNow(engine);
     const summary = audience.getResultSummary();
 
+    const endReason = engine.endReason();
     console.log('\n═══════════════════════════════════════════════════');
     if (stalemate) {
-      console.log(`  UNDECIDED（达到最大回合数 ${opts.maxRounds}，双方僵持）`);
-      console.log('  引擎不会自行宣布胜者；产物已完整落盘，可由裁判按赛事规则裁定。');
+      // 只有「操作台兜底上限」先于引擎终止条件触发时才会走到这里。
+      console.log(`  UNDECIDED（操作台兜底上限 ${opts.maxRounds} 回合，双方僵持）`);
+      console.log('  产物已完整落盘，可由裁判按赛事规则裁定。');
     } else {
       console.log(`  WINNER: ${summary.winner.toUpperCase()}`);
+      console.log(`  END REASON: ${endReason}`);
     }
     console.log(`  Rounds: ${summary.rounds}   Kills: A=${summary.totalKillsA} B=${summary.totalKillsB}`);
     console.log(`  Artifacts: ${dir}`);

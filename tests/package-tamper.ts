@@ -149,10 +149,6 @@ test('package-tamper: 引擎在轮次开始时拒绝被篡改的包', async () =
   assert(engine.upload('B', STARTER).ok, 'B 上传应成功');
   assert((await engine.preflight()).ok, 'preflight 应通过');
   engine.startMatch();
-  assert(engine.selectShooter('A', 'A1').ok, 'A1 应可选中');
-  assert(engine.lockShooter('A').ok, 'A 应可锁定');
-  assert(engine.selectShooter('B', 'B1').ok, 'B1 应可选中');
-  assert(engine.lockShooter('B').ok, 'B 应可锁定');
   assert(engine.judgeStartRound().ok, '应可 START ROUND');
 
   // 在开赛前篡改 A 的密封副本

@@ -10,7 +10,7 @@
 
 import * as path from 'path';
 import { parseCanonicalDSL } from '../src/core/Ast';
-import { firingDomain } from '../src/core/Rules';
+import { firingDomain, EMITTERS } from '../src/core/Rules';
 import { validateAttackFunction } from '../src/core/Validator';
 import { RoundStateCore } from '../src/core/RoundState';
 import { generateMapOrNull } from '../src/map/MapGenerator';
@@ -33,9 +33,10 @@ function coreFor(seed: number, pointCount: number, difficulty: 'easy' | 'medium'
       ...map!.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, position: p })),
       ...map!.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, position: p })),
     ],
-    shooters: {
-      A: { id: 'A1', position: map!.teamA[0] },
-      B: { id: 'B1', position: map!.teamB[0] },
+    // Rule Revision 3 §3/§4：发射锚点是固定 Emitter，不是从点表里挑出来的点。
+    emitters: {
+      A: { id: 'A0', position: EMITTERS.A },
+      B: { id: 'B0', position: EMITTERS.B },
     },
     teamAXRange: [-20, -4],
     teamBXRange: [4, 20],
@@ -68,7 +69,7 @@ test('official-starter: 在所有难度 / 多个种子上输出合法且经过 S
         const ast = parseCanonicalDSL(parsed.dsl);
         assert(ast.ok && ast.ast, `${team} 的 DSL 必须可解析: ${ast.issues.map((i) => i.code).join(',')}`);
 
-        const shooter = core.shooters[team].position;
+        const shooter = core.emitters[team].position;
         const domain = firingDomain(shooter.x, team);
         const validation = validateAttackFunction(ast.ast!, domain, shooter);
         assert(
@@ -96,7 +97,7 @@ test('official-starter: 对手全灭时仍然输出合法 DSL（退化路径）'
   const out = runStarter(solo, 'A');
   const ast = parseCanonicalDSL(JSON.parse(out).dsl);
   assert(ast.ok && ast.ast, '无敌人时也必须输出合法 DSL');
-  const shooter = core.shooters.A.position;
+  const shooter = core.emitters.A.position;
   const v = validateAttackFunction(ast.ast!, firingDomain(shooter.x, 'A'), shooter);
   assert(v.valid, `退化路径必须合法: ${v.issues.map((i) => i.code).join(',')}`);
 });
