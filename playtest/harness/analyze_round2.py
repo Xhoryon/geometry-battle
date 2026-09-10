@@ -10,7 +10,15 @@ Sections produced (numbered to match the task brief)
   metrics          §14 metric block per algorithm
   noprogress       §21 consecutive zero-kill streak quantiles
   matchlength      §21 match length quantiles
-  cf               §19/§20 official vs CF-NO-CANCEL vs CF-SIMULTANEOUS
+  cf               official vs the recorded counterfactual modes
+
+The counterfactual mode names are READ FROM THE DATA rather than hardcoded.
+After the Shooter Rule Revision the old ``cf-no-cancel`` is production and the
+only counterfactual left is ``cf-legacy-cancel``; hardcoding the round-2 names
+would silently produce an empty CF block for later rounds.
+
+``--root`` selects which results tree to fold (default: the round-2 archive, so
+the round-2 command keeps reproducing its original output).
 """
 
 import argparse
@@ -21,6 +29,8 @@ import sys
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 ROUND2 = os.path.join(REPO, "playtest", "results", "round-2")
+# Selected results tree.  Rebound from --root in main().
+ROOT = ROUND2
 
 
 def read_json(p):
@@ -64,7 +74,7 @@ PAIRS = ["fast-vs-hybrid", "optimizer-vs-hybrid", "fast-vs-optimizer"]
 def load_pairs():
     out = {}
     for pair in PAIRS:
-        p = os.path.join(ROUND2, "metrics-%s.json" % pair)
+        p = os.path.join(ROOT, "metrics-%s.json" % pair)
         if os.path.isfile(p):
             out[pair] = read_json(p)
     return out
@@ -170,11 +180,11 @@ def load_cf():
     """Counterfactual results, if the CF stage has run."""
     out = {}
     for pair in PAIRS:
-        sim = os.path.join(ROUND2, "cf", "sim-%s" % pair, "sim-summary.json")
+        sim = os.path.join(ROOT, "cf", "sim-%s" % pair, "sim-summary.json")
         entry = {}
         if os.path.isfile(sim):
             entry["sim"] = read_json(sim)
-        r = os.path.join(ROUND2, "cf", "rounds-%s.json" % pair)
+        r = os.path.join(ROOT, "cf", "rounds-%s.json" % pair)
         if os.path.isfile(r):
             entry["roundLevel"] = read_json(r)
         if entry:
@@ -183,7 +193,13 @@ def load_cf():
 
 
 def cf_block(cf):
-    """§19/§20: official vs CF-NO-CANCEL vs CF-SIMULTANEOUS."""
+    """official vs whatever counterfactual modes the run recorded.
+
+    Mode names are discovered from the data, not hardcoded: the Shooter Rule
+    Revision renamed ``cf-no-cancel`` -> ``locked-attack`` and introduced
+    ``cf-legacy-cancel``, and a hardcoded list would silently yield an empty
+    block instead of failing loudly.
+    """
     out = {}
     for pair, data in cf.items():
         modes = {}
@@ -191,10 +207,12 @@ def cf_block(cf):
         results = sim.get("results")
         if not results:
             continue
-        for mode in ("cf-no-cancel", "cf-simultaneous"):
+        present = sorted({r.get("mode") for r in results if r.get("mode")})
+        for mode in present:
             wins = {}
             n = 0
             silenced = 0
+            posthumous = 0
             kills = 0
             for r in results:
                 if r.get("mode") != mode:
@@ -203,56 +221,67 @@ def cf_block(cf):
                 wins[r.get("winnerAlgorithm", "unknown")] = \
                     wins.get(r.get("winnerAlgorithm", "unknown"), 0) + 1
                 silenced += r.get("silencedShots", 0)
+                posthumous += r.get("posthumousShots", 0)
                 kills += r.get("totalKills", 0)
             modes[mode] = {"matches": n, "wins": wins, "silencedShots": silenced,
-                           "totalKills": kills}
-        identical = _mode_identity(results)
-        out[pair] = {"modes": modes, "modeIdentity": identical,
+                           "posthumousShots": posthumous, "totalKills": kills}
+        identical = _mode_identity(results, present)
+        out[pair] = {"modes": modes, "modeNames": present,
+                     "modeIdentity": identical,
                      "roundLevel": data.get("roundLevel")}
     return out
 
 
-def _mode_identity(results):
-    """Do CF-NO-CANCEL and CF-SIMULTANEOUS ever disagree on outcome?
+def _mode_identity(results, modes):
+    """Do the first two recorded modes ever disagree on outcome?
 
-    Keyed on (label, arrangement): the two modes are run over the same
-    conditions, so a disagreement would show up as a differing winner or a
-    differing kill list.
+    Keyed on (label, arrangement): the modes are run over the same conditions,
+    so a disagreement would show up as a differing winner or a differing kill
+    list.  Which two modes are compared is reported alongside the counts.
     """
+    if len(modes) < 2:
+        return {"compared": 0, "identical": 0, "differing": 0, "examples": [],
+                "modeA": (modes[0] if modes else None), "modeB": None}
+    name_a, name_b = modes[0], modes[1]
     by = {}
     for r in results:
         by.setdefault((r.get("label"), r.get("arrangement")), {})[r.get("mode")] = r
     same = diff = 0
     diffs = []
     for key, d in by.items():
-        a, b = d.get("cf-no-cancel"), d.get("cf-simultaneous")
+        a, b = d.get(name_a), d.get(name_b)
         if not a or not b:
             continue
         if a.get("winner") == b.get("winner") and a.get("totalKills") == b.get("totalKills"):
             same += 1
         else:
             diff += 1
-            diffs.append({"key": key, "noCancel": a.get("winner"),
-                          "simultaneous": b.get("winner")})
+            diffs.append({"key": key, name_a: a.get("winner"),
+                          name_b: b.get("winner")})
     return {"compared": same + diff, "identical": same, "differing": diff,
-            "examples": diffs[:10]}
+            "modeA": name_a, "modeB": name_b, "examples": diffs[:10]}
 
 
 def main(argv):
+    global ROOT
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join(ROUND2, "round-2-summary.json"))
+    ap.add_argument("--root", default=ROUND2,
+                    help="results tree to fold (default: the round-2 archive)")
+    ap.add_argument("--out", default=None)
     args = ap.parse_args(argv)
+    ROOT = os.path.abspath(args.root)
+    out_path = args.out or os.path.join(ROOT, os.path.basename(ROOT) + "-summary.json")
 
     pairs = load_pairs()
     if not pairs:
-        print("no pair metrics found under %s" % ROUND2)
+        print("no pair metrics found under %s" % ROOT)
         return 2
     summary = build_summary(pairs)
     summary["cf"] = cf_block(load_cf())
-    write_json(args.out, summary)
+    write_json(out_path, summary)
 
     print("=" * 78)
-    print("ROUND 2 -- SUMMARY")
+    print("BALANCE SUMMARY -- %s" % os.path.basename(ROOT))
     print("=" * 78)
     for pair, m in pairs.items():
         print("%-22s matches=%3d conditions=%2d  wins=%s  swap consistent=%d flipped=%d"
@@ -278,7 +307,7 @@ def main(argv):
             print("%-22s mode identity: identical=%d differing=%d"
                   % (pair, ident["identical"], ident["differing"]))
     print("=" * 78)
-    print("wrote %s" % args.out)
+    print("wrote %s" % out_path)
     return 0
 
 

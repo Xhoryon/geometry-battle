@@ -21,10 +21,12 @@ Three jobs
 
     For every archived round, obtain BOTH sides' functions -- the recorded one
     where the platform recorded it, and by re-running the algorithm offline
-    where the round was cancelled and no function was ever recorded -- then
-    resolve the round again with cancellation removed.  This isolates how much
-    the cancellation rule costs each algorithm, on exactly the worlds the real
-    matches used.
+    where no function was ever recorded -- then resolve the round again and ask
+    what the REPEALED cancellation rule would have suppressed.  Under Locked
+    Attack Right the platform no longer records a cancellation flag, so the
+    legacy predicate is re-derived from the first solver's recorded hits.
+    This isolates what the old rule WOULD have cost each algorithm, on exactly
+    the worlds the real matches used.
 
 ``simulate``    Forward-simulated counterfactual matches.
 
@@ -34,21 +36,36 @@ Three jobs
     while the alive sets follow the counterfactual.  Shooters follow the
     auto-selection rule inferred from the archive: lowest surviving index.
 
-Modes
------
-``cf-no-cancel``     Playtest Rules §38 removed: a shot that kills the opponent
-                     Shooter no longer cancels their attack; any side that
-                     produced a legal function inside the budget still fires.
-``cf-simultaneous``  §36 and §38 both removed: there is no first solver at all.
-                     Both legal functions resolve against the START snapshot.
+Modes  (RENAMED by the Shooter Rule Revision -- read this before using --modes)
+------------------------------------------------------------------------------
+The rule amendment of 2026-09-10 made Locked Attack Right the PRODUCTION rule:
+shooter elimination no longer cancels the opponent's attack.  What used to be a
+counterfactual is now just the rules, so the mode names had to move:
 
-                     These two are OUTCOME-EQUIVALENT BY CONSTRUCTION, not by
-                     discovery.  Under §40/§41 the round snapshot is frozen at
-                     START and the second solver does not recompute, so the two
-                     functions always resolve against the same state; ordering
-                     has no channel of influence other than §38 itself.  The
-                     harness still runs both paths, as a check that the model
-                     is encoded faithfully -- it is not independent evidence.
+``locked-attack``     THE PRODUCTION RULE, modelled offline.  Kept so the model
+                      can be cross-checked against the new official results --
+                      it is a fidelity check, NOT a counterfactual.  (This is
+                      the mode that used to be called ``cf-no-cancel``; the old
+                      name is retired because it is no longer a counterfactual
+                      and must never be confused with one.)
+``cf-legacy-cancel``  THE ONLY REMAINING COUNTERFACTUAL: the repealed rule,
+                      re-added.  If the first solver's shot kills the second
+                      solver's Shooter, the second side's shot is cancelled.
+                      Production must never use this.
+``cf-simultaneous``   §36 and §38 both removed: there is no first solver at all.
+                      Both legal functions resolve against the START snapshot.
+
+                      All three are OUTCOME-EQUIVALENT BY CONSTRUCTION except
+                      for the cancellation branch itself, not by discovery.
+                      Under §40/§41 the round snapshot is frozen at START and
+                      the second solver does not recompute, so the two
+                      functions always resolve against the same state; ordering
+                      has no channel of influence other than the cancellation
+                      rule.  Running them anyway checks that the model encodes
+                      that faithfully -- it is not independent evidence.
+
+§21 of the amendment brief requires the old ``CF-NO-CANCEL`` naming to be
+archived as a *historical counterfactual*; this docstring is that record.
 
 Note on documented ambiguity: the frozen specification names CF-NO-CANCEL and
 CF-SIMULTANEOUS and states their purpose (§39/§55) but deliberately does NOT
@@ -172,6 +189,7 @@ def cmd_verify(args):
     mismatches = []
     cancel_checks = 0
     cancel_mismatch = 0
+    legacy_cancel_pressure = 0
     stop_checks = 0
     stop_mismatch = 0
     blocked_disagreements = 0
@@ -238,19 +256,30 @@ def cmd_verify(args):
                 if blocked != bool(r.get(slot.lower() + "Blocked")):
                     blocked_disagreements += 1
 
-            # cancellation predicate: first solver killed the opponent's Shooter
+            # Cancellation predicate, REVISED with the rule amendment.
+            #
+            # Under Locked Attack Right a shooter kill no longer cancels
+            # anything, so the platform must NEVER record a cancellation.  The
+            # predicate that used to be asserted (first solver killed the
+            # opponent's Shooter => cancelled) is now the *legacy* predicate:
+            # we still evaluate it, but only to count how much pressure the
+            # repealed rule would have applied on these worlds.  That count is
+            # evidence for the rebalance report, NOT a disagreement.
             fs = r.get("firstSolver")
             if fs in ("A", "B"):
                 other = "B" if fs == "A" else "A"
                 cancel_checks += 1
                 fs_hits = r.get(fs.lower() + "Hits") or []
-                pred_cancel = shooters[other] in [_id_of(h) for h in fs_hits]
+                legacy_would_cancel = shooters[other] in [_id_of(h) for h in fs_hits]
+                if legacy_would_cancel:
+                    legacy_cancel_pressure += 1
                 act_cancel = bool(r.get("cancelled" + other))
-                if pred_cancel != act_cancel:
+                if act_cancel:
                     cancel_mismatch += 1
                     mismatches.append({"match": name, "round": rnd,
-                                       "why": "cancellation predicate",
-                                       "model": pred_cancel, "platform": act_cancel})
+                                       "why": "cancellation recorded under "
+                                              "Locked Attack Right",
+                                       "model": False, "platform": act_cancel})
 
             # alive arithmetic
             alive_checks += 1
@@ -294,7 +323,11 @@ def cmd_verify(args):
     print("  hit-list mismatches          : %d" % hit_mm)
     print("  trajectory stop-x checks     : %d  mismatches: %d  (tolerance %g)"
           % (stop_checks, stop_mismatch, args.stop_tol))
-    print("  cancellation predicate checks: %d  mismatches: %d" % (cancel_checks, cancel_mismatch))
+    print("  cancellation checks          : %d  mismatches: %d" % (cancel_checks, cancel_mismatch))
+    print("  legacy rule would have fired : %d  (%.1f%% of checked rounds -- "
+          "informational, the repealed rule is gone)"
+          % (legacy_cancel_pressure,
+             100.0 * legacy_cancel_pressure / max(1, cancel_checks)))
     print("  aliveAfter checks            : %d  mismatches: %d" % (alive_checks, alive_mismatch))
     print("  winner checks                : %d  mismatches: %d" % (winner_checks, winner_mismatch))
     print("  blocked-flag disagreements   : %d  (INFORMATIONAL -- a descriptive"
@@ -316,6 +349,7 @@ def cmd_verify(args):
                               "stopTol": args.stop_tol,
                               "blockedDisagreements": blocked_disagreements,
                               "cancelChecks": cancel_checks, "cancelMismatch": cancel_mismatch,
+                              "legacyCancelPressure": legacy_cancel_pressure,
                               "aliveChecks": alive_checks, "aliveMismatch": alive_mismatch,
                               "winnerChecks": winner_checks, "winnerMismatch": winner_mismatch,
                               "mismatches": mismatches, "agreement": ok})
@@ -451,6 +485,19 @@ def cmd_rounds(args):
             alive = set(p["id"] for p in frame["aliveBefore"])
             public, reveal = build_world(match.get("matchId"), rnd, points, alive,
                                          obstacles, shooters, -20, 20, -12, 12)
+            # REVERSED ATTRIBUTION.  The platform no longer records cancellation
+            # (Locked Attack Right), so "what did the old rule cost?" can no
+            # longer be read off a platform flag.  We re-derive it ourselves:
+            # the legacy rule fired exactly when the first solver's recorded
+            # hits included the other side's Shooter.  Everything else is
+            # unchanged -- we still resolve both sides on the official world.
+            fs = r.get("firstSolver")
+            legacy_cancel = {"A": False, "B": False}
+            if fs in ("A", "B"):
+                other = "B" if fs == "A" else "A"
+                fs_hits = [_id_of(h) for h in (r.get(fs.lower() + "Hits") or [])]
+                legacy_cancel[other] = shooters[other] in fs_hits
+
             for slot in ("A", "B"):
                 alg = slot_alg[slot]
                 a = per_alg[alg]
@@ -461,7 +508,6 @@ def cmd_rounds(args):
                         rec_fn = json.loads(rec_fn)
                     except Exception:
                         rec_fn = None
-                cancelled = bool(r.get("cancelled" + slot))
                 fn = provider.function(match.get("matchId"), rnd, slot, alg,
                                        public, reveal, rec_fn)
                 hits, contact, _blk, _stop = resolve(fn, slot, shooters[slot], points,
@@ -470,36 +516,39 @@ def cmd_rounds(args):
                 if fn is None:
                     a["noFunction"] += 1
                     continue
-                if cancelled:
+                if legacy_cancel[slot]:
                     gained = list(hits or [])
-                    a["cancelledRounds"] += 1
-                    a["cancelledKillsIfExecuted"] += len(gained)
-                    a["cancelledKillsOnFinalSurvivors"] += sum(
+                    a["legacyCancelledRounds"] += 1
+                    a["legacyCancelledKillsIfExecuted"] += len(gained)
+                    a["legacyCancelledKillsOnFinalSurvivors"] += sum(
                         1 for h in gained if h in final_alive)
-                    a["cancelledKillEvents"].extend(gained)
+                    a["legacyCancelledKillEvents"].extend(gained)
                     if gained:
-                        a["cancelledRoundsWithKills"] += 1
+                        a["legacyCancelledRoundsWithKills"] += 1
                     if enemy_shooter in gained:
-                        a["cancelledShooterKills"] += 1
-                    a["cancelledTimes"].append(r.get(slot.lower() + "TimeMs"))
+                        a["legacyCancelledShooterKills"] += 1
+                    a["legacyCancelledTimes"].append(r.get(slot.lower() + "TimeMs"))
+                else:
+                    a["executedRounds"] += 1
             detail.append({"match": name, "round": rnd,
-                           "officialAliveBefore": sorted(alive)})
+                           "officialAliveBefore": sorted(alive),
+                           "legacyCancel": sorted(t for t in ("A", "B") if legacy_cancel[t])})
 
     provider.save()
     print("=" * 72)
-    print("ROUND-LEVEL COUNTERFACTUAL  (cancellation removed, official worlds)")
+    print("ROUND-LEVEL COUNTERFACTUAL  (Legacy-Cancel attribution, official worlds)")
     print("=" * 72)
     for alg in (a_alg, b_alg):
         a = per_alg[alg]
-        lost = a["cancelledKillsIfExecuted"]
-        surv = a["cancelledKillsOnFinalSurvivors"]
-        print("  %-10s rounds=%d cancelled=%d (%.1f%%)  cancelledRoundsWithKills=%d"
-              % (alg, a["rounds"], a["cancelledRounds"],
-                 100.0 * a["cancelledRounds"] / max(1, a["rounds"]),
-                 a["cancelledRoundsWithKills"]))
-        print("             killsLostToCancellation=%d  ofWhichOnPointsThatSurvived=%d (%.1f%%)"
+        lost = a["legacyCancelledKillsIfExecuted"]
+        surv = a["legacyCancelledKillsOnFinalSurvivors"]
+        print("  %-10s rounds=%d executed=%d  wouldBeLegacyCancelled=%d (%.1f%%)"
+              % (alg, a["rounds"], a["executedRounds"], a["legacyCancelledRounds"],
+                 100.0 * a["legacyCancelledRounds"] / max(1, a["rounds"])))
+        print("             killsLostToLegacyCancellation=%d  ofWhichOnPointsThatSurvived=%d (%.1f%%)"
               % (lost, surv, 100.0 * surv / lost if lost else 0.0))
-        print("             shooterKillsLost=%d" % a["cancelledShooterKills"])
+        print("             shooterKillsLostToLegacyCancellation=%d"
+              % a["legacyCancelledShooterKills"])
     print("  offline solver re-runs: %d   recorded functions reused: %d"
           % (provider.reruns, provider.hits))
     print("=" * 72)
@@ -511,10 +560,13 @@ def cmd_rounds(args):
 
 
 def _acc():
-    return {"rounds": 0, "noFunction": 0, "cancelledRounds": 0,
-            "cancelledRoundsWithKills": 0, "cancelledKillsIfExecuted": 0,
-            "cancelledKillsOnFinalSurvivors": 0, "cancelledShooterKills": 0,
-            "cancelledTimes": [], "cancelledKillEvents": []}
+    return {"rounds": 0, "noFunction": 0, "executedRounds": 0,
+            "legacyCancelledRounds": 0,
+            "legacyCancelledRoundsWithKills": 0,
+            "legacyCancelledKillsIfExecuted": 0,
+            "legacyCancelledKillsOnFinalSurvivors": 0,
+            "legacyCancelledShooterKills": 0,
+            "legacyCancelledTimes": [], "legacyCancelledKillEvents": []}
 
 
 # ---------------------------------------------------------------------------
@@ -582,7 +634,8 @@ def _simulate_one(cond, arr, slot_alg, mode, provider, max_rounds, pair, ref_roo
     alive = set(p["id"] for p in frames[order[0]]["aliveBefore"])
     match_id = match.get("matchId")
     kills_by_round = []
-    silenced = 0          # rounds where the second shot fired with a dead Shooter
+    silenced = 0      # cf-legacy-cancel: second shots the repealed rule suppresses
+    posthumous = 0    # locked-attack: second shots that fire with a dead Shooter
     shot_count = {"A": 0, "B": 0}
     for rnd in range(1, max_rounds + 1):
         obstacles = obstacles_by_round.get(rnd, last_obstacles)
@@ -601,16 +654,18 @@ def _simulate_one(cond, arr, slot_alg, mode, provider, max_rounds, pair, ref_roo
             hits[slot] = set(h or [])
             fired[slot] = fns[slot] is not None
 
-        # ---- The two modes are written as separate branches for clarity, but
-        # ---- they are OUTCOME-EQUIVALENT BY CONSTRUCTION, and that is a fact
-        # ---- about the rules rather than an empirical discovery:
-        # ---- §40/§41 freeze the round snapshot, so each side's function
-        # ---- resolves against the same START state no matter who is deemed
-        # ---- first.  "Who goes first" therefore has no channel through which
-        # ---- to change the result except §38 cancellation, which
-        # ---- cf-simultaneous also removes.  Running both anyway is a check
-        # ---- that the implementation faithfully encodes that model -- not
-        # ---- independent evidence that the equivalence holds.
+        # ---- The modes are written as separate branches for clarity, but the
+        # ---- ones WITHOUT a cancellation branch are OUTCOME-EQUIVALENT BY
+        # ---- CONSTRUCTION, and that is a fact about the rules rather than an
+        # ---- empirical discovery: §40/§41 freeze the round snapshot, so each
+        # ---- side's function resolves against the same START state no matter
+        # ---- who is deemed first.  "Who goes first" therefore has no channel
+        # ---- through which to change the result except the cancellation
+        # ---- branch itself.  Running them anyway is a check that the
+        # ---- implementation faithfully encodes that model -- not independent
+        # ---- evidence that the equivalence holds.
+        # ---- After the rule amendment, `locked-attack` IS production and
+        # ---- `cf-legacy-cancel` is the only true counterfactual.
         if mode == "cf-simultaneous":
             # No first solver exists at all: both legal functions resolve
             # against the frozen START snapshot.  Order never enters.
@@ -619,23 +674,27 @@ def _simulate_one(cond, arr, slot_alg, mode, provider, max_rounds, pair, ref_roo
                 if fired[slot]:
                     killed |= hits[slot]
         else:
-            # cf-no-cancel: §36 First Solver and the frozen snapshot are kept,
-            # only §38 is removed.  The first shot resolves; the second shot
-            # then executes even if its own Shooter just died -- which is the
-            # exact situation the cancellation rule exists to prevent.
+            # §36 First Solver and the frozen snapshot are kept.  The two
+            # branches below differ ONLY in the repealed §38 branch.
             order = sorted(("A", "B"),
                            key=lambda s: provider.last_ms.get(scope + "|" + s, 0.0))
-            silenced_this_round = 0
             killed = set()
             for idx, slot in enumerate(order):
                 if not fired[slot]:
                     continue
-                if idx == 1 and shooters[slot] in killed:
-                    # the shot that fires after its own Shooter has already
-                    # been killed -- exactly what §38 suppresses today
-                    silenced_this_round += 1
+                shooter_dead = shooters[slot] in killed
+                if idx == 1 and shooter_dead:
+                    if mode == "cf-legacy-cancel":
+                        # THE ONLY REMAINING COUNTERFACTUAL: the repealed rule
+                        # suppresses this shot because its own Shooter was
+                        # killed by the first solver.  Production never does
+                        # this.
+                        silenced += 1
+                        continue
+                    # locked-attack (== production): the locked attack right
+                    # survives the Shooter's death, so the shot executes.
+                    posthumous += 1
                 killed |= hits[slot]
-            silenced += silenced_this_round
         alive = alive - killed
         kills_by_round.append(sorted(killed))
         if (not any(p["team"] == "A" and p["id"] in alive for p in points)
@@ -648,7 +707,8 @@ def _simulate_one(cond, arr, slot_alg, mode, provider, max_rounds, pair, ref_roo
             "winnerAlgorithm": (slot_alg[winner] if winner in ("A", "B") else "draw"),
             "rounds": len(kills_by_round), "killsByRound": kills_by_round,
             "totalKills": sum(len(k) for k in kills_by_round),
-            "silencedShots": silenced, "slotAlgorithm": slot_alg,
+            "silencedShots": silenced, "posthumousShots": posthumous,
+            "slotAlgorithm": slot_alg,
             "finalAlive": sorted(alive), "reference": os.path.basename(ref)}
 
 
@@ -677,9 +737,11 @@ def main(argv):
     p.add_argument("--conditions", required=True)
     p.add_argument("--out", required=True)
     p.add_argument("--modes", nargs="+",
-                   default=["cf-no-cancel", "cf-simultaneous"])
+                   default=["locked-attack", "cf-legacy-cancel"])
     p.add_argument("--cache", default=None)
-    p.add_argument("--ref-root", default="playtest/results/round-2/raw", dest="ref_root")
+    p.add_argument("--ref-root",
+                   default="playtest/results/shooter-rule-revision/raw",
+                   dest="ref_root")
     p.add_argument("--max-rounds", type=int, default=30, dest="max_rounds")
     p.add_argument("--force", action="store_true")
     p.set_defaults(func=cmd_simulate)

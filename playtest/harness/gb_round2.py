@@ -199,7 +199,10 @@ def new_acc():
     return {"rounds": 0, "shotsValid": 0, "invalid": 0, "timeout": 0, "crashed": 0,
             "kills": 0, "shooterKills": 0, "multiKills": 0, "noHitRounds": 0,
             "blocked": 0, "cancelled": 0, "firstSolver": 0, "times": [],
-            "nodes": [], "depths": [], "hitsBeforeStop": []}
+            "nodes": [], "depths": [], "hitsBeforeStop": [],
+            # Locked Attack Right: rounds where this side's shot executed even
+            # though its own Shooter had just been killed by the first solver.
+            "posthumousShots": 0}
 
 
 def accumulate(acc, side, entry):
@@ -231,6 +234,8 @@ def accumulate(acc, side, entry):
         acc["noHitRounds"] += 1
     if side["blocked"]:
         acc["blocked"] += 1
+    if side.get("posthumous"):
+        acc["posthumousShots"] += 1
     if side["stopReason"]:
         acc["hitsBeforeStop"].append(side["stopReason"])
     if entry["firstSolver"] == side["slot"]:
@@ -251,7 +256,10 @@ def finalise_acc(acc):
     out["noHitRate"] = round(acc["noHitRounds"] / n, 4)
     out["firstShotRate"] = round(acc["firstSolver"] / n, 4)
     out["shooterKillRate"] = round(acc["shooterKills"] / n, 4)
+    # BY DESIGN 0 under Locked Attack Right -- the field is kept so the value
+    # moving to exactly 0 is itself the regression evidence.
     out["shotCancellationRate"] = round(acc["cancelled"] / n, 4)
+    out["posthumousShotRate"] = round(acc["posthumousShots"] / n, 4)
     out["arenaBoundaryTerminationRate"] = round(
         acc["hitsBeforeStop"].count("arena") / n, 4)
     out["obstacleTerminationRate"] = round(
@@ -286,6 +294,8 @@ def cmd_analyze(args):
                "rounds": len(match.get("rounds") or []),
                "maxRounds": summary["maxRounds"], "exhausted": summary["exhausted"],
                "finalAlive": match.get("finalAlive"), "slotAlgorithm": slot_alg,
+               "endReason": match.get("endReason"),
+               "mutualElimination": match.get("endReason") == "MUTUAL_ELIMINATION",
                "perRound": [], "perAlgorithm": {a_alg: new_acc(), b_alg: new_acc()}}
         if match.get("winner") in ("A", "B"):
             rec["winnerAlgorithm"] = slot_alg[match["winner"]]
@@ -296,9 +306,14 @@ def cmd_analyze(args):
         rec["difficulty"] = match.get("difficulty")
         for r in rounds:
             frame = frames.get(r.get("round")) or {}
+            attacks = r.get("attacksExecuted")
+            alive_at_attack = r.get("shooterAliveAtAttack") or {}
             entry = {"round": r.get("round"), "firstSolver": r.get("firstSolver"),
                      "result": r.get("result"), "shooterA": r.get("shooterA"),
                      "shooterB": r.get("shooterB"),
+                     "attacksExecuted": attacks or [],
+                     "shooterAliveAtAttack": alive_at_attack,
+                     "mutualElimination": bool(r.get("mutualElimination")),
                      "obstacleCount": len(frame.get("obstacles") or [])}
             for slot in ("A", "B"):
                 alg = slot_alg[slot]
@@ -329,6 +344,8 @@ def cmd_analyze(args):
                     "errorCode": r.get(s + "ErrorCode"), "enemyShooter": enemy_shooter,
                     "killedEnemyShooter": enemy_shooter in hits,
                     "multiKill": (r.get(s + "Kills") or 0) >= 2,
+                    # This side's shot executed while its own Shooter was dead.
+                    "posthumous": alive_at_attack.get(slot) is False and slot in (attacks or []),
                     "stopReason": _stop_reason(r, slot, frame),
                 }
             rec["perRound"].append(entry)
@@ -393,6 +410,10 @@ def cmd_analyze(args):
         "conditions": len(set(r["label"] for r in records)),
         "distinctMapHashes": len(set(r["mapHash"] for r in records if r.get("mapHash"))),
         "wins": wins, "winsByArrangement": by_arrangement,
+        "mutualEliminationMatches": sum(1 for r in records if r["mutualElimination"]),
+        "endReasons": {k: sum(1 for r in records if r["endReason"] == k)
+                       for k in sorted(set(r["endReason"] for r in records),
+                                       key=lambda x: str(x))},
         "algorithms": {alg: finalise_acc(agg[alg]) for alg in (a_alg, b_alg)},
         "algorithmsByArrangement": {arr: {alg: finalise_acc(agg_by_arr[arr][alg])
                                           for alg in (a_alg, b_alg)}

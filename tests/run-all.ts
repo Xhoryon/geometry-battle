@@ -19,7 +19,7 @@ const SUITES = [
   'map-fairness',
   'obstacle-block',
   'dual-shooter-selection',
-  'shooter-cancel',
+  'locked-attack-right',
   'alive-kill',
   'roundstate-equality',
   'input-protocol',

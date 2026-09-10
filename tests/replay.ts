@@ -116,10 +116,20 @@ test('replay: 帧的 roundStateHash 与 MatchLog 逐轮一致，alive 链首尾�
       assertEqual(cur, prev, `第 ${i + 1} 轮的开局存活点必须等于第 ${i} 轮的结算结果`);
     }
   }
+  // 规则修订 §8 之后，「同归于尽」是可达的收场：先手清零对方、后手凭已锁定的
+  // 攻击权再清零先手方 → draw。旧断言隐含假设「比赛只会以单方全灭结束」，
+  // 按规则修订 §18 归类为 obsolete due to authorized rule change。
   const last = replay.frames[replay.frames.length - 1].aliveAfter;
-  const winnerAlive = last.filter((p) => p.team === replay.winner).length;
-  const loserAlive = last.filter((p) => p.team !== replay.winner).length;
-  assert(winnerAlive > 0 && loserAlive === 0, '最后一帧必须呈现「胜方有存活点、败方全灭」');
+  const aliveA = last.filter((p) => p.team === 'A').length;
+  const aliveB = last.filter((p) => p.team === 'B').length;
+  assert(aliveA === 0 || aliveB === 0, '比赛必须在某一方（或双方）全灭时结束');
+  if (replay.winner === 'draw') {
+    assertEqual([aliveA, aliveB], [0, 0], '平局只可能来自同归于尽 —— 双方都必须归零');
+  } else {
+    const winnerAlive = replay.winner === 'A' ? aliveA : aliveB;
+    const loserAlive = replay.winner === 'A' ? aliveB : aliveA;
+    assert(winnerAlive > 0 && loserAlive === 0, '非平局时：胜方有存活点、败方全灭');
+  }
 });
 
 test('replay: 回放文件不含任何可执行入口或沙箱路径', async () => {
