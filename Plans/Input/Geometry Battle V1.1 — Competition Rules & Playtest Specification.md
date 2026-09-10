@@ -969,61 +969,223 @@ Shooter assassination
 
 ---
 
-# 38. Shot Cancellation
+# 38. Locked Attack Right
 
-当前正式规则 **FROZEN FOR PLAYTEST**：
+当前正式规则 **FROZEN FOR PLAYTEST**（V1.1 Playtest Rules — Revision 2）：
 
-如果 First Solver 的攻击在后方攻击执行前：
-
-```text
-kills opponent Shooter
-```
-
-则对方当前 Round：
+START 之后，双方获得本轮：
 
 ```text
-SHOT CANCELLED
+独立且不可撤销的攻击权
 ```
 
-其已计算或正在计算的攻击：
+具体：
 
 ```text
-does not execute
+START
+↓
+Team A attack right locked
+Team B attack right locked
+↓
+Both algorithms compute from immutable Round Snapshot
 ```
+
+如果 A 先攻击并击杀 B Shooter：
+
+```text
+B Shooter
+→ dies normally
+
+BUT
+
+B current-round attack right
+→ remains valid
+```
+
+B 不重新选择 Shooter。
+
+B 不重新计算 Round State。
+
+B 的函数仍必须经过：
+
+```text
+START 时原始 Shooter
+```
+
+---
+
+# 38.1 Shooter 的语义
+
+Shooter 在一个 Round 中定义为：
+
+> 本轮攻击函数的数学发射锚点。
+
+而不是：
+
+> 必须存活到攻击执行瞬间，否则攻击失效的枪手。
+
+因此：
+
+```text
+START snapshot Shooter = B4
+```
+
+则 B 的函数始终必须满足：
+
+```text
+f(x_B4) = y_B4
+```
+
+即使 B4 在 B 攻击执行前被 A 击杀。
+
+---
+
+# 38.2 不进行同轮 Shooter Replacement
+
+明确禁止实现：
+
+```text
+Shooter dies
+→ randomly choose another alive point
+→ reuse old function
+```
+
+也禁止：
+
+```text
+Shooter dies
+→ select replacement
+→ rerun algorithm
+```
+
+原因：
+
+- 原函数通常不经过新 Shooter；
+- 会破坏 immutable Round Snapshot；
+- 会产生第二次计算；
+- 会造成新的 timing definition；
+- 会引入随机性；
+- 会改变双方获得的信息。
+
+因此：
+
+```text
+NO SAME-ROUND SHOOTER REPLACEMENT
+```
+
+---
+
+# 38.3 下一轮 Shooter
+
+如果当前 Shooter 在本 Round 死亡：
+
+```text
+alive = false
+```
+
+那么下一轮：
+
+```text
+cannot be selected
+```
+
+人类仍按正常 Shooter Selection 流程，从剩余存活点中重新选择。
+
+不自动随机指定下一轮 Shooter。
+
+---
+
+# 38.4 Attack Order 保留
+
+本规则**不取消速度机制**。继续：
+
+```text
+faster valid solver
+→ attacks first
+
+slower valid solver
+→ attacks second
+```
+
+因此计算速度仍然有正式价值。
+
+只是：
+
+```text
+A kills B Shooter
+```
+
+不再删除 B 整个本轮攻击。
+
+---
+
+# 38.5 攻击不执行的唯一原因
+
+Shooter 死亡**不是** Runner termination signal。后手算法的进程不会因为它的 Shooter 阵亡而被终止，
+它仍然拥有自己完整的官方计算 deadline。
+
+攻击不执行的唯一原因是算法侧：
+
+```text
+TIMEOUT / INVALID / CRASH
+```
+
+---
+
+# 38.6 Mutual Elimination
+
+新规则下可能出现：先手方清零对方、后手方凭已锁定的攻击权再清零先手方。
+
+如果一个 Round 结算完成后：
+
+```text
+aliveA = 0
+AND
+aliveB = 0
+```
+
+则：
+
+```text
+MATCH DRAW
+```
+
+end reason：
+
+```text
+MUTUAL_ELIMINATION
+```
+
+不得因为 A 是 First Solver 就自动判 A 赢。
 
 ---
 
 # 39. Cancellation 的地位
 
-该规则当前仍为正式规则。
-
-但第一轮 Algorithm Playtest 已发现：
-
 ```text
-Fast Solver
-+
-Shooter assassination
-+
-first-shot advantage
+CANCELLED
 ```
 
-可能形成非常强的策略优势。
+已**不再是**正式规则中的一条攻击结算路径。
 
-因此：
+`CANCELLED_A` / `CANCELLED_B` 回合结果码与日志中的 `cancelledA` / `cancelledB` 字段
+保留为**历史/兼容**语义，只可能由运行器自身的显式取消（例如 READY 握手失败）产生，
+不再由「Shooter 被击杀」产生。
 
-> Shooter cancellation 当前进入 BALANCE REVIEW，但尚未修改。
+> **历史记录（不删除）**
+>
+> Previous playtest rule:
+> Shooter elimination cancelled the opponent shot.
+>
+> Round-2 evidence showed this produced strong cancellation dominance.
+> 回合级归因显示：fast-vs-optimizer 中取消吞掉 787 次击杀，
+> 其中 84.8% 的目标在对局结束时仍存活；Optimizer 曲线本可产生的击杀约 91% 被取消抹掉。
+> 由此得出 *在本规则集下，速度影响胜负的唯一通道就是 Shot Cancellation*。
+>
+> Rule amended by human decision.
 
-后续可通过：
-
-```text
-CF-NO-CANCEL
-CF-SIMULTANEOUS
-Hybrid Solver
-```
-
-进行 Counterfactual Experiment。
-
-实验不得自动改变正式规则。
+旧 counterfactual `CF-NO-CANCEL` 已不再是反事实（它现在就是生产规则），
+归档为 **historical counterfactual**；若仍需对照旧规则，使用 `CF-LEGACY-CANCEL`。
 
 ---
 
