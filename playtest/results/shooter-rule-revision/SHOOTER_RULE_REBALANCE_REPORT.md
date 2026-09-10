@@ -124,6 +124,28 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 | `INVALID / TIMEOUT / CRASH` | **0 / 0 / 0**（合计 4496 个「队伍×回合」样本） |
 | 重跑一致性 | 三对配对的离线模型预测与官方结果**逐场完全相同**（§9） |
 
+最终全量回归（`npx ts-node tests/run-all.ts`，在提交 `95f2a5f` + 本轮 harness/结果之上）：
+
+```text
+  ✓ dsl-contract            ✓ preflight-decoy          ✓ process-tree-cleanup
+  ✓ convexity-aliasing      ✓ result-ipc               ✓ hostile-input
+  ✓ official-starter        ✓ algorithm-slot  ✗        ✓ timing-fairness
+  ✓ map-fairness            ✓ full-match-e2e           ✓ replay
+  ✓ obstacle-block          ✓ runner-isolation         ✓ runtime-manifest
+  ✓ dual-shooter-selection  ✓ cross-round-cheat        ✓ competitor-kit
+  ✓ locked-attack-right     ✓ package-tamper
+  ✓ alive-kill              ✓ timeout-boundary
+  ✓ roundstate-equality
+  ✓ input-protocol
+  ✓ stage-gating
+  ✓ pre-start-execution
+
+25/26 套件通过
+失败套件: algorithm-slot
+```
+
+`algorithm-slot` 的失败**不是本轮引入**（§15 P-1 有 stash 隔离与 bisect 证据）。
+
 ### 5.1 R1–R8（任务书 §17）
 
 | 编号 | 场景 | 结果 |
