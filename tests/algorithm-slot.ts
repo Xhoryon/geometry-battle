@@ -29,6 +29,7 @@ import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 import { PY_ARGV_PRELUDE, PY_EMIT } from './protocol-fixture';
 
 const REPO_SLOTS = path.join(__dirname, '..', 'algorithms');
+const PLATFORM_ROOT = path.join(__dirname, '..');
 
 /** 最小合法算法：f(x) 为经过自己 Shooter 的水平线 */
 const SOLVER_SOURCE = `${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "rb") as f:
@@ -84,7 +85,17 @@ test('algorithm-slot: 仓库自带两个槽位结构完全一致（§2/§3/§41�
   const a = inspectPackage(slotDir(REPO_SLOTS, 'A')).files.map((f) => f.relPath);
   const b = inspectPackage(slotDir(REPO_SLOTS, 'B')).files.map((f) => f.relPath);
   assertEqual(a, b, '两个槽位结构必须完全一致（§2）');
-  assertEqual(a, [ENTRY_FILENAME], `槽位根目录应只有固定入口，实际 ${a.join(',')}`);
+  assert(a.includes(ENTRY_FILENAME), `槽位必须包含固定入口 ${ENTRY_FILENAME}（§3）`);
+
+  // 旧断言要求槽位根目录**只**有 solver.py —— 那是 `a81ea7f` 时期的临时状态。
+  // 规范 §3 只要求「**至少**包含 solver.py」，并明文「允许参赛者添加自己的内部模块」；
+  // `d9f470c` 又按 canonical starter 给槽位补了 manifest.json。过期的断言因此
+  // 从那时起恒失败，让全量回归长期为 25/26（Re-Gate Cycle 2 PLAT-1，裁决 B：OUTDATED TEST）。
+  //
+  // 真正该锁的不变量是：**出厂槽位就是 canonical starter 的副本**
+  // （`algorithms/README.md` 的明文承诺），而不是某个具体的文件个数。
+  const starter = inspectPackage(path.join(PLATFORM_ROOT, 'starter')).files.map((f) => f.relPath);
+  assertEqual(a, starter, `出厂槽位必须是 canonical starter 的副本，实际 ${a.join(', ')}`);
 });
 
 test('algorithm-slot: staging/validate 拒绝坏包，现有槽位逐字节不变（§32）', async () => {

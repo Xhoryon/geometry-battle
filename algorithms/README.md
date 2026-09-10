@@ -5,15 +5,27 @@
 ```text
 algorithms/
 ├── team-a/          → Team A Algorithm Slot
-│   └── solver.py
+│   ├── solver.py        ← 唯一正式入口（必需）
+│   └── manifest.json    ← 算法包清单（必需，见下）
 └── team-b/          → Team B Algorithm Slot
-    └── solver.py
+    ├── solver.py
+    └── manifest.json
 ```
+
+> **出厂状态 = canonical starter 的副本。** 两个槽位开箱即与
+> [`../starter/`](../starter/) 逐文件一致；`tests/algorithm-slot.ts` 会断言这一点，
+> 所以不要单独改某一侧。
 
 ## 规则
 
 - 每个槽位根目录**必须**存在 `solver.py`，它是唯一正式入口（规范 §3/§4）。
   不允许 `main.py` / `run.py` / `algorithm.py` 之类的自定义入口。
+- **`manifest.json` 是算法包清单，必需**（`name` / `version` / `entry` / `language`）。
+  上传流水线用 `inspectPackage` 校验包形态，缺清单的目录在 `validate` 阶段就会被拒绝；
+  `entry` 必须写 `solver.py`（自定义入口会被明确拒绝）。
+  > 历史说明：早期版本的本目录曾只有 `solver.py`。规范 §3 的措辞是「**至少**包含
+  > `solver.py`」，即允许附加文件 —— 清单是其中之一，不是额外约束。
+- 除清单与入口外，**允许**携带自己的内部模块与子目录（见下）。
 - 允许携带自己的内部模块与子目录：
 
   ```text

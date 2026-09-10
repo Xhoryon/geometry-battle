@@ -869,11 +869,15 @@ export class MatchEngine {
     // A 是 First Solver 就判 A 赢（V1.1 规则修订 §8）。
     const mutualElimination = aliveAfter.A === 0 && aliveAfter.B === 0;
 
-    // cancelled 字段保留为**历史/兼容**语义（规则修订 §11/§23）：
-    // 规则修订后「Shooter 被击杀 → 攻击取消」已不存在，这里只可能由运行器自身的
-    // 显式取消（例如 READY 握手失败被 cancel()）置位，不再有先手击杀这条路径。
-    // 新规则下 shot cancellation rate 恒为 0 by design；TIMEOUT / INVALID / CRASH
-    // 绝不记作 cancellation（§23）。
+    // `cancelled` 是**历史/兼容**字段，不是规则语义：
+    // 「Shooter 被击杀 → 攻击取消」已不存在。唯一能把它置位的是宿主对**这一方**
+    // 的显式 cancel()（`CANCELLED`）；同回合另一方失败导致的中止拿的是
+    // `RUNNER_ABORT`，**不会**落到这里 —— 否则平台级故障会被写成一方的
+    // 「攻击被取消」（Re-Gate Cycle 2 PLAT-4）。
+    //
+    // 生产路径下这两个值恒为 false：`runDuel` 只在 READY 握手中止时 cancel()，
+    // 而那一次给的是 `'PEER'` → `RUNNER_ABORT`。它们保留只为兼容旧日志与旧回放。
+    // TIMEOUT / INVALID / CRASH 一律不记作 cancellation（§23）。
     const cancelledA = outcomeA.errorCode === 'CANCELLED';
     const cancelledB = outcomeB.errorCode === 'CANCELLED';
 

@@ -207,9 +207,19 @@ export function traceTrajectory(
   const points: TrajectoryPoint[] = [];
   let endReason: TrajectoryEndReason = 'FIELD_EDGE';
 
+  /** 场外判定（与下面的采样循环共用同一套容差） */
+  const outside = (yv: number): boolean => yv < FIELD.yMin - 1e-9 || yv > FIELD.yMax + 1e-9;
+
+  let lastX = shooter.x;
+
   for (let i = 0; i <= maxPoints; i++) {
-    const x = shooter.x + dir * h * i;
-    if (dir === 1 ? x > xEnd + 1e-12 : x < xEnd - 1e-12) break;
+    let x = shooter.x + dir * h * i;
+    // 收尾对齐到**精确的** xEnd（规范 §24：有效攻击范围就是 [x_s, xEnd]）。
+    // 此前靠 `Math.abs(x - xEnd) <= h` 直接 break，末点会短最多一个自适应步长 h，
+    // 贴边的敌人因此可能被判「在轨迹终点之后」而漏判（PLAT-5）。
+    if (Math.abs(x - xEnd) <= h) x = xEnd;
+    const past = dir === 1 ? x > xEnd + 1e-12 : x < xEnd - 1e-12;
+    if (past) break;
 
     if (blocked && !isBefore(x, blocked.at.x, dir)) {
       points.push({ x: blocked.at.x, y: blocked.at.y });
@@ -222,13 +232,28 @@ export function traceTrajectory(
       endReason = 'NON_FINITE';
       break;
     }
-    if (y < FIELD.yMin - 1e-9 || y > FIELD.yMax + 1e-9) {
+    if (outside(y)) {
+      // 越过场地边界：二分到**真实交点**，把它当作轨迹末点（规范 §34
+      // 「第一次离开 Arena → 永久终止」）。停在最后一个场内采样点会让有效停止 x
+      // 比真实交点少一个步长 h —— 在窄缝上足以翻转命中判定（PLAT-5）。
+      // 这与 `firstContactX` 对障碍物的 60 次二分是同一套精度。
+      let a = lastX; // 仍在场内
+      let b = x; // 已越界
+      for (let k = 0; k < 60; k++) {
+        const m = (a + b) / 2;
+        const ym = evaluateNode(ast, m);
+        if (!Number.isFinite(ym) || outside(ym)) b = m;
+        else a = m;
+      }
+      const yb = evaluateNode(ast, b);
+      if (b !== a) points.push({ x: b, y: Number.isFinite(yb) ? yb : evaluateNode(ast, a) });
       endReason = 'OUT_OF_FIELD';
       break;
     }
     points.push({ x, y });
+    lastX = x;
 
-    if (Math.abs(x - xEnd) <= h) break;
+    if (x === xEnd) break;
   }
 
   if (points.length === 0) points.push({ x: shooter.x, y: evaluateNode(ast, shooter.x) });

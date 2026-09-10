@@ -138,6 +138,15 @@ export type RunnerErrorCode =
   | 'OUTPUT_TOO_LARGE'
   | 'SPAWN_ERROR'
   | 'CANCELLED'
+  /**
+   * 本队**自己没有出错**，是宿主因为同回合另一方的 READY 握手失败而中止了它
+   * （Re-Gate Cycle 2 PLAT-4）。与 `CANCELLED` 分开，是为了让回合结果码不再把
+   * 中止归因给行为正确的那一方 —— 见 `runDuel` 的 READY catch。
+   *
+   * 它不是「攻击被取消」：Locked Attack Right 之下，攻击不执行的算法侧原因
+   * 只有 TIMEOUT / INVALID / CRASH。这是一次**平台级**中止。
+   */
+  | 'RUNNER_ABORT'
   | 'ISOLATION_UNAVAILABLE'
   | 'MEMORY_LIMIT'
   | 'READY_TIMEOUT';
@@ -165,7 +174,13 @@ export interface RunnerOutcome {
   computeTimeMs: number;
   sandboxDir: string;
   isolation: IsolationReport;
-  /** 是否因 shooter 被击杀而取消 */
+  /**
+   * 运行器是否被宿主中止（`cancel()`）。
+   *
+   * **历史/兼容语义**：这条路径从来就不是「Shooter 被杀 → 攻击取消」——
+   * 它只由宿主显式 `cancel()` 触发。Rule Revision 2 起 Shooter 死亡不再是
+   * 任何终止信号；Revision 3 起 Shooter 根本不会死亡。
+   */
   cancelled: boolean;
   /** `output/result.json` 的确切字节（未通过 schema 校验时为 null） */
   resultJson: string | null;
@@ -631,7 +646,15 @@ export interface SpawnedRunner {
   release: () => bigint;
   /** 等待结束 */
   done: Promise<RunnerOutcome>;
-  cancel: () => void;
+  /**
+   * 宿主中止这个运行器。
+   *
+   * `reason` 只影响**归因**，不影响行为：
+   *   - `'HOST'`（默认）→ `CANCELLED`：宿主主动放弃这一轮；
+   *   - `'PEER'` → `RUNNER_ABORT`：同回合另一方 READY 失败，本队是**无辜**的。
+   * 分开是为了不再把平台级中止记成「本队攻击被取消」（PLAT-4）。
+   */
+  cancel: (reason?: 'HOST' | 'PEER') => void;
 }
 
 /** 启动一个 Runner 进程，等待其 READY 握手 */
@@ -712,7 +735,7 @@ export function spawnRunner(opts: {
       prepare: () => {},
       release: () => 0n,
       done,
-      cancel: () => {},
+      cancel: (_reason?: 'HOST' | 'PEER') => {},
     };
   }
 
@@ -725,6 +748,8 @@ export function spawnRunner(opts: {
   let releaseNs: bigint | null = null;
   let finished = false;
   let cancelled = false;
+  /** 中止归因：'HOST' → CANCELLED；'PEER' → RUNNER_ABORT（PLAT-4） */
+  let abortReason: 'HOST' | 'PEER' = 'HOST';
   let oversize = false;
   let readyBuffer = '';
   let sawReady = false;
@@ -739,6 +764,12 @@ export function spawnRunner(opts: {
   let sawResultFile = false;
   let poller: NodeJS.Timeout | null = null;
   let drainTimer: NodeJS.Timeout | null = null;
+  /**
+   * 本轮的计算预算定时器（`prepare()` 里挂上，从 release 起算）。
+   *
+   * 声明必须早于 `finish()` —— 后者要清它（Re-Gate Cycle 2 PLAT-2）。
+   */
+  let goTimeout: NodeJS.Timeout | null = null;
 
   const finish = (
     outcome: Omit<RunnerOutcome, 'team' | 'sandboxDir' | 'isolation' | 'cancelled' | 'resultJson' | 'dslText'> & {
@@ -752,6 +783,12 @@ export function spawnRunner(opts: {
     if (monitor) { clearInterval(monitor); monitor = null; }
     if (poller) { clearInterval(poller); poller = null; }
     if (drainTimer) { clearTimeout(drainTimer); drainTimer = null; }
+    // 计算预算定时器必须在这里清（Re-Gate Cycle 2 PLAT-2）：此前它只在
+    // finishWithResult() 里被清，于是所有**非成功收尾**（INVALID_OUTPUT /
+    // CRASH / MEMORY_LIMIT / OUTPUT_TOO_LARGE / SPAWN_ERROR / CANCELLED）
+    // 都会把定时器留在事件循环里 —— 宿主进程被多拖最长 timeoutMs，
+    // 且沙箱销毁后仍对已死进程组补发 SIGKILL。
+    if (goTimeout) { clearTimeout(goTimeout); goTimeout = null; }
     resolveDone({
       resultJson: null,
       dslText: null,
@@ -797,8 +834,6 @@ export function spawnRunner(opts: {
       computeTimeMs: releaseNs !== null ? Number(process.hrtime.bigint() - releaseNs) / 1e6 : opts.timeoutMs,
     });
   }, opts.timeoutMs + 30_000); // 硬上限；精确超时由 release 后的计时器负责
-
-  let goTimeout: NodeJS.Timeout | null = null;
 
   // macOS 的 RLIMIT_AS 不生效（P1-11），因此额外做宿主侧 RSS 监控。
   // 由于 profile 已禁止 process-fork，进程组内只有这一个进程。
@@ -890,15 +925,21 @@ export function spawnRunner(opts: {
       : Number(process.hrtime.bigint() - startedNs) / 1e6;
 
     if (cancelled) {
-      // 运行器级终止（宿主显式 cancel()，例如 READY 握手失败）。
-      // **不是**规则意义上的攻击取消：Locked Attack Right 之下，
-      // Shooter 被击杀不会走到这里（规则修订 §10/§11）。
+      // 运行器级终止。**不是**规则意义上的攻击取消 —— 它只由宿主显式 cancel()
+      // 触发（例如同回合另一方 READY 握手失败）。
+      //
+      // 归因必须诚实（PLAT-4）：如果是**对方**失败导致本队被中止，不能记
+      // CANCELLED —— 那会把平台级故障写成「本队攻击被取消」，让无辜的一方
+      // 出现在比赛历史的 cancelled 标记里。
+      const peerAbort = abortReason === 'PEER';
       finish({
         success: false,
         stdout,
         stderr,
-        error: '运行器被宿主取消（进程终止）—— 不是 Shooter 阵亡导致',
-        errorCode: 'CANCELLED',
+        error: peerAbort
+          ? '运行器被宿主中止：同回合另一方未能完成 READY 握手（本队无过错）'
+          : '运行器被宿主取消（进程终止）—— 不是 Shooter 阵亡导致',
+        errorCode: peerAbort ? 'RUNNER_ABORT' : 'CANCELLED',
         computeTimeMs,
       });
       return;
@@ -974,6 +1015,12 @@ export function spawnRunner(opts: {
       if (candidateMs >= 0 && candidateMs <= opts.timeoutMs) resultNs = candidate;
     }
     pendingResult = { resultJson: text, dslText: parsed.dslText, resultNs };
+    // 预算问题到此为止：合法结果已在预算内到达（计时终点是它自己的 mtime）。
+    // 不撤销这个定时器的话，若结果恰在 deadline 前 50ms 内被侦测到，
+    // RESULT_DRAIN_GRACE_MS 会与 deadline 赛跑、deadline 先到就误判 TIMEOUT ——
+    // 同一条算法的接受边界会因为「写完结果后是否继续运行」而平移 50ms
+    // （Re-Gate Cycle 2 PLAT-3）。
+    if (goTimeout) { clearTimeout(goTimeout); goTimeout = null; }
     if (poller) { clearInterval(poller); poller = null; }
     // 给进程一点时间自然退出，把 stderr 里的 debug log 排空（规范 §30）；
     // 超时仍未退出就强杀 —— ONE OUTPUT ONLY，写完就该结束（规范 §29）。
@@ -1007,6 +1054,9 @@ export function spawnRunner(opts: {
     // 精确超时从 release 起算；到点仍无合法结果 → TIMEOUT（规范 §28）
     if (goTimeout) clearTimeout(goTimeout);
     goTimeout = setTimeout(() => {
+      // 兜底（PLAT-3）：合法结果已经到达、只是 drain grace 还没走完 ——
+      // 它的 mtime 在预算内，这一轮算成功，不是 TIMEOUT。
+      if (pendingResult) { finishWithResult(); return; }
       killTree(proc.pid);
       finish({
         success: false, stdout, stderr,
@@ -1054,8 +1104,9 @@ export function spawnRunner(opts: {
       return releaseNs;
     },
     done,
-    cancel: () => {
+    cancel: (reason: 'HOST' | 'PEER' = 'HOST') => {
       cancelled = true;
+      abortReason = reason;
       killTree(proc.pid);
       if (!readySettled) {
         readySettled = true;
@@ -1126,9 +1177,16 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     const [ra, rb] = await Promise.all([runnerA.ready, runnerB.ready]);
     readySkewMs = Number(ra.readyNs > rb.readyNs ? ra.readyNs - rb.readyNs : rb.readyNs - ra.readyNs) / 1e6;
   } catch (e) {
-    // 一方未能 READY —— 让两边都结束
-    runnerA.cancel();
-    runnerB.cancel();
+    // 一方未能 READY —— 让两边都结束。
+    //
+    // 归因必须对称且诚实（PLAT-4）：失败的那一方已经带着自己的真实错误码
+    // （CRASH / READY_TIMEOUT / SPAWN_ERROR）收尾，另一方的进程**本身没有出错**，
+    // 它只是被宿主中止。此前双方都记 CANCELLED，于是回合结果码会把中止
+    // 归给存活的那一方（实测：B 在 READY 前失败 → result = CANCELLED_A）。
+    // 现在无辜的一方拿 RUNNER_ABORT，回合结果码因此落到 TECHNICAL_INVALID，
+    // 不再指向任何一支队伍。
+    runnerA.cancel('PEER');
+    runnerB.cancel('PEER');
     const [oa, ob] = await Promise.all([runnerA.done, runnerB.done]);
     const neverReleased = process.hrtime.bigint();
     return {

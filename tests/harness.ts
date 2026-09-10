@@ -45,10 +45,27 @@ export async function assertRejects(fn: () => Promise<unknown>, message: string)
   if (!threw) throw new Error(`断言失败: ${message}（期望抛错，但没有）`);
 }
 
-export async function runAll(suiteName: string): Promise<void> {
+export async function runAll(suiteName: string, expectedTests?: number): Promise<void> {
   console.log(`\n═══ ${suiteName} (${cases.length} tests) ═══`);
   let passed = 0;
   const failures: { name: string; error: Error }[] = [];
+
+  // 零用例守卫（Re-Gate Cycle 2 PLAT-6 / P3-15）：一个套件若因为注册语句被注释掉、
+  // import 路径写错、或文件被清空而**一个用例都没跑**，旧实现会打印 `0/0 passed`
+  // 并以退出码 0 收场 —— 静默的假绿。那比一条失败断言更危险。
+  if (cases.length === 0) {
+    console.log(`\n${suiteName}: 0/0 passed  ← 零用例，判为失败`);
+    console.log(`\n[harness] ${suiteName} 没有注册任何用例：套件文件可能被清空或注册语句被移除。`);
+    process.exit(1);
+  }
+  // 期望用例数（可选）：写死一个数字后，删掉/漏跑用例会立刻变红，
+  // 而不是悄悄少跑几条。
+  if (expectedTests !== undefined && cases.length !== expectedTests) {
+    console.log(
+      `\n${suiteName}: 期望 ${expectedTests} 个用例，实际注册 ${cases.length} 个 —— 判为失败`
+    );
+    process.exit(1);
+  }
 
   for (const c of cases) {
     const started = Date.now();
