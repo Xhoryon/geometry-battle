@@ -111,6 +111,14 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 守卫与出参都不再存在，旧规则无法被静默重新引入（任务书 §30 要求重审方核查「旧 cancellation
 路径是否残留」，这是对该核查的正面回应）。
 
+**未改动**：`RoundMachine` 的 19 个阶段与转换表**一个都没动**
+（`CHECK_SHOOTER` 阶段名保留，现在只表示「检查 Shooter 存活」这一步的推进，
+不再带任何取消语义 —— 它是阶段序列的一部分，改名会牵动冻结的状态机词汇表）。
+`TIE_EPS_MS`、先手判定、超时预算、沙箱 SBPL、DSL 白名单、命中与障碍物判定
+全部逐字节未动，可用 `git diff 877f142..HEAD -- src/core/Rules.ts src/core/Judge.ts
+src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删除取消钩子与
+一条错误文案）。
+
 ---
 
 ## 5. Regression Evidence
