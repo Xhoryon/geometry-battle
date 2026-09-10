@@ -1,0 +1,1860 @@
+═══ 0. 固定算法槽位（规范 §2/§33）═══
+┌──────────────────────────────────────────────────────────────┐
+│TEAM A ALGORITHM — Team A                                    │
+│  Status       READY                                          │
+│  Slot         /Users/jiayihuang/Downloads/几何斗殴/playte…  │
+│  Entrypoint   solver.py                                      │
+│  Package Hash a11dbf0a47622305ac123b2efeec07d8…             │
+│  Files        10  (56633 bytes)                              │
+│  Preflight    PASS                                           │
+│                                                              │
+│TEAM B ALGORITHM — Team B                                    │
+│  Status       READY                                          │
+│  Slot         /Users/jiayihuang/Downloads/几何斗殴/playte…  │
+│  Entrypoint   solver.py                                      │
+│  Package Hash 995a5b73f9f70f11c422c2f2aa083962…             │
+│  Files        9  (50747 bytes)                               │
+│  Preflight    PASS                                           │
+│                                                              │
+│Runtime  CPython 3.9.6 (darwin) | 第三方包: NONE | cpu=1核 m…│
+│[ REPLACE ALGORITHM ]  ← CLI: --a <dir> / --b <dir>          │
+└──────────────────────────────────────────────────────────────┘
+  冻结: CPython 3.9.6 (darwin) | 第三方包: NONE | cpu=1核 mem=512MB threads=1 timeout=2000ms
+  实测: CPython 3.9.6
+  核对: ✓ 与冻结清单一致
+
+═══ 1. 上传与密封（从槽位密封副本）═══
+  A hash: a11dbf0a47622305ac123b2efeec07d8d4d6535c955cc69f6f00b1f8dd44942b
+  B hash: 995a5b73f9f70f11c422c2f2aa083962dbaa3f0f1fe45f96d6f4bd445f97c859
+
+═══ 2. Preflight（decoy 世界 —— 与比赛种子无关，不泄漏本轮任何信息）═══
+  decoy seed: 923236156   比赛 seed: 2828
+  ✓ PASSED
+
+═══ 3. 开始比赛 ═══
+┌─────────────────────────────────────────────────────────────┐
+│                   MATCH SETUP STATUS                        │
+├─────────────────────────────────────────────────────────────┤
+│ Match ID      MATCH-MTV2SW2K-7QAGO3                            │
+│ Seed          2828                                             │
+│ Phase         SELECT_SHOOTER                                   │
+├─────────────────────────────────────────────────────────────┤
+│ Team A        ✓ Team A                                         │
+│   hash        a11dbf0a47622305ac123b2efeec07d8                 │
+│ Team B        ✓ Team B                                         │
+│   hash        995a5b73f9f70f11c422c2f2aa083962                 │
+├─────────────────────────────────────────────────────────────┤
+│ Preflight     ✓ PASSED                                         │
+│ Map           seed=2828 6v6 obstacles=4                        │
+├─────────────────────────────────────────────────────────────┤
+│ ALL READY     ✓ YES                                            │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 1   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│    A1   (-6.7, 7.2)                                         │
+│    A2   (-14.3, 8.5)                                        │
+│    A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│    A5   (-13.1, 6.2)                                        │
+│    A6   (-11.4, 0.3)                                        │
+│    B1   (18.3, 8.1)                                         │
+│    B2   (11.4, 5.5)                                         │
+│    B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│    B5   (15.0, 7.8)                                         │
+│    B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 75ec909d9449ebe713a23ac208c95d964da3a106d55bd028a0aeb775bace52f7
+
+Team A 自动选择: A1
+
+Team B 自动选择: B1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 1   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A1       TEAM B SHOOTER: B1                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 0b706e0aa447a541efa23bce3d5e968736c2e08e5d38f396b12dd4a93bf931b6
+  roundStateHash              = 693bfc4406d7b18d989e5ed1eae3c77e27c45ea573bbc298ec15fbda18c46db0
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 1   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A1       B SHOOTER: B1                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 1 RESULT ──
+  roundStateHash: 693bfc4406d7b18d…
+  先解: B
+  A: A1  t=-ms  命中=[]
+  B: B1  t=6.409ms  命中=[A1,A5]
+  击杀: [A1,A5]  取消: A=true B=false
+  存活: A=4  B=6
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 2   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│    A2   (-14.3, 8.5)                                        │
+│    A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│    A6   (-11.4, 0.3)                                        │
+│    B1   (18.3, 8.1)                                         │
+│    B2   (11.4, 5.5)                                         │
+│    B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│    B5   (15.0, 7.8)                                         │
+│    B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 3a7c39cbac4ba23bdd5389762e9653a12ede00e24b199a9ad43fdd620c1018ed
+
+Team A 自动选择: A2
+
+Team B 自动选择: B1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 2   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A2       TEAM B SHOOTER: B1                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = a53b5777082bf400283f35baf0dc1ec364d2d9da2f760a6639adc4e429fc1a8b
+  roundStateHash              = 3746613e5e2cff8236c9a8d9a5b7d7aec49b8d03922eca912d0056919dde1ec3
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 2   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A2       B SHOOTER: B1                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 2 RESULT ──
+  roundStateHash: 3746613e5e2cff82…
+  先解: A
+  A: A2  t=15.380ms  命中=[B5,B1]
+  B: B1  t=-ms  命中=[]
+  击杀: [B5,B1]  取消: A=false B=true
+  存活: A=4  B=4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 3   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│    A2   (-14.3, 8.5)                                        │
+│    A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│    A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│    B2   (11.4, 5.5)                                         │
+│    B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│    B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 68c6610ecd958ae560a6ffd4c824994c2f47783cf2e65ef21e274f4c77e2851b
+
+Team A 自动选择: A2
+
+Team B 自动选择: B2
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 3   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A2       TEAM B SHOOTER: B2                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = f3e4bc01650562a0594d302da434ffc74a4257068521adb7771f7c2f92509d08
+  roundStateHash              = f38fa732075aae5407d1c0ec8550153fa02194e8c1d66ee8de9c958c32d0988e
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 3   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A2       B SHOOTER: B2                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 3 RESULT ──
+  roundStateHash: f38fa732075aae54…
+  先解: B
+  A: A2  t=-ms  命中=[]
+  B: B2  t=6.318ms  命中=[A3,A2]
+  击杀: [A3,A2]  取消: A=true B=false
+  存活: A=2  B=4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 4   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│    A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│    B2   (11.4, 5.5)                                         │
+│    B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│    B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = da08daeeca2f788d089affe71ac21984f231cce85744e57400f99a20bad5ac69
+
+Team A 自动选择: A4
+
+Team B 自动选择: B2
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 4   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B2                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 8aff6021e61f68d814ef4ce58650aace50586373ff9c65e6aed9eac3cf41fd5e
+  roundStateHash              = bb98013006f899460d38ac6819c10f84ac7457df84fc387dfcd9bc33ea114eec
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 4   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B2                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 4 RESULT ──
+  roundStateHash: bb98013006f89946…
+  先解: A
+  A: A4  t=13.435ms  命中=[B2,B3]
+  B: B2  t=-ms  命中=[]
+  击杀: [B2,B3]  取消: A=false B=true
+  存活: A=2  B=2
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 5   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│    A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│    B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = b2b74e27db14448067383d30ece1cfc53c9751592968f9431138b3c8fdc55011
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 5   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 62e734b2bb7813913e4ab2e3de47e688f24fbcb7fbd9537b2504e6167f6c9125
+  roundStateHash              = 80e21ccf776ca2f031e110a0af360a3dfe44f202beb0c0439e49cd8345f1d51c
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 5   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 5 RESULT ──
+  roundStateHash: 80e21ccf776ca2f0…
+  先解: B
+  A: A4  t=31.678ms  命中=[B6]
+  B: B4  t=14.409ms  命中=[A6]
+  击杀: [A6,B6]  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 6   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = cdd93edcf18e0b1e90125eb90861bfbc54afb2b043337c3c9ceeaa956c1e1a7b
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 6   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 07e09ce611ea065686e560878135eeb7117205a957c3b255a4078ae55cfa24d9
+  roundStateHash              = 6d19aaae133cef4828403cd5361a5101797ac7d8ef6cf26f44b9fad4d570d0b7
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 6   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 6 RESULT ──
+  roundStateHash: 6d19aaae133cef48…
+  先解: B
+  A: A4  t=15.533ms  命中=[]
+  B: B4  t=10.091ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 7   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 093c23e50893a087d54e144212df703967a3ca8622202ac8c4fd7946ea15f5fd
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 7   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = e3ff123d4789a13690b5e0bc3925b69c03e973b29c62d26dfc1c9af7b59db10e
+  roundStateHash              = e31233fa8e5955baaa73f8de9856063d228faf412d7f2772e9ef0a7928e181c7
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 7   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 7 RESULT ──
+  roundStateHash: e31233fa8e5955ba…
+  先解: B
+  A: A4  t=15.854ms  命中=[]
+  B: B4  t=9.555ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 8   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 84a6898b52f9cca2ed2d0e64ca44f0d09c179a60a96807434157349769947e09
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 8   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 822b9c74d7a58f5a14f0e34fcbbe73d2aa868266bb56a9386e69fbfa1b4012d8
+  roundStateHash              = e908294375551fc42a0885d9a6e3dd85a9fc0f1e5561ebb9099e01896621ed85
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 8   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 8 RESULT ──
+  roundStateHash: e908294375551fc4…
+  先解: B
+  A: A4  t=15.416ms  命中=[]
+  B: B4  t=9.497ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 9   PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 0e08f23703357dea12fc52e2f5880f1f0439c1468c01b8af6fe14bfe4bcea5df
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 9   REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 567b275f85db5975920d421c1f9361c9108c84dad1de4b8be529a877fea2bf7c
+  roundStateHash              = c0d0b174703757210e5f63030dbe40c89ce71e0ed2e319ab6c0d8837206efc10
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 9   — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 9 RESULT ──
+  roundStateHash: c0d0b17470375721…
+  先解: B
+  A: A4  t=15.330ms  命中=[]
+  B: B4  t=9.498ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 10  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = eee81d46ce40ea571b432d53dd04ba33980159fe9bc57625291348ad5b02647d
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 10  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 28292a1cdf6da8d149c1d1bafd567b57e5714f2583662c23b58c85aac898be59
+  roundStateHash              = 88e8c65034b18d1eada65a1bd1e31520f54dbd25620df018abb49c92a4ce6d2e
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 10  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 10 RESULT ──
+  roundStateHash: 88e8c65034b18d1e…
+  先解: B
+  A: A4  t=15.614ms  命中=[]
+  B: B4  t=9.774ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 11  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = e4cb05f165c99270f996edcaddf3c813bf43ab74c0b048903330eee7ca6c1d05
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 11  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 7c24a9b8c8c7460afb1103e798d6ec91641c75abba1d0a81b9b2386e98a528e0
+  roundStateHash              = 38ee35ea42709061d616515029a2df8831183556bd1ba07976a05053ac514298
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 11  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 11 RESULT ──
+  roundStateHash: 38ee35ea42709061…
+  先解: B
+  A: A4  t=15.623ms  命中=[]
+  B: B4  t=9.530ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 12  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 09e5d6491dfc08b61f91e964bf6bc55f57730ef2eb2d96bc3dd0957d39180a1b
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 12  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = f20633c3d1a17bdea7ea815ece1ccaf38b14c6cf8cb4f07b3754df8308152968
+  roundStateHash              = 02e5409a4e6c7c490fb6e9454ef3de8169c1913352891efe2d8779a3c269c02a
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 12  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 12 RESULT ──
+  roundStateHash: 02e5409a4e6c7c49…
+  先解: B
+  A: A4  t=15.570ms  命中=[]
+  B: B4  t=9.606ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 13  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 28e2a4394fef49aef65bf5272cc062baa622c39e274f767cc549d2aa3d9a7aef
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 13  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = c4bb30b267b0e4ad5b5fe6695f9ecd70385ccc23e2ca51d456d89177e6d8a052
+  roundStateHash              = 29768c325749c166fff135c898e7253506d71fbb0f48d47d56423d45e8ef9ec3
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 13  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 13 RESULT ──
+  roundStateHash: 29768c325749c166…
+  先解: B
+  A: A4  t=15.891ms  命中=[]
+  B: B4  t=9.785ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 14  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 64ba63eadb45f7b09986df5b5e42bf7d8c9c5fec9ce0ffa5c2c20cce6d9984c4
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 14  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = a019b5936c8b3f4a73aa1cec9c4597a506bda146357b3c6cc2b5a9e07cc0b667
+  roundStateHash              = f8379050055a0386ee25781e78b36e83730d62bb023269c7ed026f7cee12b89c
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 14  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 14 RESULT ──
+  roundStateHash: f8379050055a0386…
+  先解: B
+  A: A4  t=15.793ms  命中=[]
+  B: B4  t=9.849ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 15  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = c6f664b9cb010470d6e97038fbcbb3e8e3c711b4a6899c6a198c627b778a38a8
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 15  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 2a7abd12237b1f5be4b45eb60085e09d8ce35c8f7cd0740cf0568baa9cb2cb6d
+  roundStateHash              = 7790126d9d7d194bc695b8a81bc3388c7236c15b3689ef26f49bf0836c341c3e
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 15  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 15 RESULT ──
+  roundStateHash: 7790126d9d7d194b…
+  先解: B
+  A: A4  t=15.756ms  命中=[]
+  B: B4  t=9.841ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 16  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = f5f81892d36d7bac0612d3396be194acbc533f4fa56a4b3feb456567fd9f1e3b
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 16  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 5d4192914bed5db0130c2c38a1e4c6b13c1ab6acae5be693eb963a26dfd532ab
+  roundStateHash              = e08ce357d8c489dff390f8851e6722f18caa7f16c78517053f985c86d2b7e387
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 16  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 16 RESULT ──
+  roundStateHash: e08ce357d8c489df…
+  先解: B
+  A: A4  t=15.873ms  命中=[]
+  B: B4  t=9.432ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 17  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 12caa56c6b3257b018cb2bbae315d0151f51354f266da5ced2d1012172b48a26
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 17  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = d67c90496031d5e1fdceda686cd9544bd52f865266a08ea21982686ac998492a
+  roundStateHash              = bbe7c65226e17d6f6056a03e4193a8147c1d0e23751b314bc2f438668e87646b
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 17  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 17 RESULT ──
+  roundStateHash: bbe7c65226e17d6f…
+  先解: B
+  A: A4  t=15.802ms  命中=[]
+  B: B4  t=9.482ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 18  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 2bdecec6a13bbf7f53eb565363f4be316e20a47aaa49d5301d7bc2dc2b25319c
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 18  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 3b8464e5fb123b0044bb0737ced1b14050eb65c157930fe30b2ed5dcc1d97938
+  roundStateHash              = 3fd4faf4706eb57ac5b75120cd938cc25559c5bdd7bf19ca6ec38a3392a9f041
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 18  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 18 RESULT ──
+  roundStateHash: 3fd4faf4706eb57a…
+  先解: B
+  A: A4  t=15.932ms  命中=[]
+  B: B4  t=9.635ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 19  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 327e90d602e4ddbd509216f414956f930d385875800b88bb5843b8013673e181
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 19  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 4f797eb1795f51881bafdd98f3be9f95eece403e4e192b6edfd4c4edcfdc36bb
+  roundStateHash              = e73d64517463d35b5cc64f9ad9a3d1a88d4d373a7862efdd137dc974efea7ce0
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 19  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 19 RESULT ──
+  roundStateHash: e73d64517463d35b…
+  先解: B
+  A: A4  t=15.575ms  命中=[]
+  B: B4  t=9.719ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 20  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 9a8f2b9836aa4953261a944af9aa36dc5ec7e7f56ec6ac8c0a0c4e4166a03b6f
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 20  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 1e824b578e79b753f113982001d711e2d1cf1e9a357e91b10b54003836d9cd75
+  roundStateHash              = 69d3030057c6821ff75950d6f12f5cc964cab3f3928adbd8de4738f0ca8d4386
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 20  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 20 RESULT ──
+  roundStateHash: 69d3030057c6821f…
+  先解: B
+  A: A4  t=16.491ms  命中=[]
+  B: B4  t=10.266ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 21  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 3b0482450ecdff0d31a21309649f6494f495dde73a5bfa10dafaf01150d28da8
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 21  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = a435632b35eca6fa9f95221e1126efa700fca7112d2b96a7dc8ca63216ad6597
+  roundStateHash              = 1409ed240ec7b1dc5480fe2a6dfb651a538a49def392aaa2c42cd83209a86d01
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 21  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 21 RESULT ──
+  roundStateHash: 1409ed240ec7b1dc…
+  先解: B
+  A: A4  t=16.113ms  命中=[]
+  B: B4  t=9.761ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 22  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = bd7b143663798791d22c681b6ce1e170096c33da001d7c95e7043bfce24ef1b1
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 22  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 3faf0517dbb8c2f0e94001b0dd3ea3df1549b4bda57fa653be8245621df1d647
+  roundStateHash              = d981cab9a82688bd6fcc431fec36673e56d65bf908dff564e090e483c9cad417
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 22  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 22 RESULT ──
+  roundStateHash: d981cab9a82688bd…
+  先解: B
+  A: A4  t=16.423ms  命中=[]
+  B: B4  t=9.855ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 23  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = c08852083b7eb496ec654022698f82477dd4a1844d722330fa65c6667ddcd17b
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 23  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 4162b0d7bc47614dda9a3718c69b81a04d787372ea02fc8870f0ca2b6fb94835
+  roundStateHash              = c21b42f6fa995d820373380781ccec545c21e3f2a283984db03c6656c6f1a791
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 23  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 23 RESULT ──
+  roundStateHash: c21b42f6fa995d82…
+  先解: B
+  A: A4  t=16.068ms  命中=[]
+  B: B4  t=9.728ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 24  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 64e4902817cb96405439a56c02ce834da77101a978e35693db7a6b764550621d
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 24  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 3d89710ce4240a28ae7cdd1571cb04825461a7a2104e6843547680b19e9c8f38
+  roundStateHash              = 65af07910d5a9ca7b383db096d7110dcf8df858684bd5ea37c89a7078eb48e54
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 24  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 24 RESULT ──
+  roundStateHash: 65af07910d5a9ca7…
+  先解: B
+  A: A4  t=16.045ms  命中=[]
+  B: B4  t=9.858ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 25  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 893beba13e8189a1dd12b5546ed667b5f4b55c8fb599700461fc17115d360667
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 25  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 9352f6c5bac9519da40fa4493f6df86ac8a5722ea461ac5b7cdd4b8290dc3097
+  roundStateHash              = 44afb8a4ab73f8f5952f5f589fc0a7dfe0e469c96718b07bb8f81b9e8e1cc59b
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 25  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 25 RESULT ──
+  roundStateHash: 44afb8a4ab73f8f5…
+  先解: B
+  A: A4  t=15.864ms  命中=[]
+  B: B4  t=10.043ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 26  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 4096b01cd2126c974d3576f9424d1b7a855dc3564d82535365de7438c4e0cc03
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 26  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = fed8e0aa10f9f112e4bf6dd093ade69270cbbb95d22e1b28a14f6854e5e15c99
+  roundStateHash              = 52826b0280989d595e4523f40cdeb0b16af2c1d86090d530423144109e9aa66d
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 26  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 26 RESULT ──
+  roundStateHash: 52826b0280989d59…
+  先解: B
+  A: A4  t=15.951ms  命中=[]
+  B: B4  t=10.066ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 27  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 4d5c6c45422dd7dbecfbb63aae0bf3a0408a91a79ec5269834a021c743dfe119
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 27  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = be21332a911b1b2adac30063010230905a0087acb8205c8155c65392715a0256
+  roundStateHash              = a888acf32a600b916be9f9165a0274a2a934b8e1133d511f8607249519548077
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 27  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 27 RESULT ──
+  roundStateHash: a888acf32a600b91…
+  先解: B
+  A: A4  t=19.077ms  命中=[]
+  B: B4  t=11.765ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 28  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = bee8734d77e1d3477c2e65eafa58f41306ad8ad90fb2bca08e25b49cc33514ba
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 28  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 6192d61bce427b44779de689d43550b5e600f896d38870fc1e6fc975e16374d3
+  roundStateHash              = 80b11831312b3a9190943c49be7e6e773740047a5eac9d3ddfbafaed9900e32b
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 28  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 28 RESULT ──
+  roundStateHash: 80b11831312b3a91…
+  先解: B
+  A: A4  t=15.712ms  命中=[]
+  B: B4  t=10.246ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 29  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = c74afda44e75c72634ec824a283b768636d1b5d5fac757a0b9819f5d1d8ae2ff
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 29  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 9f03c52f9315f3a22f86820dc339d53394660f547c9b1a415140f70def0c68df
+  roundStateHash              = 2d064a03f9709914cea9ae666918f3b440716f01b52042ab7322e6782b3285b9
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 29  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 29 RESULT ──
+  roundStateHash: 2d064a03f9709914…
+  先解: B
+  A: A4  t=15.705ms  命中=[]
+  B: B4  t=10.160ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 30  PRE-REVEAL — SELECT SHOOTER                      │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  (obstacles / shooters 仍未揭盲)                  │
+│  × A1   (-6.7, 7.2)                                         │
+│  × A2   (-14.3, 8.5)                                        │
+│  × A3   (-11.0, 9.8)                                        │
+│    A4   (-9.5, -7.1)                                        │
+│  × A5   (-13.1, 6.2)                                        │
+│  × A6   (-11.4, 0.3)                                        │
+│  × B1   (18.3, 8.1)                                         │
+│  × B2   (11.4, 5.5)                                         │
+│  × B3   (15.5, 0.3)                                         │
+│    B4   (16.9, 5.0)                                         │
+│  × B5   (15.0, 7.8)                                         │
+│  × B6   (11.9, -9.2)                                        │
+└─────────────────────────────────────────────────────────────┘
+  public_state.json  sha256 = 5df9fda54a266f5832ca66a4b4cbfe6a27cd73d58ec0c44f89d34a995e14e499
+
+Team A 自动选择: A4
+
+Team B 自动选择: B4
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 30  REVEAL                                           │
+├─────────────────────────────────────────────────────────────┤
+│  TEAM A SHOOTER: A4       TEAM B SHOOTER: B4                │
+│  OBSTACLES REVEALED: 4                                      │
+│    circle  c(4.90, 0.48)  r=4.80                            │
+│    rect    x[3.04, 7.34]  y[-1.65, 0.51]                    │
+│    rect    x[9.90, 14.04]  y[-0.21, 1.72]                   │
+│    circle  c(11.98, -3.08)  r=2.15                          │
+├─────────────────────────────────────────────────────────────┤
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  reveal_state.json  sha256 = 8b978c2845f638cca4ac9041e33294527ff414cdf53f89076f0739ac4ca8070c
+  roundStateHash              = 6b7579c9d1512d9704bda47ad05bc2d6266567f1cbc8c121e2e24fd218b6950c
+
+┌─────────────────────────────────────────────────────────────┐
+│  ROUND 30  — WAITING FOR JUDGE                              │
+├─────────────────────────────────────────────────────────────┤
+│  PUBLIC STATE  ✓   A LOCKED ✓  B LOCKED ✓   REVEAL STATE ✓  │
+│  A SHOOTER: A4       B SHOOTER: B4                          │
+│                                                             │
+│  A ALGORITHM: NOT STARTED                                   │
+│  B ALGORITHM: NOT STARTED                                   │
+│  READY TO COMPUTE                          [ START ]        │
+└─────────────────────────────────────────────────────────────┘
+  ▶ START!  TEAM A COMPUTING… / TEAM B COMPUTING…
+
+── ROUND 30 RESULT ──
+  roundStateHash: 6b7579c9d1512d97…
+  先解: B
+  A: A4  t=16.708ms  命中=[]
+  B: B4  t=10.110ms  命中=[]
+  击杀: []  取消: A=false B=false
+  存活: A=1  B=1
+
+═══════════════════════════════════════════════════
+  UNDECIDED（达到最大回合数 30，双方僵持）
+  引擎不会自行宣布胜者；产物已完整落盘，可由裁判按赛事规则裁定。
+  Rounds: 30   Kills: A=5 B=5
+  Artifacts: /Users/jiayihuang/Downloads/几何斗殴/artifacts/matches/MATCH-MTV2SW2K-7QAGO3
+═══════════════════════════════════════════════════
+
+回放: npx ts-node src/operator/cli.ts --replay /Users/jiayihuang/Downloads/几何斗殴/artifacts/matches/MATCH-MTV2SW2K-7QAGO3

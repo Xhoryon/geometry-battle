@@ -16,6 +16,8 @@ algorithms/.slots/
 # 记录了本机绝对路径，不适合作为基线证据入库。
 playtest/slots/
 
-# 例外：`*.log` 是全局规则，但 Round-1 raw evidence 里逐场的平台 console
-# 日志是原始证据链的一部分，必须随 raw/ 一起入库，故在此显式豁免。
-!playtest/results/raw/**/console.log
+# 例外：`*.log` 是全局规则，但每一轮 raw evidence 里逐场的平台 console
+# 日志都是原始证据链的一部分，必须随 raw/ 一起入库，故在此显式豁免。
+# 轮次目录层级不同（round-1: results/raw/...，round-2: results/round-2/raw/...），
+# 因此用 ** 跨层匹配，而不是写死某一轮的路径。
+!playtest/results/**/console.log
