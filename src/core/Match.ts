@@ -1103,7 +1103,15 @@ export class MatchEngine {
       teamBPackageHash: this.packages.B?.hash ?? null,
       startTime: this.startedAt.toISOString(),
       endTime: new Date().toISOString(),
-      winner: this.terminalReason ? 'draw' : this.getWinner() ?? 'draw',
+      // 胜者**只由存活战况决定**（§43）：ELIMINATION 时是幸存的那一方；
+      // MUTUAL_ELIMINATION / STALEMATE / HARD_ROUND_LIMIT 时 getWinner() 给
+      // null 或 'draw'，落到 'draw'。
+      //
+      // 这里曾写成 `this.terminalReason ? 'draw' : ...` —— 那会在**任何**终局都
+      // 强制写成 draw，于是「一方全灭」的比赛也记成平局。180 场 Revision 3
+      // playtest 把它暴露了出来（0 场分胜负），修复见同轮回归
+      // `full-match-e2e` 的「ELIMINATION 必须记下真正的胜者」。
+      winner: this.getWinner() ?? 'draw',
       endReason: this.endReason(),
       rounds: [...this.rounds],
       finalAlive: {
@@ -1120,7 +1128,15 @@ export class MatchEngine {
       seed: this.seed,
       teamAName: this.teamAName,
       teamBName: this.teamBName,
-      winner: this.terminalReason ? 'draw' : this.getWinner() ?? 'draw',
+      // 胜者**只由存活战况决定**（§43）：ELIMINATION 时是幸存的那一方；
+      // MUTUAL_ELIMINATION / STALEMATE / HARD_ROUND_LIMIT 时 getWinner() 给
+      // null 或 'draw'，落到 'draw'。
+      //
+      // 这里曾写成 `this.terminalReason ? 'draw' : ...` —— 那会在**任何**终局都
+      // 强制写成 draw，于是「一方全灭」的比赛也记成平局。180 场 Revision 3
+      // playtest 把它暴露了出来（0 场分胜负），修复见同轮回归
+      // `full-match-e2e` 的「ELIMINATION 必须记下真正的胜者」。
+      winner: this.getWinner() ?? 'draw',
       endReason: this.endReason(),
       frames: [...this.frames],
     };

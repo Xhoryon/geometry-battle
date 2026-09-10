@@ -167,4 +167,31 @@ test('full-match-e2e: 阶段守卫 —— 未锁定/未裁决时不允许开跑'
   assert(engine.judgeStartRound().ok, '进入 PUBLIC 后应允许 START ROUND');
 });
 
+test('full-match-e2e: ELIMINATION 必须记下真正的胜者，不得记成 draw（回归）', async () => {
+  // 回归：Revision 3 playtest 曾出现 180 场全部记成 draw —— 根因是 MatchLog/Replay
+  // 的 `winner` 写成了 `this.terminalReason ? 'draw' : ...`，于是**任何**终局都被
+  // 强制写成平局，连「一方全灭」也记成 draw。这条用例锁死对应关系。
+  const played = await playFullMatch({ seed: 777031, pointCount: 6 });
+  const log = played.engine.getMatchLog();
+  const finalAlive = { A: log.finalAlive.A, B: log.finalAlive.B };
+
+  if (log.endReason === 'ELIMINATION') {
+    assert(
+      finalAlive.A === 0 || finalAlive.B === 0,
+      `ELIMINATION 必须有一方归零，实际 ${JSON.stringify(finalAlive)}`
+    );
+    const expected = finalAlive.A === 0 ? 'B' : 'A';
+    assertEqual(log.winner, expected, `ELIMINATION 的胜者必须是仍有战斗点的一方（实际存活 ${JSON.stringify(finalAlive)}）`);
+    assertEqual(played.engine.getReplay().winner, expected, '回放的 winner 必须与日志一致');
+    assertEqual(played.engine.getWinner(), expected, '引擎的 winner 必须与日志一致');
+  } else if (log.endReason === 'MUTUAL_ELIMINATION') {
+    assertEqual(finalAlive, { A: 0, B: 0 }, '同归于尽时双方都必须归零');
+    assertEqual(log.winner, 'draw', '同归于尽必须判和');
+  } else {
+    // STALEMATE / HARD_ROUND_LIMIT：都判和，且双方都还有战斗点
+    assert(log.winner === 'draw', `${log.endReason} 应判和，实际 ${log.winner}`);
+    assert(finalAlive.A > 0 && finalAlive.B > 0, `${log.endReason} 时双方都还应有战斗点`);
+  }
+});
+
 void runAll('full-match-e2e');

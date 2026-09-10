@@ -38,6 +38,7 @@ const SUITES = [
   'timing-fairness',
   'replay',
   'arena-view',
+  'operator-e2e',
   'runtime-manifest',
   'competitor-kit',
 ];

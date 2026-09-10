@@ -153,3 +153,48 @@ CLI 的 `--max-rounds` 降级为纯兜底。这样「每场比赛都在有限时
 ## 阶段 5 — 后续（本文件在开发过程中持续追加）
 
 见下文各阶段。
+
+---
+
+## 阶段 6 — 最终 playtest 暴露的一个真 bug（本轮引入、本轮修复）
+
+**现象**：Revision 3 的第一次 180 场 playtest 跑完，**180 场全部记成 `draw`**，
+三对配对的 `wins` 全是 0。
+
+**根因**：`MatchEngine.getMatchLog()` / `getReplay()` 里的 `winner` 字段写成了
+
+```ts
+winner: this.terminalReason ? 'draw' : this.getWinner() ?? 'draw',
+```
+
+`terminalReason` 在**任何**终局（包括 `ELIMINATION`）都会被设置，于是这个三元表达式
+把「一方全灭」的比赛也强制写成 `draw`。逐场核对确认：
+`s1010-p8-medium__hybrid-A` 的 `endReason=ELIMINATION`、`finalAlive={A:0,B:3}`，
+而 `winner` 却写着 `draw`。
+
+注意 `RoundResult.winner`（内存返回值）是**对的** ——
+`const finalWinner = winner ?? (this.terminalReason ? 'draw' : null)`。
+错的只有落盘的日志与回放。这也解释了为什么此前的套件全部通过：
+**没有一条用例断言过「ELIMINATION 时日志里的 winner 是谁」**。
+
+**修复**：`winner: this.getWinner() ?? 'draw'` —— 胜者只由存活战况决定（规范 §43）。
+
+**新增回归**：`tests/full-match-e2e.ts` 的
+「ELIMINATION 必须记下真正的胜者，不得记成 draw（回归）」，
+按 `endReason` 分支断言 winner 与 `finalAlive` 的对应关系
+（ELIMINATION → 幸存方；MUTUAL_ELIMINATION → 双方归零且判和；
+STALEMATE / HARD_ROUND_LIMIT → 判和且双方都还有点）。
+
+**处理**：第一次 playtest 的产物是**有缺陷引擎的输出**，整体删除并重跑。
+删除是刻意的：留一份已知错误的归档只会让后续引用踩雷；
+本文件与回归用例保留了它的完整记录。
+
+**教训**：终局相关的字段（winner / endReason）必须有**逐终局分支**的断言，
+否则「四类终局」的新代码路径里，任何一条都可能悄悄写错而全套件全绿。
+
+---
+
+## 阶段 7 — 最终验证与交付
+
+（见 `Plans/Output/V1.1 Completion Wave Report.md` 与
+`Plans/Output/V1.1 Release Candidate Handoff.md`）
