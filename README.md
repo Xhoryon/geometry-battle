@@ -1,6 +1,12 @@
-# 几何斗殴 (Geometry Battle) — V1 Platform
+# Geometry Battle
 
-**AI Vibecoding 函数图像对抗比赛系统**
+**An educational algorithm competition sandbox for computational geometry,
+algorithm optimization, and AI-assisted programming.**
+
+中文名：几何斗殴 · 当前版本：V1.1 Platform
+
+**许可：PolyForm Noncommercial License 1.0.0** —— *source-available for noncommercial use*。
+**这不是 OSI 认可的开源许可**，商业用途需另行授权，详见 [许可与使用范围](#许可与使用范围)。
 
 ---
 
@@ -15,6 +21,21 @@
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
 **START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
 stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
+
+### V1.1 规则一览
+
+| 项目 | 值 |
+|------|-----|
+| 攻击函数 | 每回合输出一条 `y = f(x)`，必须严格经过自己的 Emitter（`\|f(x_e) − y_e\| ≤ 1e-6`） |
+| 固定 Emitter | A 恒为 `(-18, 0)`、B 恒为 `(18, 0)`，整场不变；是**数学发射锚点**，不是战斗点、不可击杀 |
+| 战斗点 | 双方各自的点位（含 `alive: false` 的死点）；对方**存活**的战斗点位于射程内且函数严格经过即击杀 |
+| 障碍物 / 场地边界 | 轨迹在**首次障碍物接触**处永久终止；场地 `x ∈ [-20, 20]`、`y ∈ [-12, 12]` |
+| 单次计算上限 | **500 ms**（每方从自己的 GO 写入时刻起算；另有 512 MB / 1 核 / 1 线程） |
+| `STALEMATE` | 连续 **20** 个回合双方合计击杀数为 **0** → DRAW |
+| `HARD_ROUND_LIMIT` | 到达第 **60** 回合（无论局面如何）→ DRAW |
+
+四类终止方式（`ELIMINATION` / `MUTUAL_ELIMINATION` / `STALEMATE` / `HARD_ROUND_LIMIT`）
+覆盖全部情形，判定在引擎内部，任何入口都跑不出一场不终止的比赛 —— 见 [场地与判定](#6-场地与判定)。
 
 ---
 
@@ -485,3 +506,54 @@ reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出�
   默认槽位根是 `runs/slots`（运行期槽位，被 gitignore），**不会**污染工作区。
   想换位置就加 `--slots <dir>`。
 - 本 README 描述的是 V1.1 平台能力，最终比赛可用性由独立 Re-Gate 审计结论决定。
+
+---
+
+## 许可与使用范围
+
+### 定位
+
+Geometry Battle 是一个**教育性的算法竞赛沙盒**，用于：
+
+- **教育** —— 课堂演示、自学者练习「平台实现 + 算法设计」的完整闭环；
+- **算法优化** —— 在同一评测框架下对比不同的搜索 / 拟合 / 几何策略；
+- **计算几何实验** —— 障碍物求交、轨迹终止、凸性分析等问题的实验场；
+- **AI-assisted / vibecoding practice** —— 让 AI 结对产出真正可参赛的算法包；
+- **编程竞赛** —— 班级、社团或自组织的对抗赛。
+
+### 许可
+
+本项目采用 **[PolyForm Noncommercial License 1.0.0](LICENSE)**，全文见仓库根目录的
+[`LICENSE`](LICENSE)（与 [官方原文](https://polyformproject.org/licenses/noncommercial/1.0.0)
+逐字节一致，未作任何改写）。
+
+> **这不是 OSI 认可的开源许可。**
+> 准确的说法是 **source-available for noncommercial use** —— 源码公开可见、
+> 可自由用于非商业目的，但**不满足** OSI 开源定义中「不得限制使用领域」这一条。
+> 请勿将它称为 "open source" 或 "OSI-approved"。
+
+在**非商业目的**下，你被允许：
+
+| 权利 | 说明 |
+|------|------|
+| 使用 | 运行平台、办比赛、做课程作业 |
+| 学习 | 阅读与研究源码、规则设计与判定实现 |
+| 修改 | 改规则、换判定、增删算子与可视化 |
+| 再分发 | 分发原版，或分发你的修改版 |
+
+*非商业目的* 包括个人研究、实验与测试、个人学习、业余爱好项目，以及慈善机构、
+教育机构、公共研究机构、公共安全与卫生机构、环保机构和政府机构的使用 ——
+**不论其经费来源**。再分发时**必须随附本许可条款**（或指向它的 URL），
+另见 PolyForm 的 Notices 条款。
+
+### 商业用途
+
+**商业用途不在本许可的授权范围内。** 若要将本项目或其修改版用于商业目的 ——
+包括但不限于付费课程、商业培训、商业竞赛平台、托管服务、咨询交付，
+或集成进商业产品 —— **必须事先取得作者另行签发的授权**。
+
+授权联系：<https://github.com/Xhoryon>
+
+### 版权
+
+Copyright (c) 2026 Jiayi Huang — <https://github.com/Xhoryon>
