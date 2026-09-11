@@ -22,6 +22,7 @@ import { Replay } from '../core/Logs';
 import {
   COMMAND_PATHS,
   CommandResult,
+  JUDGE_READ_PATHS,
   TEAM_COMMAND_PATHS,
   TRAJECTORY_MAX_POINTS,
   WireDifficulty,
@@ -326,6 +327,22 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
           return;
         }
         const r = deps.session.readOwnSource(team, rel);
+        if (!r.ok) {
+          sendJson(res, 400, { ok: false, errors: r.errors });
+          return;
+        }
+        sendJson(res, 200, { ok: true, path: rel, text: r.text });
+        return;
+      }
+      // ---- 裁判端只读（V1.2 §一：主办方核对选手交上来的源码）----
+      if (method === 'GET' && pathname === JUDGE_READ_PATHS.source) {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        const rel = url.searchParams.get('path') ?? '';
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        const r = deps.session.readSlotSource(team, rel);
         if (!r.ok) {
           sendJson(res, 400, { ok: false, errors: r.errors });
           return;

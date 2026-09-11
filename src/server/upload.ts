@@ -129,10 +129,24 @@ export function readPackageFile(packageDir: string, relPath: string): string {
   const target = path.resolve(base, relPath);
   if (!target.startsWith(base + path.sep)) throw new Error(`路径越界: ${relPath}`);
 
-  const st = fs.lstatSync(target);
+  // 所有 fs 错误都被翻译成人话再抛出。
+  //
+  // 原因：Node 的 `ENOENT: … lstat '/Users/…/slots/team-a/nope.py'` 里带着
+  // **服务端绝对路径**，而这条消息会原样回给浏览器 —— 等于给探测者泄了目录结构。
+  // 回显 `relPath` 是安全的：那是调用方自己传进来的字符串。
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(target);
+  } catch {
+    throw new Error(`包内没有这个文件: ${relPath}`);
+  }
   if (st.isSymbolicLink()) throw new Error('不允许读取符号链接');
   if (!st.isFile()) throw new Error('不是一个文件');
   if (st.size > 512 * 1024) throw new Error('文件过大，不予在线浏览');
 
-  return fs.readFileSync(target, 'utf-8');
+  try {
+    return fs.readFileSync(target, 'utf-8');
+  } catch {
+    throw new Error(`读取失败: ${relPath}`);
+  }
 }

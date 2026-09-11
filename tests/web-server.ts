@@ -33,8 +33,15 @@ import { JudgeBoard, ServerMessage } from '../src/server/protocol';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
-const ALGO_A = path.join(REPO, 'playtest', 'competitors', 'solver-fast');
-const ALGO_B = path.join(REPO, 'playtest', 'competitors', 'solver-hybrid');
+/**
+ * 测试用的两个算法包。
+ *
+ * 取的是 `tests/fixtures/algos/` 下的测试私有 fixture，而**不是**
+ * `playtest/competitors/*` —— 后者属于平台发行树，锦标赛模式（本套件的默认配置）
+ * 会在服务端拒绝它们上场（V1.2 §二，见 `isBundledAlgorithm`）。
+ */
+const ALGO_A = path.join(__dirname, 'fixtures', 'algos', 'arc-sweep');
+const ALGO_B = path.join(__dirname, 'fixtures', 'algos', 'parabola-arc');
 
 /** failure-path 夹具：只在**正式轮**（round ≥ 1）失败，因此能通过安装时的 decoy preflight */
 const ALGO_CRASH = path.join(REPO, 'tests', 'fixtures', 'algos', 'crash-on-real-round');
@@ -251,6 +258,7 @@ async function playFirstRealRound(port: number): Promise<JudgeBoard> {
   await act(port, 'use-slot-b');
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
   await act(port, 'reveal');
   await act(port, 'start-round');
   await act(port, 'compute');
@@ -282,6 +290,31 @@ async function act(port: number, key: string, body: unknown = {}): Promise<{ sta
   assertEqual(r.status, 200, `${key} 应回 200（预期内的失败也是 200 + ok:false）`);
   assert(r.body.ok, `${key} 必须成功，实际错误：${JSON.stringify(r.body.errors)}`);
   return r;
+}
+
+/**
+ * V1.2 §一：START 之后比赛停在 `EMITTER_SELECT` —— 双方必须各自选定并锁定
+ * 本场的 Fixed Emitter，比赛才可能进入 `READY`。
+ *
+ * 这一步由**参赛者端**完成（裁判没有对应动作），因此任何驱动裁判流程的测试
+ * 都得在这里替两队各点一下，否则永远到不了 `reveal`。
+ */
+async function lockEmitters(port: number): Promise<void> {
+  for (const team of ['A', 'B'] as const) {
+    const state = await get(port, `/api/team/state?team=${team}`);
+    assertEqual(state.status, 200, `读取 Team ${team} 的参赛者板应回 200`);
+    const candidates: { id: string }[] = state.body.board.candidates;
+    assert(candidates.length > 0, `Team ${team} 必须至少有一个可选的 Emitter 候选点`);
+
+    const pick = candidates[0].id;
+    const sel = await post(port, '/api/team/select-emitter', { team, pointId: pick });
+    assert(sel.body.ok, `Team ${team} 选定 ${pick} 应成功：${JSON.stringify(sel.body.errors)}`);
+
+    const lock = await post(port, '/api/team/lock-emitter', { team });
+    assert(lock.body.ok, `Team ${team} 锁定 Emitter 应成功：${JSON.stringify(lock.body.errors)}`);
+  }
+  const board = await judgeState(port);
+  assertEqual(board.phase, 'READY', '双方锁定 Emitter 之后，比赛应进入 READY');
 }
 
 async function waitForMatchEnd(port: number): Promise<JudgeBoard> {
@@ -319,11 +352,12 @@ async function runRehearsal(): Promise<Rehearsal> {
   const iB = await post(port, '/api/judge/install', { team: 'B', sourceDir: ALGO_B });
   assert(iB.body.ok, `Team B 安装应成功：${JSON.stringify(iB.body.errors)}`);
 
-  // ---- 正式主流程：Preflight → 开赛 → 手动跑两轮 → 一键跑完 ----
+  // ---- 正式主流程：Preflight → 开赛 → 双方锁锚点 → 手动跑两轮 → 一键跑完 ----
   await act(port, 'use-slot-a');
   await act(port, 'use-slot-b');
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
 
   for (let i = 0; i < 2; i++) {
     await act(port, 'reveal');
@@ -733,12 +767,19 @@ test('算法 CRASH：如实上板、不泄漏诊断，且 run-to-end 不在 COUN
     await act(iso.port, 'preflight');
     await act(iso.port, 'start');
 
-    // ---- P0-3：PUBLIC 时 run-to-end 可用（正向对照）----
+    // V1.2 §一：START 之后比赛先停在 EMITTER_SELECT，等双方各自锁定锚点。
+    // 「开赛即 PUBLIC」是 V1.1 的旧流程，已随规则修正案作废。
+    const atSelect = await judgeState(iso.port);
+    assertEqual(atSelect.phase, 'EMITTER_SELECT', 'START 之后应先停在 EMITTER_SELECT');
+
+    await lockEmitters(iso.port);
+
+    // ---- P0-3：READY 时 run-to-end 可用（正向对照）----
     const atPublic = await judgeState(iso.port);
-    assertEqual(atPublic.phase, 'PUBLIC', '开赛后应停在 PUBLIC');
+    assertEqual(atPublic.phase, 'READY', '双方锁定 Emitter 之后应停在 READY');
     assert(
       atPublic.actions.find((a) => a.key === 'run-to-end')!.enabled,
-      'PUBLIC 阶段 run-to-end 必须可用（正向对照）'
+      'READY 阶段 run-to-end 必须可用（正向对照）'
     );
 
     // ---- 槽位可见性：裁判必须能**当场**看出跑的是哪份算法 ----
@@ -830,6 +871,7 @@ test('run-to-end 期间页面刷新（重连）即恢复现场并自行收敛到
   // 演练留下的第二场：槽位已就绪，推到正式比赛
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
 
   const run = await post(port, '/api/judge/run-to-end', {});
   assert(run.body.ok, 'run-to-end 应立即受理');

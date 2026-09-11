@@ -77,10 +77,18 @@ test('operator-e2e: 一场完整比赛从干净启动跑到终止并落盘（§3
     assert(fs.existsSync(path.join(dir, name)), `产物必须包含 ${name}`);
   }
 
-  // 逐轮：每一轮都能看出「谁开火了」，且 Emitter 是常量
+  // V1.2 §一：锚点不再是平台常量（旧断言的 'A0'/'B0' 已随规则修正案作废）。
+  // 现在要证明的是三件事：开赛前已锁定、整场不变、且确实是**本队自己的点**。
+  assert(match.emitters, '比赛落盘必须带上本场双方锁定的 Emitter');
+  const emitterA = match.emitters.A.id;
+  const emitterB = match.emitters.B.id;
+  assert(/^A\d+$/.test(emitterA), `A 的锚点应取自 A 队自己的点，实际 ${emitterA}`);
+  assert(/^B\d+$/.test(emitterB), `B 的锚点应取自 B 队自己的点，实际 ${emitterB}`);
+
+  // 逐轮：每一轮都能看出「谁开火了」；锚点整场固定，不允许中途漂移
   for (const r of match.rounds) {
-    assertEqual(r.emitterA, 'A0', `第 ${r.round} 轮 A 的锚点标识应为 A0`);
-    assertEqual(r.emitterB, 'B0', `第 ${r.round} 轮 B 的锚点标识应为 B0`);
+    assertEqual(r.emitterA, emitterA, `第 ${r.round} 轮 A 的锚点应恒为本场锁定的 ${emitterA}`);
+    assertEqual(r.emitterB, emitterB, `第 ${r.round} 轮 B 的锚点应恒为本场锁定的 ${emitterB}`);
     assert(r.attacksExecuted.length >= 1, `第 ${r.round} 轮至少应有一方执行攻击`);
     assert(typeof r.noProgressStreak === 'number', '每轮必须记录连续零击杀回合数');
   }

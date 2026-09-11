@@ -41,14 +41,13 @@ import {
 } from './InputProtocol';
 import {
   COMPUTE_TIMEOUT_MS,
-  EMITTERS,
   FIELD,
   HARD_ROUND_LIMIT,
   MEMORY_LIMIT_MB,
   STALEMATE_NO_PROGRESS_LIMIT,
   firingDomain,
 } from './Rules';
-import { generateMapOrNull, GeneratedMap } from '../map/MapGenerator';
+import { decoyEmitters, generateMapOrNull, GeneratedMap } from '../map/MapGenerator';
 import { ENTRY_FILENAME } from '../submission/Manifest';
 import { checkRuntime, describeRuntime } from '../submission/Runtime';
 import { SealedPackage, inspectPackage, sealPackage, verifySeal } from '../submission/Package';
@@ -442,8 +441,6 @@ export class MatchEngine {
       matchId,
       round: 0,
       map: decoy.map,
-      idA: 'A1',
-      idB: 'B1',
     });
     const stagedPkg = { packageDir: stage.stagingDir, entry: ENTRY_FILENAME };
     const basePkg = { packageDir: baselineDir, entry: ENTRY_FILENAME };
@@ -461,8 +458,7 @@ export class MatchEngine {
     });
 
     const outcome = stage.team === 'A' ? duel.a : duel.b;
-    const shooterPos = stage.team === 'A' ? decoy.map.teamA[0] : decoy.map.teamB[0];
-    const check = this.validateOutcome(outcome, decoy.map, shooterPos, stage.team);
+    const check = this.validateOutcome(outcome, decoy.map, stage.team);
 
     detail.decoySeed = decoy.requestedSeed;
     detail.decoyMapSeed = decoy.map.seed;
@@ -506,8 +502,6 @@ export class MatchEngine {
       matchId: `${this.matchId}-preflight`,
       round: 0,
       map: sampleMap,
-      idA: 'A1',
-      idB: 'B1',
     });
 
     const duel = await runDuel({
@@ -529,9 +523,9 @@ export class MatchEngine {
       matchSeed: this.seed,
     };
     for (const [team, outcome] of [['A', duel.a], ['B', duel.b]] as const) {
-      // 每支队伍必须按自己的 Shooter 点校验 —— 用错点会误判 NOT_THROUGH_SHOOTER
-      const shooterPos = team === 'A' ? sampleMap.teamA[0] : sampleMap.teamB[0];
-      const check = this.validateOutcome(outcome, sampleMap, shooterPos, team);
+      // 每支队伍按**自己**的 decoy 锚点校验（`validateOutcome` 内部统一取），
+      // 用错点会误判 NOT_THROUGH_SHOOTER
+      const check = this.validateOutcome(outcome, sampleMap, team);
       detail[team] = {
         success: outcome.success,
         errorCode: outcome.errorCode,
@@ -1461,15 +1455,17 @@ export class MatchEngine {
     matchId: string;
     round: number;
     map: GeneratedMap;
-    idA: string;
-    idB: string;
   }): RunnerInput {
+    const decoy = o.round === 0;
+    const decoyEm = decoy ? decoyEmitters(o.map) : null;
     const points: PublicStatePoint[] =
       o.round === 0
         ? [
             ...o.map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, x: p.x, y: p.y, alive: true })),
             ...o.map.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, x: p.x, y: p.y, alive: true })),
           ]
+            // 被选作锚点的那个点**不在 points 里** —— 与正式回合完全一致
+            .filter((p) => p.id !== decoyEm!.A.id && p.id !== decoyEm!.B.id)
         : // 正式回合：**完整名单含死点**（规范 §5），死点 alive=false
           this.points.map((p) => ({
             id: p.id,
@@ -1480,12 +1476,21 @@ export class MatchEngine {
           }));
 
     // 只有 round === 0（preflight 的 decoy 世界）会走到这里。
-    // decoy 世界没有 Emitter 选择环节，用的仍是全局常量 —— 它与比赛种子无关，
-    // 也不泄漏任何本场信息（规范 §14/§15）。
+    //
+    // decoy 的锚点取 decoy 地图上双方**各自的第一个点**（`decoyEmitters`），
+    // 而不是平台常量：锚点在整个 V1.2 里都是逐场选定的，
+    // preflight 若拿常量去冒烟，就只能验证「算法能跑」，
+    // 验证不了「算法会从 public_state 读锚点」——
+    // 一个写死 `-18` 的算法会顺利通过，然后在正赛第一轮被判 INVALID。
+    //
+    // 这不泄漏本场任何信息：decoy 地图由 `matchId` 派生的种子生成，
+    // 与比赛种子无关（规范 §14/§15）。
     const publicState = buildPublicState({
       matchId: o.matchId,
       round: o.round,
-      emitters: { A: EMITTERS.A, B: EMITTERS.B },
+      emitters: decoy
+        ? { A: decoyEm!.A.position, B: decoyEm!.B.position }
+        : { A: this.getEmitters().A.position, B: this.getEmitters().B.position },
       points,
     });
     const revealState = buildRevealState({
@@ -1544,20 +1549,22 @@ export class MatchEngine {
     return { ast: null, reason: detail || '输出不是合法 DSL' };
   }
 
+  /**
+   * 校验 decoy 世界里某队的输出。
+   *
+   * 锚点必须与**下发给算法的输入**是同一对 —— 都走 `decoyEmitters(map)`。
+   * 此前这里用平台常量、输入也用平台常量，两者自洽，所以「写死坐标」的算法
+   * 一路绿灯；真到正赛换成本场选定的锚点才炸。现在两边都跟着 decoy 地图走。
+   */
   private validateOutcome(
     outcome: RunnerOutcome,
     map: GeneratedMap,
-    shooterPos: Point,
     team: 'A' | 'B'
   ): { ok: boolean; errors: string[] } {
     if (!outcome.success) return { ok: false, errors: [outcome.error ?? 'unknown'] };
     const { ast, reason } = this.parseAstDetailed(outcome);
     if (!ast) return { ok: false, errors: [`输出不是合法 DSL: ${reason}`] };
-    // decoy 世界：没有 Emitter 选择环节，用全局常量（不泄漏本场任何信息）
-    const core = this.buildCoreFor(map, 0, {
-      A: { id: 'A0', position: EMITTERS.A },
-      B: { id: 'B0', position: EMITTERS.B },
-    });
+    const core = this.buildCoreFor(map, 0, decoyEmitters(map));
     return this.validateAst(ast, team, core);
   }
 
@@ -1663,8 +1670,9 @@ export function resolveOrderedShots(input: OrderedShotInput): OrderedShotResult 
   for (const team of order) {
     const fn = ast[team];
     if (!fn) continue;
-    // 发射点是常量，不是从这个数组里挑出来的某个点 —— 因此这里既不需要
-    // 存活守卫，也不存在「它中途死了怎么办」的问题（Rule Revision 3 §3/§7）。
+    // 发射锚点**不是从这个数组里挑出来的某个点**（V1.2 起它由各队开赛前选定，
+    // 锁定后即从 points 里移除）—— 因此这里既不需要存活守卫，
+    // 也不存在「它中途死了怎么办」的问题（Rule Revision 3 §3/§7）。
     const origin = emitters[team];
     const enemies = (simultaneous ? snapshot : points.filter((p) => p.alive))
       .filter((p) => p.team !== team)

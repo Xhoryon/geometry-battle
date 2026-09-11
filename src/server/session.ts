@@ -23,7 +23,7 @@ import { downsampleTrajectory } from '../ui/TrajectoryAnimator';
 import { RuntimeCheck, checkRuntime } from '../submission/Runtime';
 import { TeamSlot } from '../submission/Slot';
 import { inspectPackage } from '../submission/Package';
-import { isFactoryPackage, judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest, teamBoard } from './boards';
+import { isBundledAlgorithm, judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest, teamBoard } from './boards';
 import { readPackageFile, writeUploadedPackage } from './upload';
 import {
   CommandResult,
@@ -212,15 +212,12 @@ export class MatchSession {
       const staged = writeUploadedPackage(files);
       if (!staged.ok) return { ok: false, errors: staged.errors };
 
+      // **先判后装**：此前是「装完再拒绝」，于是被拒的包其实已经落在槽位里了 ——
+      // 拒绝只改了返回值，槽位状态照旧被污染。
+      const blocked = this.tournamentRejection(team, inspectPackage(staged.dir).hash, '上传内容');
+      if (blocked) return blocked;
+
       const r = await this.setup.installAlgorithm(team, staged.dir);
-      if (r.success && this.tournamentMode && isFactoryPackage(r.hash)) {
-        // 装是装上了，但装的是出厂模板 —— 锦标赛模式下不算就绪。
-        return {
-          ok: false,
-          errors: ['锦标赛模式：不接受出厂模板算法，请提交你自己的算法包'],
-          detail: { team, hash: r.hash },
-        };
-      }
       return {
         ok: r.success,
         errors: r.errors,
@@ -246,14 +243,40 @@ export class MatchSession {
   }
 
   /** 读取本队包内的一个文件（只读浏览；严格限定在本队槽位内） */
-  readOwnSource(team: TeamSlot, relPath: string): { ok: boolean; errors: string[]; text?: string } {
+  /**
+   * 读回槽位内某个文件的源码。
+   *
+   * 参赛者端（`readOwnSource`）与裁判端（`readSlotSource`）走的是**同一条**
+   * 读取路径 —— 同一套路径越界 / 符号链接 / 体积防护，不存在「裁判那条松一点」
+   * 的第二套实现。两者只差一句「尚未就绪」的措辞。
+   */
+  private readSlotFile(
+    team: TeamSlot,
+    relPath: string,
+    notReady: string
+  ): { ok: boolean; errors: string[]; text?: string } {
     const slot = this.setup.slotStates()[team];
-    if (slot.status !== 'READY') return { ok: false, errors: ['本队尚未安装算法包'] };
+    if (slot.status !== 'READY') return { ok: false, errors: [notReady] };
     try {
       return { ok: true, errors: [], text: readPackageFile(slot.dir, relPath) };
     } catch (e) {
       return { ok: false, errors: [(e as Error).message] };
     }
+  }
+
+  /** 参赛者视角：只读**本队**的源码 */
+  readOwnSource(team: TeamSlot, relPath: string): { ok: boolean; errors: string[]; text?: string } {
+    return this.readSlotFile(team, relPath, '本队尚未安装算法包');
+  }
+
+  /**
+   * 裁判 / 主办方视角：读**任一队**已安装的源码。
+   *
+   * V1.2 §一要求主办方能在网页上查看上传的算法源码 —— 这正是「投的是不是
+   * 选手那份」最直接的核对手段（哈希对不了人眼，源码可以）。
+   */
+  readSlotSource(team: TeamSlot, relPath: string): { ok: boolean; errors: string[]; text?: string } {
+    return this.readSlotFile(team, relPath, `Team ${team} 的槽位尚未就绪`);
   }
 
   private judgeContext() {
@@ -267,6 +290,8 @@ export class MatchSession {
       busy: this.busy,
       lastError: this.lastError,
       tournamentMode: this.tournamentMode,
+      // 裁判板要带文件清单，主办方才能点开某个文件看源码（V1.2 §一）
+      slotFiles: { A: this.packageFiles('A'), B: this.packageFiles('B') },
     };
   }
 
@@ -349,10 +374,43 @@ export class MatchSession {
     });
   }
 
+  /**
+   * 锦标赛模式的**执行门禁**（V1.2 §二）：平台自带的算法一律不许上场。
+   *
+   * 返回 `null` 表示放行；否则返回一条可以直接回给客户端的拒绝结果。
+   *
+   * 为什么必须是**执行时**的守卫，而不是只在 board 上把按钮变灰：
+   * `enabled` 只是提示，一个直接的 `POST /api/judge/prepare` 根本不读它。
+   * 此前正是如此 —— 服务端启动时会把 `algorithms/team-*` 播种进槽位，
+   * 于是在「锦标赛模式」下打一场，跑的其实是出厂模板。
+   */
+  private tournamentRejection(team: TeamSlot, hash: string | null, where: string): CommandResult | null {
+    if (!this.tournamentMode || !isBundledAlgorithm(hash)) return null;
+    return {
+      ok: false,
+      errors: [
+        `锦标赛模式：不接受平台自带算法（Team ${team}，${where}）—— ` +
+          '请提交你们自己的算法包（参赛者页上传，或在 Advanced 里指定你们自己的目录）',
+      ],
+      detail: { team, hash, tournamentMode: true },
+    };
+  }
+
   /** Advanced / Replace Algorithm：把算法安装进固定槽位（不动本场比赛已密封的副本） */
   install(team: TeamSlot, sourceDir: string): Promise<CommandResult> {
     return this.run(async () => {
-      const r = await this.setup.installAlgorithm(team, path.resolve(sourceDir));
+      const resolved = path.resolve(sourceDir);
+      // **先判后装**：被拒的包一个字节都不该写进槽位
+      let sourceHash: string | null = null;
+      try {
+        sourceHash = inspectPackage(resolved).hash;
+      } catch {
+        sourceHash = null; // 读不了就交给安装流水线去报它自己的错
+      }
+      const blocked = this.tournamentRejection(team, sourceHash, '安装来源');
+      if (blocked) return blocked;
+
+      const r = await this.setup.installAlgorithm(team, resolved);
       return {
         ok: r.success,
         errors: r.errors,
@@ -364,6 +422,10 @@ export class MatchSession {
   /** 正式主流程：把槽位里的算法密封进本场比赛 */
   useSlot(team: TeamSlot): Promise<CommandResult> {
     return this.run(async () => {
+      // 槽位里躺着的若是平台自带算法，锦标赛模式下不许密封进本场
+      const blocked = this.tournamentRejection(team, this.setup.slotStates()[team].hash, '槽位内');
+      if (blocked) return blocked;
+
       const r = this.setup.uploadFromSlot(team);
       return { ok: r.success, errors: r.errors, detail: { team, hash: r.hash } };
     });
@@ -400,6 +462,11 @@ export class MatchSession {
   prepareMatch(): Promise<CommandResult> {
     return this.run(async () => {
       for (const team of ['A', 'B'] as const) {
+        // 直接调 `uploadFromSlot` 会绕过 `useSlot()` 的锦标赛门禁 ——
+        // 而 `prepare` 才是裁判向导的主按钮，也就是最容易绕过的那一条。这里补上。
+        const blocked = this.tournamentRejection(team, this.setup.slotStates()[team].hash, '槽位内');
+        if (blocked) return { ...blocked, detail: { ...blocked.detail, step: `use-slot-${team}` } };
+
         const r = this.setup.uploadFromSlot(team);
         if (!r.success) return { ok: false, errors: r.errors, detail: { step: `use-slot-${team}` } };
       }

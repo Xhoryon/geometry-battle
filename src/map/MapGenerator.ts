@@ -333,6 +333,36 @@ export function generateMapOrNull(config: MapConfig): GeneratedMap | null {
   return null;
 }
 
+/** decoy 世界里的发射锚点（含 id，供输入构造与校验共用） */
+export interface DecoyEmitters {
+  A: { id: string; position: Point };
+  B: { id: string; position: Point };
+}
+
+/**
+ * decoy 世界的锚点：取 decoy 地图上双方**各自的第一个点**。
+ *
+ * 为什么要这样，而不是继续用平台常量 `(-18,0)` / `(18,0)`：
+ *
+ * V1.2 起锚点是**逐场选定**的。preflight 是参赛代码在正式比赛前唯一会跑的
+ * 一个窗口 —— 如果那里下发的仍是常量，那么 preflight 只能验证「算法能跑」，
+ * 验证不了「算法会从 `public_state.emitters` 读锚点」。
+ * 一个写死 `-18` 的算法会**顺利通过 preflight**，然后在正赛第一轮被判
+ * `NOT_THROUGH_SHOOTER`（INVALID），每轮如此。
+ *
+ * 这不泄漏本场任何信息：decoy 地图由 `matchId` 派生的种子生成，
+ * 与比赛种子无关（规范 §14/§15）。
+ *
+ * 返回的 id 与 `buildRunnerInput` 里 decoy 点表的编号规则一致（`A1`/`B1`），
+ * 因此被选中当锚点的那两个点会像正式回合那样从 `points` 里被移除。
+ */
+export function decoyEmitters(map: GeneratedMap): DecoyEmitters {
+  return {
+    A: { id: 'A1', position: map.teamA[0] },
+    B: { id: 'B1', position: map.teamB[0] },
+  };
+}
+
 export function computeMapHash(map: Omit<GeneratedMap, 'stateHash'>): string {
   const canonical = JSON.stringify({
     seed: map.seed,

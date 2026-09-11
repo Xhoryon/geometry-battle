@@ -673,4 +673,45 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
   }
 });
 
+test('competitor-kit: 文档不得再把 Emitter 写成平台常量（V1.2 §一）', () => {
+  // V1.2 把锚点从「平台常量」改成了「各队开赛前自选并锁定」。
+  // 选手手册若不跟着改，会教人写出写死 -18 的算法 —— 那能通过 Preflight
+  // （decoy 世界仍用常量），却在正赛第一轮就 NOT_THROUGH_SHOOTER。
+  const docs = ['README.md', 'ALGORITHM_REQUIREMENTS.md', 'DSL_SPECIFICATION.md', 'JSON_SCHEMA.md'];
+  const textOf = (f: string): string => fs.readFileSync(path.join(KIT, f), 'utf-8');
+
+  /** 这些是已经作废的 V1.1 原句，一个字都不许再出现 */
+  const stalePhrases = [
+    /Emitter\s*坐标是\s*\*\*常量\*\*/,
+    /Emitter\s*是\s*常量/,
+    /发射锚点[^\n]{0,20}里的\*\*常量\*\*/,
+    /\|\s*\*\*固定 Emitter\*\*\s*\|\s*A：`\(-18,\s*0\)`/,
+  ];
+  for (const f of docs) {
+    const text = textOf(f);
+    for (const re of stalePhrases) {
+      assert(!re.test(text), `competitor-kit/${f} 仍把 Emitter 写成常量：${re}`);
+    }
+  }
+
+  // 正向对照：必须**真的**教会选手从 public_state 读锚点，
+  // 否则「整篇不提」也会全绿。
+  for (const f of ['README.md', 'ALGORITHM_REQUIREMENTS.md', 'JSON_SCHEMA.md']) {
+    assert(
+      /public_state\.emitters|`emitters`/.test(textOf(f)),
+      `competitor-kit/${f} 必须写明 Emitter 从 public_state.emitters 读`
+    );
+  }
+
+  // 选手手册必须讲清楚 decoy 锚点的语义：它是**decoy 地图上的点**，不是平台常量，
+  // 因此写死坐标会在本地自检 / Preflight 就 FAIL。这句话是防止选手
+  // 「本地都过了」却在正赛每轮 INVALID 的关键提示。
+  const req = textOf('ALGORITHM_REQUIREMENTS.md');
+  assert(/Preflight/.test(req) && /decoy/.test(req), '选手手册必须解释 Preflight 用的是 decoy 世界');
+  assert(
+    /写死/.test(req) && /decoy 地图/.test(req),
+    '选手手册必须点明「decoy 锚点取自 decoy 地图，写死坐标会被拦下」'
+  );
+});
+
 void runAll('competitor-kit');

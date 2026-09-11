@@ -17,8 +17,17 @@ import { startServer, RunningServer } from '../src/server/main';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
-const DEMO = path.join(REPO, 'demo', 'reference-solver-v2');
 const STARTER = path.join(REPO, 'starter');
+/**
+ * 两队「自己交上来」的包：测试私有 fixture，不属于平台发行树。
+ *
+ * 不能再用 `demo/reference-solver-v2` —— 它是平台自带的参考解，
+ * 锦标赛模式现在会**在服务端拒绝**它（V1.2 §二）。
+ */
+const TEAM_PKG = {
+  A: path.join(__dirname, 'fixtures', 'algos', 'arc-sweep'),
+  B: path.join(__dirname, 'fixtures', 'algos', 'parabola-arc'),
+} as const;
 
 /** 把一个目录读成「浏览器上传」的形状（path + contentBase64） */
 function packDir(dir: string): { path: string; contentBase64: string }[] {
@@ -109,12 +118,12 @@ test('server-team: 参赛者端只暴露本队信息，且开赛前锁定 Emitte
     // 双方真实上传
     const upA = await postJson(`${ctx.server.url}/api/team/upload`, {
       team: 'A',
-      files: packDir(DEMO),
+      files: packDir(TEAM_PKG.A),
     });
     assert(upA.body.ok, `Team A 上传应成功: ${JSON.stringify(upA.body.errors)}`);
     const upB = await postJson(`${ctx.server.url}/api/team/upload`, {
       team: 'B',
-      files: packDir(DEMO),
+      files: packDir(TEAM_PKG.B),
     });
     assert(upB.body.ok, `Team B 上传应成功: ${JSON.stringify(upB.body.errors)}`);
 
@@ -176,26 +185,95 @@ test('server-team: 参赛者端只暴露本队信息，且开赛前锁定 Emitte
   }
 });
 
-test('server-team: 锦标赛模式不接受出厂 starter 模板（§二）', async () => {
+test('server-team: 锦标赛模式拒绝平台自带算法 —— 且每条入口都堵死（§二）', async () => {
+  // 这条曾经只是「界面建议」：判据只写在 board 的 `enabled` 上，
+  // 而 `prepare` / `use-slot` / `install` 三个执行入口根本不查它 ——
+  // 于是一个直接的 POST 就能让一场「锦标赛」跑在出厂模板上。
   const ctx = await boot({ tournament: true });
   try {
-    // 把官方 starter 原样上传 —— 它是**出厂模板**，锦标赛模式必须拒绝
+    // ---- 入口 1：参赛者页上传出厂 starter ----
     const r = await postJson(`${ctx.server.url}/api/team/upload`, {
       team: 'A',
       files: packDir(STARTER),
     });
     assertEqual(r.body.ok, false, '锦标赛模式下出厂模板不得算就绪');
     assert(
-      r.body.errors.some((e: string) => e.includes('模板')),
-      `拒绝原因应说明是模板算法，实际: ${JSON.stringify(r.body.errors)}`
+      r.body.errors.some((e: string) => e.includes('平台自带算法')),
+      `拒绝原因应点明「平台自带算法」，实际: ${JSON.stringify(r.body.errors)}`
     );
 
-    // 对照：真实的算法包必须接受，否则上面的断言只是「一律拒绝」
-    const good = await postJson(`${ctx.server.url}/api/team/upload`, {
-      team: 'A',
-      files: packDir(DEMO),
-    });
-    assert(good.body.ok, `真实算法包应被接受: ${JSON.stringify(good.body.errors)}`);
+    // **先判后装**：被拒之后槽位必须一个字节都没变（此前是装完再拒绝）
+    const after = await teamBoard(ctx, 'a');
+    assertEqual(after.packageReady, false, '被拒的包不得让槽位变成就绪');
+
+    // ---- 入口 2：Advanced 的按路径安装（拿发行树里的 demo 试）----
+    for (const dir of [path.join(REPO, 'starter'), path.join(REPO, 'demo', 'reference-solver-v2')]) {
+      const ins = await postJson(`${ctx.server.url}/api/judge/install`, { team: 'A', sourceDir: dir });
+      assertEqual(ins.body.ok, false, `锦标赛模式下不得从 ${path.basename(dir)} 安装`);
+      assert(
+        ins.body.errors.some((e: string) => e.includes('平台自带算法')),
+        `install 的拒绝原因应点明平台自带算法，实际: ${JSON.stringify(ins.body.errors)}`
+      );
+    }
+    // 安装被拒之后槽位仍必须是空的 —— 「先判后装」的完整含义
+    assertEqual((await teamBoard(ctx, 'a')).packageReady, false, '被拒的安装不得留下任何痕迹');
+
+    // ---- 入口 3：use-slot —— 槽位里躺着自带算法时不许密封 ----
+    // 绕开 install 的门禁，直接把 starter 拷进槽位（模拟出厂播种 / 手工放置）
+    const slotA = path.join(ctx.root, 'slots', 'team-a');
+    fs.rmSync(slotA, { recursive: true, force: true });
+    fs.cpSync(STARTER, slotA, { recursive: true });
+    const use = await postJson(`${ctx.server.url}/api/judge/use-slot`, { team: 'A' });
+    assertEqual(use.body.ok, false, '槽位里是自带算法时，锦标赛模式不得密封进本场');
+    assert(
+      use.body.errors.some((e: string) => e.includes('平台自带算法')),
+      `use-slot 的拒绝原因应点明平台自带算法，实际: ${JSON.stringify(use.body.errors)}`
+    );
+
+    // ---- 入口 4：prepare（裁判向导主按钮）—— 最容易绕过的那一条 ----
+    const prep = await postJson(`${ctx.server.url}/api/judge/prepare`, {});
+    assertEqual(prep.body.ok, false, 'prepare 必须同样拒绝，不得绕过 use-slot 的门禁');
+    assertEqual(prep.body.detail?.step, 'use-slot-A', '拒绝时应点明停在哪一步');
+    assertEqual(
+      (await getJson(`${ctx.server.url}/api/judge/state`)).body.board.phase,
+      'SETUP',
+      '被拒之后比赛不得被推进'
+    );
+  } finally {
+    await ctx.server.close();
+  }
+
+  // ---- 对照：真实上传的包必须放行，否则上面只是一串「一律拒绝」 ----
+  const ok = await boot({ tournament: true });
+  try {
+    for (const team of ['A', 'B'] as const) {
+      const up = await postJson(`${ok.server.url}/api/team/upload`, {
+        team,
+        files: packDir(TEAM_PKG[team]),
+      });
+      assert(up.body.ok, `真实的算法包应被接受（${team}）: ${JSON.stringify(up.body.errors)}`);
+    }
+    const prep = await postJson(`${ok.server.url}/api/judge/prepare`, {});
+    assert(prep.body.ok, `真实包应能筹备成功: ${JSON.stringify(prep.body.errors)}`);
+  } finally {
+    await ok.server.close();
+  }
+});
+
+test('server-team: 关掉锦标赛模式（开发自测）时，自带算法可以正常跑', async () => {
+  // `--no-tournament` 是唯一的例外通道：开发自测需要它，
+  // 正式赛事不得使用 —— 否则一场正规比赛会跑在模板算法上。
+  const ctx = await boot({ tournament: false });
+  try {
+    for (const team of ['A', 'B'] as const) {
+      const up = await postJson(`${ctx.server.url}/api/team/upload`, {
+        team,
+        files: packDir(STARTER),
+      });
+      assert(up.body.ok, `开发模式下出厂 starter 应被接受（${team}）: ${JSON.stringify(up.body.errors)}`);
+    }
+    const prep = await postJson(`${ctx.server.url}/api/judge/prepare`, {});
+    assert(prep.body.ok, `开发模式下应能筹备成功: ${JSON.stringify(prep.body.errors)}`);
   } finally {
     await ctx.server.close();
   }
@@ -239,7 +317,7 @@ test('server-team: 连续两场真实比赛（§八）', async () => {
       for (const team of ['A', 'B'] as const) {
         const up = await postJson(`${ctx.server.url}/api/team/upload`, {
           team,
-          files: packDir(DEMO),
+          files: packDir(TEAM_PKG[team]),
         });
         assert(up.body.ok, `${team} 上传应成功: ${JSON.stringify(up.body.errors)}`);
       }
@@ -280,6 +358,116 @@ test('server-team: 连续两场真实比赛（§八）', async () => {
     const list = await getJson(`${ctx.server.url}/api/replays`);
     assertEqual(list.body.ok, true, '回放列表应可读');
     assert(list.body.replays.length >= 2, `应至少有两场可回放，实际 ${list.body.replays.length}`);
+  } finally {
+    await ctx.server.close();
+  }
+});
+
+test('server-team: 双方锁定后（READY）裁判仍能逐步推进，且能看到选择过程', async () => {
+  // 回归（V1.2）：`beginRound()` 接受 READY，但 `buildActions` 的 reveal / start-round
+  // 一度只认 PUBLIC / REVEAL —— 于是 READY 下唯一可点的裁判动作只剩 run-to-end，
+  // 「揭晓 → START → 结算」这条逐步流程在 UI 上整条走不通。
+  // 这类「UI 的判据与引擎的判据不一致」正是 V1.1 翻车的根因，必须钉死。
+  const ctx = await boot();
+  try {
+    for (const team of ['A', 'B'] as const) {
+      const up = await postJson(`${ctx.server.url}/api/team/upload`, { team, files: packDir(TEAM_PKG[team]) });
+      assert(up.body.ok, `${team} 上传应成功`);
+    }
+    const prep = await postJson(`${ctx.server.url}/api/judge/prepare`, {});
+    assert(prep.body.ok, `筹备应成功: ${JSON.stringify(prep.body.errors)}`);
+
+    // 裁判板必须能看到双方的选择过程（权威视角）
+    let j = await getJson(`${ctx.server.url}/api/judge/state`);
+    assert(j.body.board.emitterSelection, '裁判板必须下发 emitterSelection');
+    assertEqual(j.body.board.emitterSelection.A.selected, null, '尚未选择时应为 null');
+
+    for (const team of ['A', 'B'] as const) {
+      const b = await teamBoard(ctx, team.toLowerCase() as 'a' | 'b');
+      await postJson(`${ctx.server.url}/api/team/select-emitter`, { team, pointId: b.candidates[1].id });
+      await postJson(`${ctx.server.url}/api/team/lock-emitter`, { team });
+    }
+
+    j = await getJson(`${ctx.server.url}/api/judge/state`);
+    assertEqual(j.body.board.phase, 'READY', '双方锁定后应为 READY');
+    assertEqual(j.body.board.emitterSelection.revealed, true, '裁判板应显示已公开');
+    assert(j.body.board.emitterSelection.A.selected.id, '裁判板应能看到 A 选了哪个点');
+    assert(j.body.board.emitterSelection.B.selected.id, '裁判板应能看到 B 选了哪个点');
+
+    const byKey = new Map(
+      (j.body.board.actions as { key: string; enabled: boolean }[]).map((a) => [a.key, a])
+    );
+    assert(byKey.get('reveal')?.enabled, 'READY 下「揭晓本轮」必须可点（逐步流程走得通）');
+    assert(byKey.get('start-round')?.enabled, 'READY 下「START」必须可点');
+
+    // 真的一步步走一遍：READY → 揭晓 → START → 结算
+    const rev = await postJson(`${ctx.server.url}/api/judge/reveal`, {});
+    assert(rev.body.ok, `揭晓应成功: ${JSON.stringify(rev.body.errors)}`);
+    const start = await postJson(`${ctx.server.url}/api/judge/start-round`, {});
+    assert(start.body.ok, `START 应成功: ${JSON.stringify(start.body.errors)}`);
+    const comp = await postJson(`${ctx.server.url}/api/judge/compute`, {});
+    assert(comp.body.ok, `结算应成功: ${JSON.stringify(comp.body.errors)}`);
+    const after = await getJson(`${ctx.server.url}/api/judge/state`);
+    assertEqual(after.body.board.round, 1, '应完成第 1 轮');
+  } finally {
+    await ctx.server.close();
+  }
+});
+
+test('server-team: 主办方能在网页上查看上传的算法源码（V1.2 §一）', async () => {
+  // 「投的是不是选手那份」—— 哈希对不了人眼，源码可以。
+  // 裁判端必须是**权威视角**：两个队都能看；参赛者端则只看得到自己那一份。
+  const ctx = await boot();
+  try {
+    for (const team of ['A', 'B'] as const) {
+      const up = await postJson(`${ctx.server.url}/api/team/upload`, { team, files: packDir(TEAM_PKG[team]) });
+      assert(up.body.ok, `${team} 上传应成功`);
+    }
+
+    // 裁判板必须带**双方**的文件清单，否则无从点开
+    const j = await getJson(`${ctx.server.url}/api/judge/state`);
+    for (const team of ['A', 'B'] as const) {
+      const list = j.body.board.slots[team].fileList as { path: string; bytes: number }[];
+      assert(Array.isArray(list) && list.length > 0, `裁判板必须下发 Team ${team} 的文件清单`);
+      assert(
+        list.some((f) => f.path === 'solver.py'),
+        `Team ${team} 的文件清单里必须有 solver.py，实际 ${list.map((f) => f.path).join(',')}`
+      );
+    }
+
+    // 裁判能读**任一队**的源码，且读到的是选手交上来的真代码
+    for (const team of ['a', 'b'] as const) {
+      const r = await getJson(`${ctx.server.url}/api/judge/source?team=${team}&path=solver.py`);
+      assertEqual(r.status, 200, `裁判应能读取 Team ${team} 的源码`);
+      assert(r.body.ok, `读取 Team ${team} 源码应 ok`);
+      const onDisk = fs.readFileSync(path.join(TEAM_PKG[team.toUpperCase() as 'A' | 'B'], 'solver.py'), 'utf-8');
+      assertEqual(r.body.text, onDisk, `裁判读到的必须是磁盘上那份源码的逐字节原文`);
+    }
+
+    // 路径穿越与不存在一律被拒 —— 且**不得透露服务端路径**。
+    // 这条曾经红过：Node 的 ENOENT 消息里带着槽位的绝对路径，被原样回给了浏览器。
+    // 两端读的是同一份实现，因此两个端点都要守。
+    for (const base of ['/api/judge/source', '/api/team/source']) {
+      for (const bad of ['../solver.py', '../../etc/passwd', 'nope/missing.py', '']) {
+        const r = await getJson(
+          `${ctx.server.url}${base}?team=a&path=${encodeURIComponent(bad)}`
+        );
+        assert(r.status >= 400, `${base} 非法路径 ${JSON.stringify(bad)} 必须被拒，实际 ${r.status}`);
+        assert(
+          !/\/Users\/|\/var\/folders\/|\/private\//.test(JSON.stringify(r.body)),
+          `${base} 拒绝理由不得泄漏服务端路径，实际 ${JSON.stringify(r.body)}`
+        );
+      }
+    }
+
+    // 队伍必须提供合法队别
+    const noTeam = await getJson(`${ctx.server.url}/api/judge/source?path=solver.py`);
+    assertEqual(noTeam.status, 400, '缺少 team 必须回 400');
+
+    // 参赛者端仍然只看得到自己那份（对方队别读不到对方源码这件事由
+    // 「参赛者板里根本没有对手字段」结构性保证，见本套件第 1 个用例）
+    const ownA = await getJson(`${ctx.server.url}/api/team/source?team=a&path=solver.py`);
+    assertEqual(ownA.status, 200, '参赛者读自己的源码仍应可用');
   } finally {
     await ctx.server.close();
   }

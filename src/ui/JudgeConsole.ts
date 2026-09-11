@@ -116,6 +116,16 @@ export function renderMatchSummary(log: MatchLog): string {
   lines.push(row(verdict));
   lines.push(row(`End reason: ${log.endReason}`));
   lines.push(row(`Rounds: ${log.rounds.length}    Final alive: A=${log.finalAlive.A}  B=${log.finalAlive.B}`));
+  // V1.2 §一：锚点不再是平台常量，因此结果板必须回答「这一场双方从哪个点开火」。
+  // 未锁定（异常终局）时为 null —— 如实写「未锁定」，不编一个坐标出来。
+  lines.push(
+    row(
+      log.emitters
+        ? `Emitters: A=${log.emitters.A.id}(${log.emitters.A.position.x},${log.emitters.A.position.y})` +
+            `  B=${log.emitters.B.id}(${log.emitters.B.position.x},${log.emitters.B.position.y})`
+        : 'Emitters: 未锁定'
+    )
+  );
   lines.push(divider);
   lines.push(row('Per-round:'));
   for (const r of log.rounds) {
@@ -166,6 +176,15 @@ export function renderReplayIndex(replay: Replay): string {
   const lines: string[] = [];
   lines.push(top('REPLAY'));
   lines.push(row(`Match ${replay.matchId}   winner ${replay.winner.toUpperCase()}   ${replay.endReason}`));
+  // V1.2 §一：锚点不是常量，回放索引顶部先把本场双方的开火点写清楚
+  lines.push(
+    row(
+      replay.emitters
+        ? `Emitters: A=${replay.emitters.A.id}(${replay.emitters.A.position.x},${replay.emitters.A.position.y})` +
+            `  B=${replay.emitters.B.id}(${replay.emitters.B.position.x},${replay.emitters.B.position.y})`
+        : 'Emitters: 未锁定'
+    )
+  );
   lines.push(divider);
   for (let i = 0; i < replay.frames.length; i++) {
     const f = replay.frames[i];

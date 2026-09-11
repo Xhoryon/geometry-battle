@@ -147,6 +147,14 @@ export interface SlotView {
   entry: string | null;
   preflightOk: boolean | null;
   files: number;
+  /**
+   * 包内文件清单（路径 + 字节数）—— **只有裁判板有**。
+   *
+   * 主办方要能在网页上核对选手交上来的到底是什么（V1.2 §一），
+   * 因此裁判需要清单才能点开某一个文件看内容（内容走 `JUDGE_READ_PATHS.source`）。
+   * 观众板是白名单，根本收不到这个字段。
+   */
+  fileList: { path: string; bytes: number }[];
   totalBytes: number;
   errors: string[];
   /**
@@ -228,6 +236,17 @@ export interface JudgeBoard extends SpectatorBoard {
   runtime: { frozen: string; detected: string; ok: boolean; mismatches: string[] };
   audit: AuditView;
   artifactDir: string | null;
+  /**
+   * Emitter 选择过程（V1.2 §一）。
+   *
+   * 裁判是**权威视角**：这里给出双方的完整状态（含各自选了哪个点、是否锁定），
+   * 而不是像参赛者板那样按队别裁剪。观众板里**没有**这个字段。
+   */
+  emitterSelection: {
+    A: { locked: boolean; selected: { id: string; x: number; y: number } | null };
+    B: { locked: boolean; selected: { id: string; x: number; y: number } | null };
+    revealed: boolean;
+  };
   actions: ActionView[];
 }
 
@@ -350,6 +369,17 @@ export const COMMAND_PATHS = {
   compute: '/api/judge/compute',
   runToEnd: '/api/judge/run-to-end',
   prepare: '/api/judge/prepare',
+} as const;
+
+/**
+ * 裁判端**只读**路径（GET）。
+ *
+ * `source` 让主办方在网页上查看**任一队**已安装的算法源码 ——
+ * 参赛者端那份 `/api/team/source` 是按队别裁剪的，裁判要的是权威视角：
+ * 两个队都能看，这样才能核对「选手交上来的到底是什么」。
+ */
+export const JUDGE_READ_PATHS = {
+  source: '/api/judge/source',
 } as const;
 
 /** 参赛者端命令（队别由请求体给出，服务端会校验它只能操作自己） */
