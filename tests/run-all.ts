@@ -45,6 +45,7 @@ const SUITES = [
   'server-team',
   'runtime-manifest',
   'competitor-kit',
+  'demo-repro',
   // Web UI（V1.1 Local Web UI）—— 投影层纯函数 + 真 HTTP/WS 端到端。
   // 浏览器演练（Playwright）不在这里：它需要构建前端与真实浏览器，
   // 由 `npm run e2e` 单独跑。

@@ -425,7 +425,7 @@ npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回�
 npm run typecheck
 npm run typecheck:web
 
-# 回归测试（34 个套件，清单见 tests/run-all.ts）
+# 回归测试（35 个套件，清单见 tests/run-all.ts）
 npm test
 npm test -- web-projection web-server      # 只跑指定套件
 

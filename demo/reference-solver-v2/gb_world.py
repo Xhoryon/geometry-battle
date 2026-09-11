@@ -84,10 +84,43 @@ def build_world(team, public, reveal):
 
     return World(
         team, me_x, me_y, x_end, ymin, ymax,
-        enemies, dead, list(reveal.get("obstacles") or []),
+        enemies, dead, [normalize_obstacle(o) for o in (reveal.get("obstacles") or [])],
         int(public.get("round", 0) or 0),
         str(public.get("match_id", "")),
     )
+
+
+def _circle_center(ob):
+    """圆心 —— **两种形状都收**，缺了就说清楚，绝不静默当作 0。
+
+    协议下发给算法的是 `{"cx":…, "cy":…}`（`InputProtocol.buildRevealState`），
+    而平台**内部**与回放帧用的是核心形态 `{"center": [x, y]}`。开发时若拿回放帧
+    拼一份输入来复现问题，很容易把后者喂进来。
+
+    这里原先写的是 `ob.get("cx", 0.0)` —— 缺键时静默退化成 0.0，
+    圆会被悄悄挪到 x=0：**输入错了，但答案看起来完全合理**，
+    于是「复现出来的现象」与真实比赛毫无关系。宁可当场报错。
+    """
+    if "cx" in ob or "cy" in ob:
+        return float(ob.get("cx", 0.0)), float(ob.get("cy", 0.0))
+    center = ob.get("center")
+    if isinstance(center, (list, tuple)) and len(center) == 2:
+        return float(center[0]), float(center[1])
+    raise ValueError("圆形障碍物缺少圆心：既没有 cx/cy，也没有 center: [x, y]")
+
+
+def normalize_obstacle(ob):
+    """把障碍物收敛成内部统一形状（圆用 cx/cy），形状不认识就报错。"""
+    kind = ob.get("type")
+    if kind == "circle":
+        cx, cy = _circle_center(ob)
+        r = ob.get("radius")
+        if r is None:
+            raise ValueError("圆形障碍物缺少 radius")
+        return {"type": "circle", "cx": cx, "cy": cy, "radius": float(r)}
+    if kind in ("rectangle", "polygon", "segment"):
+        return dict(ob)
+    raise ValueError("无法识别的障碍物类型: %r" % (kind,))
 
 
 # ---------------------------------------------------------------------------
@@ -97,8 +130,8 @@ def build_world(team, public, reveal):
 def obstacle_x_span(ob):
     """障碍物在 x 方向的占用区间（闭区间）。"""
     if ob.get("type") == "circle":
-        cx = float(ob.get("cx", 0.0))
-        r = float(ob.get("radius", 0.0))
+        cx, _ = _circle_center(ob)
+        r = float(ob["radius"])
         return cx - r, cx + r
     return float(ob.get("xmin", 0.0)), float(ob.get("xmax", 0.0))
 
@@ -106,8 +139,8 @@ def obstacle_x_span(ob):
 def obstacle_y_span(ob):
     """障碍物在 y 方向的占用区间（闭区间）。"""
     if ob.get("type") == "circle":
-        cy = float(ob.get("cy", 0.0))
-        r = float(ob.get("radius", 0.0))
+        _, cy = _circle_center(ob)
+        r = float(ob["radius"])
         return cy - r, cy + r
     return float(ob.get("ymin", 0.0)), float(ob.get("ymax", 0.0))
 
@@ -119,9 +152,8 @@ _obstacle_x_range = obstacle_x_span
 def penetration(x, y, ob):
     """外部为正、接触或内部为 0（Judge.penetration 的同口径实现）。"""
     if ob.get("type") == "circle":
-        cx = float(ob.get("cx", 0.0))
-        cy = float(ob.get("cy", 0.0))
-        r = float(ob.get("radius", 0.0))
+        cx, cy = _circle_center(ob)
+        r = float(ob["radius"])
         d = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)
         return max(0.0, d - r)
     xmin = float(ob.get("xmin", 0.0))
