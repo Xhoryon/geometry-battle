@@ -16,6 +16,7 @@
 
 import * as path from 'path';
 import { CHECK_SECTIONS, assertDirectory, summarize, validateSubmission } from '../submission/LocalPreflight';
+import { COMPUTE_TIMEOUT_MS } from '../core/Rules';
 
 function usage(): never {
   process.stderr.write(
@@ -24,7 +25,7 @@ function usage(): never {
       '',
       '选项:',
       '  --team A|B|both   只自检某一队（默认 both：A、B 各跑一次）',
-      '  --timeout <ms>    单轮超时（默认 2000，与正式比赛一致）',
+      `  --timeout <ms>    单轮超时（默认 ${COMPUTE_TIMEOUT_MS}，即正式比赛的冻结值）`,
       '  --json            以 JSON 输出完整报告',
       '',
     ].join('\n')

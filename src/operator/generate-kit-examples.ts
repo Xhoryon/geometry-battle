@@ -31,7 +31,7 @@ import * as path from 'path';
 import { parseCanonicalDSL } from '../core/Ast';
 import { buildPublicState, buildRevealState } from '../core/InputProtocol';
 import { MatchEngine, PLATFORM_ROOT } from '../core/Match';
-import { firingDomain } from '../core/Rules';
+import { COMPUTE_TIMEOUT_MS, firingDomain } from '../core/Rules';
 import { validateAttackFunction } from '../core/Validator';
 import { ENTRY_FILENAME } from '../submission/Manifest';
 import { inspectPackage } from '../submission/Package';
@@ -138,7 +138,7 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
   });
   let resultJson: string;
   try {
-    const runner = spawnRunner({ team, sandbox, timeoutMs: 2000, memoryLimitMb: 512 });
+    const runner = spawnRunner({ team, sandbox, timeoutMs: COMPUTE_TIMEOUT_MS, memoryLimitMb: 512 });
     await runner.ready;
     runner.release();
     const outcome = await runner.done;

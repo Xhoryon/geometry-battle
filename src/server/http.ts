@@ -12,6 +12,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { pipeline } from 'stream';
 import type { IncomingMessage, ServerResponse } from 'http';
 import { MatchSession } from './session';
 import { listReplays, loadReplay } from './replays';
@@ -107,6 +108,44 @@ function downsampleReplay(replay: Replay): Replay {
   };
 }
 
+/**
+ * 发送一个静态文件。
+ *
+ * **必须等 `open` 成功再写响应头。** 直接 `fs.createReadStream(f).pipe(res)` 有两个
+ * 叠加的坏处：文件打不开时 200 头**已经发出去了**，而且源流上的 `'error'` 没有任何
+ * 监听器 —— 它会升级成 uncaughtException，把整个比赛服务带走。
+ *
+ * Final Re-Gate 实测过这条路径：`web/dist` 里放一个 mode-000 文件，
+ * **一次 GET 就让进程 exit(1)**。那与本轮修掉的 `GET //` 是同一类事故：
+ * 一个请求不该能结束整场赛事。
+ *
+ * 现在的顺序是：先 `open` 成功 → 才 `writeHead(200)` → 再管道传输；
+ * 打不开则回一个**受控**状态码，进程继续服务。传输途中出错由 `pipeline`
+ * 负责销毁两端（客户端中途断开也不会留下悬挂的读流）。
+ */
+function sendFile(res: ServerResponse, file: string, headers: Record<string, string>): void {
+  const stream = fs.createReadStream(file);
+  stream.once('open', () => {
+    if (res.headersSent || res.writableEnded) {
+      stream.destroy();
+      return;
+    }
+    res.writeHead(200, headers);
+    pipeline(stream, res, () => {
+      /* 传输结束或某一端出错：pipeline 已负责销毁两端，这里无需再做什么 */
+    });
+  });
+  stream.once('error', (e: NodeJS.ErrnoException) => {
+    stream.destroy();
+    if (res.headersSent || res.writableEnded) {
+      res.destroy();
+      return;
+    }
+    const status = e.code === 'ENOENT' ? 404 : e.code === 'EACCES' || e.code === 'EPERM' ? 403 : 500;
+    sendJson(res, status, { ok: false, errors: ['静态资源不可读'] });
+  });
+}
+
 function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse): boolean {
   const root = path.resolve(deps.distDir);
   const requested = pathname === '/' ? '/index.html' : pathname;
@@ -120,19 +159,17 @@ function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse): boo
 
   if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
     const ext = path.extname(resolved).toLowerCase();
-    res.writeHead(200, {
+    sendFile(res, resolved, {
       'Content-Type': MIME[ext] ?? 'application/octet-stream',
       'Cache-Control': 'no-store',
     });
-    fs.createReadStream(resolved).pipe(res);
     return true;
   }
 
   // SPA fallback：/judge、/spectator、/replay/:id 都由前端路由接管
   const index = path.join(root, 'index.html');
   if (fs.existsSync(index)) {
-    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
-    fs.createReadStream(index).pipe(res);
+    sendFile(res, index, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
     return true;
   }
 

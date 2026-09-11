@@ -22,7 +22,7 @@ import { persistArtifacts } from '../core/Logs';
 import { downsampleTrajectory } from '../ui/TrajectoryAnimator';
 import { RuntimeCheck, checkRuntime } from '../submission/Runtime';
 import { TeamSlot } from '../submission/Slot';
-import { judgeBoard, spectatorBoard, snapshotDigest } from './boards';
+import { judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest } from './boards';
 import {
   CommandResult,
   JudgeBoard,
@@ -161,6 +161,7 @@ export class MatchSession {
   private judgeContext() {
     return {
       slots: this.setup.slotStates(),
+      slotRoot: this.opts.slotRoot,
       settings: this.settings,
       runtime: this.runtime,
       artifactDir: this.engine.getSnapshot().map ? this.engine.getArtifactDir() : null,
@@ -335,9 +336,11 @@ export class MatchSession {
    */
   runToEnd(): Promise<CommandResult> {
     if (this.busy) return Promise.resolve({ ...BUSY });
-    if (!this.engine.getSnapshot().map) {
-      return Promise.resolve({ ok: false, errors: ['比赛尚未开始 —— 先执行「开始比赛」'] });
-    }
+    // 与 board 的 `enabled` 共用**同一个**判据函数（boards.ts 的 runToEndBlocker）。
+    // 不满足就当场拒绝：绝不启动一个注定抛错的后台任务 —— 那会对外报 ok:true、
+    // 却什么都不做，还留下一条粘住的 lastError（Final Re-Gate P2）。
+    const blocker = runToEndBlocker(this.engine);
+    if (blocker) return Promise.resolve({ ok: false, errors: [blocker] });
     this.busy = true;
     this.lastError = null;
 

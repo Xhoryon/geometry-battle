@@ -31,7 +31,7 @@
  *                   安装进槽位（坏包不会破坏现有槽位），再从槽位密封。
  *
  * 选项:
- *   --slots <dir>         算法槽位根目录（默认 <repo>/algorithms）
+ *   --slots <dir>         算法槽位根目录（默认 <repo>/runs/slots，即正式投递点）
  *   --max-rounds <n>      操作台侧的兜底回合上限（默认 = 引擎的硬上限 60）。
  *                         **正式终止由引擎保证**：Stalemate / 硬上限 / 全灭都会
  *                         在引擎内收尾（Rule Revision 3 §16/§17），这个参数只是
@@ -50,6 +50,7 @@ import * as path from 'path';
 import * as readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { MatchEngine, PLATFORM_ROOT } from '../core/Match';
+import { RUNTIME_SLOT_ROOT, prepareRuntimeSlots } from '../submission/Slot';
 import { COMPUTE_TIMEOUT_MS, HARD_ROUND_LIMIT, STALEMATE_NO_PROGRESS_LIMIT } from '../core/Rules';
 import { loadReplay, persistArtifacts } from '../core/Logs';
 import { MatchSetupUI } from '../ui/MatchSetupUI';
@@ -91,7 +92,8 @@ function parseArgs(argv: string[]): CliOptions {
     points: 8,
     difficulty: 'medium',
     artifacts: path.join(process.cwd(), 'artifacts'),
-    slots: path.join(PLATFORM_ROOT, 'algorithms'),
+    // 正式投递点：运行期槽位根（与 Web `npm run app` 同一处）
+    slots: RUNTIME_SLOT_ROOT,
     // 兜底上限默认与**引擎的硬上限**一致：正式终止条件在引擎里
     // （Rule Revision 3 §16/§17），这里只防操作台无限循环。
     maxRounds: HARD_ROUND_LIMIT,
@@ -186,6 +188,8 @@ let activeEngine: MatchEngine | null = null;
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
+  // 运行期槽位是正式投递点；首次启动从 canonical fixture 播种（已存在则不覆盖）
+  if (opts.slots === RUNTIME_SLOT_ROOT) prepareRuntimeSlots(opts.slots);
 
   if (opts.replay) {
     replayOnly(opts.replay);

@@ -28,6 +28,7 @@ import {
   startServer,
 } from '../src/server/main';
 import { isSafeMatchId, listReplays, loadReplay, resolveMatchDir } from '../src/server/replays';
+import { readSlot } from '../src/submission/Slot';
 import { JudgeBoard, ServerMessage } from '../src/server/protocol';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
@@ -661,6 +662,39 @@ test('畸形请求目标在 WS upgrade 路径上同样不杀服务（P0-1 回归
   assertEqual(health.status, 200, 'WS upgrade 上的畸形目标之后服务必须仍然存活');
 });
 
+test('静态文件存在但不可读：受控 4xx/5xx，进程必须存活（tag-blocker 回归）', async () => {
+  // 与 `GET //` 是**同一类**事故：一个请求不该能结束整场赛事。
+  // 原实现 `fs.createReadStream(f).pipe(res)` 既没有 source 'error' 监听器，
+  // 又是先 writeHead(200) 再开流 —— 文件打不开时会升级成 uncaughtException，
+  // 把承载裁判台/大屏/回放的唯一进程带走（Final Re-Gate 实测 exit(1)）。
+  const root = tmpDir('weblocked');
+  const dist = path.join(root, 'dist');
+  fs.mkdirSync(dist, { recursive: true });
+  fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><html><body>ok</body></html>');
+  const locked = path.join(dist, 'locked.js');
+  fs.writeFileSync(locked, 'console.log("locked")\n');
+  fs.chmodSync(locked, 0o000);
+
+  const srv = await startServer({
+    port: 0,
+    slotRoot: path.join(root, 'algorithms'),
+    artifactRoot: path.join(root, 'artifacts'),
+    sandboxRoot: path.join(root, 'sandboxes'),
+    distDir: dist,
+  });
+  try {
+    const bad = await getRaw(srv.port, '/locked.js');
+    assert(bad.status >= 400 && bad.status < 600, `不可读文件必须回受控状态码，实际 ${bad.status}`);
+    assert(!bad.text.includes('/Users/'), '错误响应不得回绝对路径');
+    // 关键：服务必须还活着，而且还能继续正常服务其它请求
+    assertEqual((await get(srv.port, '/api/health')).status, 200, '不可读文件之后服务必须仍然存活');
+    assertEqual((await getRaw(srv.port, '/')).status, 200, '其余静态资源必须仍然可服务');
+  } finally {
+    fs.chmodSync(locked, 0o600);
+    await srv.close();
+  }
+});
+
 test('忙时重复命令被拒，且忙窗口内 board 如实标记 busy（P0-8 回归）', async () => {
   const iso = await startIsolated();
   try {
@@ -707,6 +741,23 @@ test('算法 CRASH：如实上板、不泄漏诊断，且 run-to-end 不在 COUN
       'PUBLIC 阶段 run-to-end 必须可用（正向对照）'
     );
 
+    // ---- 槽位可见性：裁判必须能**当场**看出跑的是哪份算法 ----
+    // （Re-Gate P1 的另一半：光把投递点改对还不够，得让「投的是不是选手那份」
+    //   一眼可判，而不是靠人肉比对哈希。）
+    assertEqual(atPublic.slotRoot, path.join(iso.root, 'algorithms'), '裁判板必须暴露当前生效的槽位根');
+    const slotA = atPublic.slots.A;
+    assert(slotA.dir.startsWith(iso.root), `SlotView.dir 必须指向实际生效的槽位目录，实际 ${slotA.dir}`);
+    assert(
+      typeof slotA.name === 'string' && slotA.name.length > 0,
+      'SlotView 必须带算法名 —— 这是防「静默跑错算法」最直接的信号'
+    );
+    assertEqual(slotA.origin, 'installed', '经安装流水线写入的槽位，origin 必须是 installed');
+    assert(
+      typeof slotA.source === 'string' && slotA.source.length > 0,
+      'installed 的槽位必须带上传来源目录'
+    );
+    assert(slotA.hash !== null && slotA.hash.length === 64, 'SlotView 必须带包哈希');
+
     await act(iso.port, 'reveal');
     await act(iso.port, 'start-round');
     const atCountdown = await judgeState(iso.port);
@@ -714,21 +765,33 @@ test('算法 CRASH：如实上板、不泄漏诊断，且 run-to-end 不在 COUN
     assertEqual(
       atCountdown.actions.find((a) => a.key === 'run-to-end')!.enabled,
       false,
-      'COUNTDOWN 阶段**不得**启用 run-to-end —— 点了必然抛错，且会留下粘住的 lastError'
+      'COUNTDOWN 阶段**不得**启用 run-to-end'
     );
 
-    // ---- P0-5：先制造一条陈旧的失败说明 ----
-    // 直接打 session：COUNTDOWN 下推后台循环，第一句 beginRound() 必然抛错。
-    // （正常 UI 路径已经被上面那条门禁挡住了，这里是在验证**真的出错过之后**能不能自愈。）
-    void iso.srv.session.runToEnd();
-    const errored = await boardUntil(iso.port, (b) => b.lastError !== null, 10_000, 'lastError 出现');
-    assert(errored.lastError, '后台推进失败必须留下可读的说明');
+    // ---- **服务端**守卫必须与 board 判据完全一致（Re-Gate P2）----
+    // 旧实现只查 busy + 有没有地图：board 虽然把按钮置灰了，但 REST 直调仍会
+    // 回 ok:true 并启动一个注定抛错的后台任务，还留下一条粘住的 lastError ——
+    // 对外「谎报成功」。现在必须**当场拒绝**。
+    //
+    // 注意这里的断言方向：被拒之后**不能**有任何副作用（阶段/回合/lastError/busy
+    // 四项都不许动）。「没写 lastError」正是这条修复的核心要求，不是顺带。
+    const direct = await post(iso.port, '/api/judge/run-to-end', {});
+    assertEqual(direct.body.ok, false, 'COUNTDOWN 下 run-to-end 必须回 ok:false，不得谎报成功');
+    assert(
+      String((direct.body.errors as string[])[0] ?? '').includes('COUNTDOWN'),
+      `拒绝理由必须说清当前阶段，实际 ${JSON.stringify(direct.body.errors)}`
+    );
+    await new Promise((r) => setTimeout(r, 600)); // 留一拍，确认它没有在后台偷偷跑
+    const afterReject = await judgeState(iso.port);
+    assertEqual(afterReject.phase, 'COUNTDOWN', '被拒的 run-to-end 不得改变阶段');
+    assertEqual(afterReject.round, atCountdown.round, '被拒的 run-to-end 不得推进回合');
+    assertEqual(afterReject.lastError, null, '被拒的 run-to-end 不得留下粘住的 lastError');
+    assertEqual(afterReject.busy, false, '被拒之后 busy 必须保持释放');
 
-    // ---- P0-8 + P0-5：结算本轮（一条**成功**的命令）----
+    // ---- P0-8：结算本轮（一条**成功**的命令）----
     await act(iso.port, 'compute');
     const after = await judgeState(iso.port);
-
-    assertEqual(after.lastError, null, '成功的命令必须清除陈旧的失败说明（P0-5）');
+    assertEqual(after.lastError, null, '成功命令之后不得留下失败说明');
 
     const judgeErrors = (after.lastRound?.errors ?? []).join(' | ');
     assert(judgeErrors.includes('CRASH'), `裁判板必须如实展示 CRASH，实际：${judgeErrors || '(空)'}`);
@@ -885,6 +948,80 @@ test('默认 runtime 槽位根与受跟踪的 algorithms/ 隔离，且播种只�
     payload,
     '已存在的运行期槽位不得被 canonical 覆盖'
   );
+
+  // ④ canonical 之后的改动**不会**自动同步过来 ——
+  //    这正是「改 algorithms/ 被误当成更新了比赛算法」那条事故的结构性防线。
+  //    （cannonical 是受跟踪的只读 fixture，这里用一份 /tmp 副本模拟它被改动。）
+  const canonCopy = path.join(tmpDir('canon'), 'algorithms');
+  fs.cpSync(CANONICAL_SLOT_ROOT, canonCopy, { recursive: true });
+  const dest2 = path.join(tmpDir('seed2'), 'slots');
+  seedRuntimeSlots(canonCopy, dest2);
+  const seededHash = fs.readFileSync(path.join(dest2, 'team-a', 'solver.py'), 'utf-8');
+  fs.writeFileSync(path.join(canonCopy, 'team-a', 'solver.py'), '# 后来改的 canonical\n');
+  seedRuntimeSlots(canonCopy, dest2);
+  assertEqual(
+    fs.readFileSync(path.join(dest2, 'team-a', 'solver.py'), 'utf-8'),
+    seededHash,
+    '改 canonical 不得影响已播种的运行期槽位（否则「投递点」就形同虚设）'
+  );
+
+  // ⑤ 被中断的播种（半成品目录）必须能自愈 ——
+  //    只按「目录是否存在」判跳过会让它永久卡在 INVALID。
+  fs.rmSync(path.join(dest2, 'team-a', 'solver.py'));
+  seedRuntimeSlots(canonCopy, dest2);
+  assert(
+    fs.existsSync(path.join(dest2, 'team-a', 'solver.py')),
+    '半成品槽位（缺 solver.py）必须被重新播种，而不是永久跳过'
+  );
+
+  // ⑥ 播种出来的槽位必须**没有安装记录** —— 裁判台据此显示 origin=unrecorded，
+  //    与「经安装流水线写入」区分开。
+  assertEqual(readSlot(dest2, 'A').record, null, '播种出来的槽位不得冒充「经本平台安装」');
+});
+
+test('真的启动一次**默认配置**，槽位根必须是运行期投递点（tag-blocker 回归）', async () => {
+  // 此前**所有**套件都显式传 slotRoot / --slots，于是「生产默认分支」从未被执行过 ——
+  // 槽位根分裂那条事故正是发生在这个盲区里（Final Re-Gate item 9/10）。
+  const root = tmpDir('defaultroot');
+  const canonBefore = fs.readFileSync(path.join(CANONICAL_SLOT_ROOT, 'team-a', 'solver.py'));
+  const srv = await startServer({
+    port: 0,
+    // 故意**不传** slotRoot：走生产默认值（runs/slots + 从 canonical 播种）
+    artifactRoot: path.join(root, 'artifacts'),
+    sandboxRoot: path.join(root, 'sandboxes'),
+    distDir: path.join(root, 'no-dist'),
+  });
+  try {
+    const board = await judgeState(srv.port);
+    assertEqual(board.slotRoot, RUNTIME_SLOT_ROOT, '默认启动必须用运行期槽位根，而不是仓库里的 fixture');
+    assert(
+      RUNTIME_SLOT_ROOT !== CANONICAL_SLOT_ROOT &&
+        !RUNTIME_SLOT_ROOT.startsWith(CANONICAL_SLOT_ROOT + path.sep),
+      '默认槽位根不得落在受跟踪的 algorithms/ 内'
+    );
+    for (const t of ['A', 'B'] as const) {
+      const s = board.slots[t];
+      assert(
+        s.dir.startsWith(RUNTIME_SLOT_ROOT),
+        `Team ${t} 的槽位目录必须位于运行期槽位根内，实际 ${s.dir}`
+      );
+      // 只在槽位可用时断言算法名：名字是「跑的是不是我投的那份」的唯一肉眼判据。
+      // （不断言 READY 本身 —— 运行期槽位的内容是现场可变的，测试不该依赖它。）
+      if (s.status === 'READY') {
+        assert(
+          typeof s.name === 'string' && s.name.length > 0,
+          `Team ${t} 必须带算法名 —— 裁判据此判断跑的是不是自己投的那份`
+        );
+      }
+    }
+    // canonical 只被**读**过：逐字节不变
+    assert(
+      fs.readFileSync(path.join(CANONICAL_SLOT_ROOT, 'team-a', 'solver.py')).equals(canonBefore),
+      '默认启动不得改写受跟踪的 canonical 槽位'
+    );
+  } finally {
+    await srv.close();
+  }
 });
 
 test('收尾：关闭服务', async () => {

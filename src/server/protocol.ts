@@ -147,6 +147,28 @@ export interface SlotView {
   files: number;
   totalBytes: number;
   errors: string[];
+  /**
+   * 该槽位**实际**所在的目录 —— 正式比赛里它属于运行期槽位根（`runs/slots`），
+   * 而不是仓库里那份出厂 fixture（`algorithms/`）。
+   *
+   * 裁判据此当场判别「跑的是不是我投的那份算法」，不必去猜。
+   */
+  dir: string;
+  /**
+   * 算法包自报的名字（`manifest.name`）。
+   *
+   * 这是**防静默跑错算法**最直接的信号：裁判投的是「Team Rocket」而板上写着
+   * 「Team Starter」，一眼就能看出来。不可用时为 null。
+   */
+  name: string | null;
+  /**
+   * 这份算法**怎么来的**：
+   *   - `installed`   —— 经本平台安装流水线写入（有安装记录，`source` 是上传来源目录）
+   *   - `unrecorded`  —— 槽位里有包但没有安装记录（出厂播种 / 手工放置）
+   */
+  origin: 'installed' | 'unrecorded';
+  /** `origin === 'installed'` 时的上传来源目录；否则 null */
+  source: string | null;
 }
 
 export interface SettingsView {
@@ -197,6 +219,8 @@ export interface JudgeBoard extends SpectatorBoard {
   /** 后台推进整场比赛时的最后一次失败说明；无失败为 null */
   lastError: string | null;
   settings: SettingsView;
+  /** 当前生效的**运行期槽位根** —— 正式比赛的算法投递点（不是仓库里的 fixture） */
+  slotRoot: string;
   slots: { A: SlotView; B: SlotView };
   packages: { A: { hash: string; name: string } | null; B: { hash: string; name: string } | null };
   runtime: { frozen: string; detected: string; ok: boolean; mismatches: string[] };

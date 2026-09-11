@@ -11,7 +11,6 @@
  * 与终端裁判台一样，**传了临时目录就绝不会碰仓库里的 `algorithms/`**。
  */
 
-import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -19,44 +18,20 @@ import { MatchSession } from './session';
 import { createRequestHandler } from './http';
 import { attachWebSocket } from './ws';
 import { openBrowser } from './open';
-import { copyPackageDir } from '../submission/Package';
+import {
+  CANONICAL_SLOT_ROOT,
+  RUNTIME_SLOT_ROOT,
+  prepareRuntimeSlots,
+  seedRuntimeSlots,
+} from '../submission/Slot';
 import { DEFAULT_PORT, WireDifficulty } from './protocol';
 
+// 槽位语义（canonical fixture vs 运行期投递点）统一收口在 `src/submission/Slot.ts`，
+// 三个入口（Web / 终端 judge / operator）共用同一套定义 —— 两个入口指向不同
+// 槽位根会让裁判投递一份算法、比赛却跑另一份（Final Re-Gate P1）。
+export { CANONICAL_SLOT_ROOT, RUNTIME_SLOT_ROOT, prepareRuntimeSlots, seedRuntimeSlots };
+
 const PLATFORM_ROOT = path.resolve(__dirname, '..', '..');
-
-/**
- * **canonical 槽位根**（规范 §2/§41）：`algorithms/team-a` / `team-b`，
- * 受 git 跟踪 —— 它是仓库自带的起步数据，**不是**运行期可写目录。
- */
-export const CANONICAL_SLOT_ROOT = path.join(PLATFORM_ROOT, 'algorithms');
-
-/**
- * **运行期槽位根**（`npm run app` 的默认值）。
- *
- * 默认值**不能**是 `algorithms/`：安装流水线用 rename **整体替换** `team-a` / `team-b`
- * （`src/submission/Slot.ts` 的 `commitSlot`），于是一场正规比赛就会改写受跟踪文件，
- * 让工作区变脏、并可能把选手算法误提交进仓库（Final Audit P2-6）。
- *
- * 改用 `runs/slots`（已在 `.gitignore` 中），并在启动时从 canonical 槽位**播种一次**：
- * 出厂即两个槽位 READY，「使用槽位算法」的零输入主流程不受影响，
- * 而仓库里的 canonical 数据一个字节都不会变。
- */
-export const RUNTIME_SLOT_ROOT = path.join(PLATFORM_ROOT, 'runs', 'slots');
-
-/**
- * 把 canonical 槽位复制进运行期槽位根。
- *
- * **只在目标不存在时复制** —— 已存在的运行期槽位（可能装着选手算法）
- * 绝不能被仓库里的 canonical 数据覆盖回去，否则一场比赛的投递会被静默抹掉。
- */
-export function seedRuntimeSlots(canonicalRoot: string, runtimeRoot: string): void {
-  for (const team of ['team-a', 'team-b'] as const) {
-    const src = path.join(canonicalRoot, team);
-    const dest = path.join(runtimeRoot, team);
-    if (fs.existsSync(dest) || !fs.existsSync(src)) continue;
-    copyPackageDir(src, dest);
-  }
-}
 
 export interface StartOptions {
   port?: number;
@@ -84,13 +59,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
 
   // 只在用**默认**槽位根时播种：显式传了 --slots 的调用方（测试、演练）
   // 自己负责准备目录，不该被仓库里的 canonical 数据干扰。
-  if (!opts.slotRoot) {
-    try {
-      seedRuntimeSlots(CANONICAL_SLOT_ROOT, slotRoot);
-    } catch {
-      /* 播种失败不阻断启动：槽位会是 EMPTY，裁判台会如实显示 */
-    }
-  }
+  if (!opts.slotRoot) prepareRuntimeSlots(slotRoot);
 
   const session = new MatchSession({
     slotRoot,

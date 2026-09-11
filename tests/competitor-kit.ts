@@ -616,6 +616,19 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
   assert(/STALEMATE/.test(kitReadme), 'competitor-kit/README.md 必须写明 STALEMATE 规则');
   assert(/STALEMATE/.test(rootReadme), '仓库 README 必须写明 STALEMATE 规则');
   assert(/HARD_ROUND_LIMIT|第 60 回合/.test(rootReadme), '仓库 README 必须写明硬回合上限');
+
+  // ---- 槽位语义：投递点是运行期槽位根，不是仓库里的 canonical ----
+  // 这条防的是 Re-Gate 抓到的那类事故：把投递点改对了，文档却还在教选手
+  // 往 `algorithms/` 投 —— 比赛于是静默跑另一份算法。
+  assert(/runs\/slots/.test(rootReadme), '仓库 README 必须写明运行期槽位根 runs/slots（正式投递点）');
+  assert(/出厂 fixture/.test(rootReadme), '仓库 README 必须写明 algorithms/ 只是出厂 fixture');
+  assert(/投递点/.test(rootReadme), '仓库 README 必须点明「投递点」这个概念');
+
+  // ---- 现行 CLI / 工具的文案同样面向选手，一并纳入防漂移 ----
+  for (const f of ['validate-submission.ts', 'generate-kit-examples.ts', 'cli.ts', 'judge.ts']) {
+    const t = fs.readFileSync(path.join(PLATFORM_ROOT, 'src', 'operator', f), 'utf-8');
+    assert(!/2000/.test(t), `src/operator/${f} 不得再出现 2000（引擎是 500ms）`);
+  }
 });
 
 void runAll('competitor-kit');

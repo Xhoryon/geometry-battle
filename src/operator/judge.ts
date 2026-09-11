@@ -4,8 +4,9 @@
  * Rule Revision 3 §24/§25/§33 的正式赛事入口。
  *
  * 为什么它不是「开发 CLI」：
- *   - **不需要传任何参数就能开一场正规比赛**：算法从固定槽位
- *     `algorithms/team-a|team-b` 取，种子自动生成；
+ *   - **不需要传任何参数就能开一场正规比赛**：算法从**运行期槽位**
+ *     `runs/slots/team-a|team-b` 取（首次启动会从仓库自带的 canonical 槽位
+ *     `algorithms/` 播种一次），种子自动生成；
  *   - 交互式菜单驱动，裁判按编号动作，不需要记命令行 flag、不需要点 id、
  *     不需要知道文件路径；
  *   - 链路上每个动作都在控制台板上列出来（载入 / 校验 / 揭晓 / START /
@@ -28,6 +29,7 @@ import * as path from 'path';
 import * as readline from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { MatchEngine, PLATFORM_ROOT } from '../core/Match';
+import { RUNTIME_SLOT_ROOT, prepareRuntimeSlots } from '../submission/Slot';
 import { persistArtifacts } from '../core/Logs';
 import { AudienceScreenUI } from '../ui/AudienceScreenUI';
 import { SlotReadiness, consoleInputFrom, renderAuditSummary, renderJudgeConsole, renderMatchSummary, renderReplayIndex } from '../ui/JudgeConsole';
@@ -57,7 +59,9 @@ interface JudgeOptions {
 
 function parseArgs(argv: string[]): JudgeOptions {
   const o: JudgeOptions = {
-    slots: path.join(PLATFORM_ROOT, 'algorithms'),
+    // 正式投递点：运行期槽位根（与 Web `npm run app` 同一处）。
+    // 仓库里的 algorithms/ 只是出厂 fixture，**不是**投递点。
+    slots: RUNTIME_SLOT_ROOT,
     points: 8,
     difficulty: 'medium',
     artifacts: path.join(process.cwd(), 'artifacts'),
@@ -132,6 +136,8 @@ function slotsOf(setup: MatchSetupUI): { A: SlotReadiness; B: SlotReadiness } {
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
+  // 运行期槽位是正式投递点；首次启动从 canonical fixture 播种（已存在则不覆盖）
+  prepareRuntimeSlots(opts.slots);
   /**
    * 输入抽象：**TTY 走交互提示，管道走预读行队列**。
    *

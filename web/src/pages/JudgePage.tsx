@@ -133,6 +133,14 @@ export function JudgePage(): JSX.Element {
             <h2>算法槽位</h2>
             <span className="dim num">{board.settings.pointCount} 点 · {board.settings.difficulty}</span>
           </div>
+          <div className="slot">
+            <span className="slot__detail">
+              投递点 <code>{board.slotRoot}</code>
+            </span>
+            <span className="slot__detail dim">
+              仓库里的 <code>algorithms/</code> 只是出厂 fixture —— 改它**不会**改变比赛用的算法
+            </span>
+          </div>
           {(['A', 'B'] as const).map((t) => {
             const s = board.slots[t];
             return (
@@ -140,6 +148,8 @@ export function JudgePage(): JSX.Element {
                 <span className="slot__name">
                   <span className={`team-dot team-dot--${t.toLowerCase()}`} />
                   Team {t}
+                  {/* 算法名是防「静默跑错算法」最直接的信号：投的是谁，板上就写谁 */}
+                  {s.name ? <b> · {s.name}</b> : null}
                 </span>
                 <span className={`slot__status ${s.status === 'READY' ? 'slot__status--ready' : 'slot__status--bad'}`}>
                   {s.status}
@@ -149,7 +159,16 @@ export function JudgePage(): JSX.Element {
                     ? `${s.files} 文件 · ${s.totalBytes} B · preflight ${s.preflightOk === null ? '未经本平台安装' : s.preflightOk ? '✓' : '✕'}`
                     : s.errors[0] ?? '槽位为空'}
                 </span>
-                <span className="slot__detail">package {board.packages[t] ? `${board.packages[t]!.hash.slice(0, 16)}…` : '未密封进本场'}</span>
+                <span className="slot__detail">
+                  {s.origin === 'installed' ? `已安装 · 来源 ${s.source ?? '未知'}` : '无安装记录（出厂播种 / 手工放置）'}
+                </span>
+                <span className="slot__detail">
+                  <code>{s.dir}</code>
+                </span>
+                {s.hash ? <span className="slot__detail dim">包哈希 {s.hash.slice(0, 24)}…</span> : null}
+                <span className="slot__detail">
+                  本场已密封 {board.packages[t] ? `${board.packages[t]!.hash.slice(0, 16)}…` : '—'}
+                </span>
               </div>
             );
           })}
@@ -185,7 +204,7 @@ export function JudgePage(): JSX.Element {
           <summary>Advanced · 替换算法与比赛设置</summary>
           <div className="adv__body">
             <p className="dim" style={{ margin: '0 0 10px', fontSize: 11 }}>
-              正式比赛请用上面的「使用槽位算法」—— 选手把算法投进槽位即可。
+              正式比赛请用上面的「使用槽位算法」—— 算法要投进**运行期槽位**（见上方「投递点」）。
               这里只在需要临时换算法时使用，输入的是**服务端**上的目录绝对路径。
             </p>
             {(['A', 'B'] as const).map((t) => {

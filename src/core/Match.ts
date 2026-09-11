@@ -52,7 +52,7 @@ import { ENTRY_FILENAME } from '../submission/Manifest';
 import { checkRuntime, describeRuntime } from '../submission/Runtime';
 import { SealedPackage, inspectPackage, sealPackage, verifySeal } from '../submission/Package';
 import {
-  DEFAULT_SLOT_ROOT,
+  RUNTIME_SLOT_ROOT,
   SlotState,
   StagedSlot,
   TeamSlot,
@@ -114,7 +114,7 @@ export interface MatchOptions {
   memoryLimitMb?: number;
   sandboxRoot?: string;
   artifactRoot?: string;
-  /** 固定算法槽位根目录（规范 §2/§41），默认 `<PLATFORM_ROOT>/algorithms` */
+  /** 算法槽位根目录，默认 `<PLATFORM_ROOT>/runs/slots`（运行期槽位 = 正式投递点） */
   slotRoot?: string;
   /**
    * **仅供测试 / 演练**：覆盖 Stalemate 的两个阈值。
@@ -266,7 +266,10 @@ export class MatchEngine {
     this.memoryLimitMb = opts.memoryLimitMb ?? MEMORY_LIMIT_MB;
     this.sandboxRoot = opts.sandboxRoot ?? defaultSandboxRoot();
     this.artifactRoot = opts.artifactRoot ?? path.join(process.cwd(), 'artifacts');
-    this.slotRoot = opts.slotRoot ?? path.join(PLATFORM_ROOT, DEFAULT_SLOT_ROOT);
+    // 默认 = **运行期槽位根**（正式投递点），不是仓库里那份受跟踪的 canonical fixture。
+    // 三个入口都显式传 slotRoot；这里保持一致是为了让「忘记传」也不会去碰
+    // algorithms/（Re-Gate P1：两个默认值 = 两个投递点）。
+    this.slotRoot = opts.slotRoot ?? RUNTIME_SLOT_ROOT;
     this.teamAName = opts.teamAName ?? 'Team A';
     this.teamBName = opts.teamBName ?? 'Team B';
     this.stalemateLimit = opts.stalemateNoProgressLimit ?? STALEMATE_NO_PROGRESS_LIMIT;

@@ -984,7 +984,7 @@ export function spawnRunner(opts: {
   /**
    * 轮询 `output/result.json`（规范 §27：Judge 只监听它出现）。
    *
-   * 1ms 的粒度相对 2000ms 预算可忽略；双方各自轮询、相位独立，
+   * 1ms 的粒度相对 500ms 预算可忽略（Rule Revision 3 §11）；双方各自轮询、相位独立，
    * 不产生方向固定的偏置。计时终点是**文件可读的那一刻**（规范 §22/§28），
    * 而不是进程退出时刻 —— 后者会把解释器退出开销算进算法耗时。
    */
@@ -1035,7 +1035,7 @@ export function spawnRunner(opts: {
    *
    * `pollForResult` 在 `released` 之前直接返回，提前挂上轮询器没有副作用；
    * 超时预算提前 δ（两次 GO 写入之间的宿主开销，量级 10µs）起算，
-   * 相对 2000ms 的预算可忽略。
+   * 相对 500ms 的预算可忽略（Rule Revision 3 §11）。
    */
   const prepare = () => {
     if (prepared || finished) return;

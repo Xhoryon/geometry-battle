@@ -230,16 +230,24 @@ export function spectatorBoard(
 // ============================================================================
 
 function slotView(state: SlotState): SlotView {
+  const record = state.record;
   return {
     team: state.team,
     installed: state.status === 'READY',
     status: state.status,
     hash: state.hash,
     entry: state.entry,
-    preflightOk: state.record?.preflight ? Boolean(state.record.preflight.ok) : null,
+    preflightOk: record?.preflight ? Boolean(record.preflight.ok) : null,
     files: state.files,
     totalBytes: state.totalBytes,
     errors: [...state.errors],
+    // —— 防「静默跑错算法」的三个判据：**实际目录**、**算法名**、**来源** ——
+    // 只给哈希是不够的：裁判手上没有「我投的那份包哈希是多少」，
+    // 而算法名与目录是他一眼能对的。这三项在观众板上都不存在（白名单）。
+    dir: state.dir,
+    name: state.manifest?.name ?? null,
+    origin: record ? 'installed' : 'unrecorded',
+    source: record?.source ?? null,
   };
 }
 
@@ -255,8 +263,33 @@ function auditView(engine: MatchEngine): AuditView {
   };
 }
 
+/**
+ * 「连续跑完余下回合」的**唯一**前置条件判定。
+ *
+ * board 的 `enabled` 与 `MatchSession.runToEnd()` 的守卫**必须**调它 ——
+ * 分头写两份判据就会出现「UI 说能跑、后台一跑就抛」：本轮之前正是如此
+ * （board 只排除 COMPUTING，于是 COUNTDOWN 下按钮可点，而循环第一句
+ * `beginRound()` 必然抛错，留下一条粘住的红色错误）。
+ *
+ * 判据逐条抄自 `beginRound()` 自己用的条件（`MatchEngine.beginRound()`：
+ * 只允许 `phase === 'PUBLIC' || 'REVEAL'`）—— 后台循环的第一句就是它。
+ *
+ * 返回 `null` 表示可以推进；否则返回一句**人话**说明为什么不能。
+ */
+export function runToEndBlocker(engine: MatchEngine): string | null {
+  const snap = engine.getSnapshot();
+  if (engine.endReason() !== 'NONE') return '比赛已经结束';
+  if (!snap.map) return '比赛尚未开始 —— 先执行「开始比赛」';
+  if (snap.phase !== 'PUBLIC' && snap.phase !== 'REVEAL') {
+    return `当前阶段 ${snap.phase} 不能连续推进 —— 请先「结算本轮」`;
+  }
+  return null;
+}
+
 export interface JudgeBoardContext {
   slots: { A: SlotState; B: SlotState };
+  /** 当前生效的运行期槽位根（正式投递点） */
+  slotRoot: string;
   settings: SettingsView;
   runtime: RuntimeCheck;
   artifactDir: string | null;
@@ -352,11 +385,9 @@ export function buildActions(
     {
       key: 'run-to-end',
       label: '连续跑完余下回合',
-      // 判据逐条抄自 `beginRound()` 自己用的条件：`phase ∈ {PUBLIC, REVEAL}`。
-      // 只排除 COMPUTING 是不够的 —— COUNTDOWN（已 START、尚未结算）时
-      // 循环第一句 `beginRound()` 就会抛「当前阶段不能开始新一轮」，
-      // 按钮点了不前进，还留下一行会粘住的红色错误（Final Audit P2-3）。
-      enabled: gate(!terminal && hasMap && (phase === 'PUBLIC' || phase === 'REVEAL')),
+      // 与 `MatchSession.runToEnd()` 的守卫共用同一个判据函数 —— 两处分开写
+      // 就会出现「UI 说能跑、后台一跑就抛」（Final Audit P2-3 / Re-Gate）。
+      enabled: gate(runToEndBlocker(engine) === null),
       hint: '后台推进到比赛终止，期间可继续观看',
     },
     {
@@ -376,6 +407,7 @@ export function judgeBoard(engine: MatchEngine, ctx: JudgeBoardContext): JudgeBo
     busy: ctx.busy,
     lastError: ctx.lastError,
     settings: ctx.settings,
+    slotRoot: ctx.slotRoot,
     slots: { A: slotView(ctx.slots.A), B: slotView(ctx.slots.B) },
     packages: {
       A: engine.getSnapshot().packages.A,

@@ -33,8 +33,75 @@ export const SLOT_DIRS: Record<TeamSlot, string> = { A: 'team-a', B: 'team-b' };
 export const SLOT_META_DIR = '.slots';
 /** 上传暂存目录（不参与算法包） */
 export const SLOT_STAGING_DIR = '.staging';
-/** 默认槽位根目录（规范 §41 的文件结构） */
+/** 出厂槽位目录名（规范 §2/§41 的文件结构） */
 export const DEFAULT_SLOT_ROOT = 'algorithms';
+
+/** 平台根目录（本文件位于 `src/submission/`） */
+const PLATFORM_ROOT = path.resolve(__dirname, '..', '..');
+
+/**
+ * **canonical 槽位根** —— 仓库自带的出厂 fixture。
+ *
+ * 它是**只读的默认数据**，不是投递点：内容受 git 跟踪，用来让「零输入主流程」
+ * 出厂即可用（两个槽位都 READY）。它**不参与**正式比赛的算法投放，
+ * 改它也不会影响任何已经在跑的比赛（见 `seedRuntimeSlots`）。
+ */
+export const CANONICAL_SLOT_ROOT = path.join(PLATFORM_ROOT, DEFAULT_SLOT_ROOT);
+
+/**
+ * **运行期槽位根** —— 正式比赛**唯一**的算法投递点。
+ *
+ * 为什么不是 `CANONICAL_SLOT_ROOT`：安装流水线用 rename **整体替换** `team-a` /
+ * `team-b`（见 `commitSlot`），若直接对着受跟踪目录操作，一场正规比赛就会改写
+ * 仓库文件（Final Audit P2-6）。`runs/` 已被 `.gitignore` 忽略。
+ *
+ * 所有入口（Web `npm run app`、终端 `npm run judge` / `npm run operator`）
+ * 都用它，**不再有第二个默认值** —— 两个入口指向不同槽位根会让裁判拿到
+ * 一份算法、比赛跑另一份（Final Re-Gate P1）。
+ */
+export const RUNTIME_SLOT_ROOT = path.join(PLATFORM_ROOT, 'runs', 'slots');
+
+/**
+ * 首次启动时把 canonical 槽位复制进运行期槽位根。
+ *
+ * **只在目标不存在时复制** —— 这一条是硬要求，不是优化：
+ *   - 已存在的运行期槽位可能装着选手算法，绝不能被仓库里的 canonical 数据覆盖回去
+ *     （那会把一场比赛的投递静默抹掉）；
+ *   - 反过来，canonical 之后的改动**也不会**自动同步过来。也就是说
+ *     「改 `algorithms/`」永远不会被误当成「更新了比赛用的算法」。
+ *     要让比赛换算法，必须**投递进运行期槽位根**（Web 的 Advanced 安装，
+ *     或 `--slots` 指向它）。裁判台会把实际生效的目录、算法名与哈希显示出来。
+ */
+export function seedRuntimeSlots(canonicalRoot: string, runtimeRoot: string): void {
+  for (const team of ['team-a', 'team-b'] as const) {
+    const src = path.join(canonicalRoot, team);
+    const dest = path.join(runtimeRoot, team);
+    // 存在性判定必须**按目录内容**做：一个被中断的播种会留下只有 manifest 的
+    // 半成品目录，那种半成品既不该被当成「已播种」，也不该被永远跳过。
+    if (!fs.existsSync(src)) continue;
+    if (fs.existsSync(path.join(dest, ENTRY_FILENAME))) continue;
+    try {
+      fs.rmSync(dest, { recursive: true, force: true });
+      copyPackageDir(src, dest);
+    } catch {
+      /* 单个槽位播种失败不阻断启动：它会是 EMPTY/INVALID，裁判台会如实显示 */
+    }
+  }
+}
+
+/**
+ * 启动时准备运行期槽位（Web 与终端入口共用）。
+ *
+ * 播种失败**不阻断启动** —— 槽位会如实显示为 EMPTY/INVALID，
+ * 而不是让整个服务起不来。
+ */
+export function prepareRuntimeSlots(runtimeRoot: string = RUNTIME_SLOT_ROOT): void {
+  try {
+    seedRuntimeSlots(CANONICAL_SLOT_ROOT, runtimeRoot);
+  } catch {
+    /* 见上 */
+  }
+}
 
 export type SlotStatus = 'EMPTY' | 'READY' | 'INVALID';
 

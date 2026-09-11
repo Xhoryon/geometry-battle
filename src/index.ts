@@ -136,7 +136,11 @@ export {
 
 // ---- 固定算法槽位（V1.1 §2/§31/§32/§33）----
 export {
+  CANONICAL_SLOT_ROOT,
   DEFAULT_SLOT_ROOT,
+  RUNTIME_SLOT_ROOT,
+  prepareRuntimeSlots,
+  seedRuntimeSlots,
   SLOT_DIRS,
   SlotPreflightRecord,
   SlotRecord,
