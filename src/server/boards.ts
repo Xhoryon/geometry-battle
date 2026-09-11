@@ -352,7 +352,11 @@ export function buildActions(
     {
       key: 'run-to-end',
       label: '连续跑完余下回合',
-      enabled: gate(!terminal && hasMap && phase !== 'COMPUTING'),
+      // 判据逐条抄自 `beginRound()` 自己用的条件：`phase ∈ {PUBLIC, REVEAL}`。
+      // 只排除 COMPUTING 是不够的 —— COUNTDOWN（已 START、尚未结算）时
+      // 循环第一句 `beginRound()` 就会抛「当前阶段不能开始新一轮」，
+      // 按钮点了不前进，还留下一行会粘住的红色错误（Final Audit P2-3）。
+      enabled: gate(!terminal && hasMap && (phase === 'PUBLIC' || phase === 'REVEAL')),
       hint: '后台推进到比赛终止，期间可继续观看',
     },
     {

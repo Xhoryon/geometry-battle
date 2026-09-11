@@ -13,10 +13,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { EMITTERS } from '../src/core/Rules';
+import {
+  COMPUTE_TIMEOUT_MS,
+  EMITTERS,
+  HARD_ROUND_LIMIT,
+  STALEMATE_NO_PROGRESS_LIMIT,
+  firingDomain,
+} from '../src/core/Rules';
 import { parseCanonicalDSL, type ErrorCode } from '../src/core/Ast';
 import { MatchEngine, PLATFORM_ROOT } from '../src/core/Match';
-import { firingDomain } from '../src/core/Rules';
 import { validateAttackFunction } from '../src/core/Validator';
 import { buildPublicState, buildRevealState } from '../src/core/InputProtocol';
 import { cleanupSandbox, prepareSandbox, spawnRunner } from '../src/runner/SandboxRunner';
@@ -573,5 +578,44 @@ for (const c of CRASH_CASES) {
     }
   });
 }
+
+// ============================================================================
+// §23 面向选手的文档必须与引擎常量同步（Rule Revision 3）
+//
+// 这一条的存在理由：Revision 3 把预算从 2000ms 收到 500ms、把每轮选出的
+// Shooter 换成固定 Emitter，但**没有任何套件在看着这些数字** ——
+// 于是 4 处「2000 ms」与 2 处「reveal.shooters」一路漂到最终审计才被发现。
+// ============================================================================
+
+test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再次漂移）', () => {
+  // 先钉死冻结值本身（此前零覆盖）
+  assertEqual(COMPUTE_TIMEOUT_MS, 500, '单轮计算预算必须是 500ms（Rule Revision 3 §11）');
+  assertEqual(STALEMATE_NO_PROGRESS_LIMIT, 20, 'STALEMATE 必须是连续 20 回合零击杀');
+  assertEqual(HARD_ROUND_LIMIT, 60, 'HARD_ROUND_LIMIT 必须是第 60 回合');
+
+  const kitDocs = ['README.md', 'ALGORITHM_REQUIREMENTS.md', 'RUNTIME_MANIFEST.md', 'DSL_SPECIFICATION.md', 'JSON_SCHEMA.md', 'starter/solver.py'];
+  const targets: Array<[string, string]> = kitDocs.map((f) => [
+    `competitor-kit/${f}`,
+    fs.readFileSync(path.join(KIT, f), 'utf-8'),
+  ]);
+  targets.push(['README.md(仓库根)', fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8')]);
+
+  for (const [name, text] of targets) {
+    assert(!/2000\s*ms/.test(text), `${name} 不得再出现 2000 ms（引擎是 500 ms）`);
+    assert(!/NOT YET IMPLEMENTED/i.test(text), `${name} 不得再声称规则未实现`);
+    assert(!/reveal\[["']shooters["']\]/.test(text), `${name} 不得再教选手从 reveal 取 shooters`);
+    assert(!/shooters\s*\{\s*A\s*,\s*B\s*\}/.test(text), `${name} 不得再声称 reveal 含 shooters{A,B}`);
+  }
+
+  // 正向对照：文档必须**真的**写了正确的东西，否则「全都不提」也会全绿
+  const kitReadme = fs.readFileSync(path.join(KIT, 'README.md'), 'utf-8');
+  const rootReadme = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+  assert(/500\s*ms/.test(kitReadme), 'competitor-kit/README.md 必须写明 500 ms');
+  assert(/500\s*ms/.test(rootReadme), '仓库 README 必须写明 500 ms');
+  assert(/emitters/.test(rootReadme), '仓库 README 必须写明 emitters（固定 Emitter 在 public 里）');
+  assert(/STALEMATE/.test(kitReadme), 'competitor-kit/README.md 必须写明 STALEMATE 规则');
+  assert(/STALEMATE/.test(rootReadme), '仓库 README 必须写明 STALEMATE 规则');
+  assert(/HARD_ROUND_LIMIT|第 60 回合/.test(rootReadme), '仓库 README 必须写明硬回合上限');
+});
 
 void runAll('competitor-kit');

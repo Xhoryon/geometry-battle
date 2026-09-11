@@ -15,17 +15,29 @@
  *   4. **本机边界**：伪造 Host、跨源 Origin、越权 matchId 一律被拒。
  */
 
+import * as fs from 'fs';
 import * as http from 'http';
+import * as net from 'net';
 import * as path from 'path';
 import { WebSocket } from 'ws';
-import { RunningServer, startServer } from '../src/server/main';
-import { isSafeMatchId, resolveMatchDir } from '../src/server/replays';
+import {
+  CANONICAL_SLOT_ROOT,
+  RUNTIME_SLOT_ROOT,
+  RunningServer,
+  seedRuntimeSlots,
+  startServer,
+} from '../src/server/main';
+import { isSafeMatchId, listReplays, loadReplay, resolveMatchDir } from '../src/server/replays';
 import { JudgeBoard, ServerMessage } from '../src/server/protocol';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
 const ALGO_A = path.join(REPO, 'playtest', 'competitors', 'solver-fast');
 const ALGO_B = path.join(REPO, 'playtest', 'competitors', 'solver-hybrid');
+
+/** failure-path 夹具：只在**正式轮**（round ≥ 1）失败，因此能通过安装时的 decoy preflight */
+const ALGO_CRASH = path.join(REPO, 'tests', 'fixtures', 'algos', 'crash-on-real-round');
+const ALGO_TIMEOUT = path.join(REPO, 'tests', 'fixtures', 'algos', 'timeout-on-real-round');
 
 /** operator-e2e 已验证会终止的组合（points=6 / easy） */
 const SEED = 700001;
@@ -153,6 +165,95 @@ function waitFor(ws: WebSocket): Promise<void> {
     ws.once('open', () => resolve());
     ws.once('error', reject);
   });
+}
+
+/** 等到某条 judge board 满足条件（或超时） */
+function boardUntil(
+  port: number,
+  predicate: (b: JudgeBoard) => boolean,
+  deadlineMs: number,
+  what: string
+): Promise<JudgeBoard> {
+  const deadline = Date.now() + deadlineMs;
+  return (async () => {
+    for (;;) {
+      const b = await judgeState(port);
+      if (predicate(b)) return b;
+      assert(Date.now() < deadline, `等待「${what}」超时（当前 lastError=${JSON.stringify(b.lastError)}）`);
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  })();
+}
+
+/**
+ * 发一条**原始**请求行。
+ *
+ * 必须绕过 Node 的 http 客户端：它会对目标做规范化、并直接拒绝含空格等字符的
+ * 目标 —— 那样就测不到**服务端**的解析行为了。畸形目标是本次回归的主角，
+ * 得原样送到线上去。
+ */
+function rawSocketRequest(
+  port: number,
+  requestLine: string,
+  extraHeaders: Record<string, string> = {},
+  timeoutMs = 5000
+): Promise<string> {
+  return new Promise((resolve) => {
+    let buf = '';
+    const socket = net.connect(port, '127.0.0.1', () => {
+      const headers = [`Host: 127.0.0.1:${port}`, 'Connection: close', ...Object.entries(extraHeaders).map(([k, v]) => `${k}: ${v}`)];
+      socket.write(`${requestLine}\r\n${headers.join('\r\n')}\r\n\r\n`);
+    });
+    const done = (): void => resolve(buf);
+    socket.setTimeout(timeoutMs, () => {
+      socket.destroy();
+      done();
+    });
+    socket.on('data', (c) => {
+      buf += String(c);
+    });
+    socket.on('close', done);
+    socket.on('error', done);
+  });
+}
+
+/** 起一个**独立**的服务实例（自己的槽位 / 产物目录），供 failure-path 用例使用 */
+async function startIsolated(opts: { teamA?: string; teamB?: string } = {}): Promise<{
+  srv: RunningServer;
+  port: number;
+  root: string;
+  artifactRoot: string;
+}> {
+  const root = tmpDir('webfail');
+  const artifactRoot = path.join(root, 'artifacts');
+  const srv = await startServer({
+    port: 0,
+    slotRoot: path.join(root, 'algorithms'),
+    artifactRoot,
+    sandboxRoot: path.join(root, 'sandboxes'),
+    distDir: path.join(root, 'no-dist'),
+    seed: 730001,
+    pointCount: 6,
+    difficulty: 'easy',
+  });
+  const port = srv.port;
+  const a = await post(port, '/api/judge/install', { team: 'A', sourceDir: opts.teamA ?? ALGO_A });
+  assert(a.body.ok, `Team A 安装应成功：${JSON.stringify(a.body.errors)}`);
+  const b = await post(port, '/api/judge/install', { team: 'B', sourceDir: opts.teamB ?? ALGO_B });
+  assert(b.body.ok, `Team B 安装应成功：${JSON.stringify(b.body.errors)}`);
+  return { srv, port, root, artifactRoot };
+}
+
+/** 把一场比赛推到「正式轮第一轮结算完毕」，返回该轮之后的裁判板 */
+async function playFirstRealRound(port: number): Promise<JudgeBoard> {
+  await act(port, 'use-slot-a');
+  await act(port, 'use-slot-b');
+  await act(port, 'preflight');
+  await act(port, 'start');
+  await act(port, 'reveal');
+  await act(port, 'start-round');
+  await act(port, 'compute');
+  return judgeState(port);
 }
 
 /** 按 board 的 enabled 标记执行一个动作 —— 未启用就直接失败，不「绕过」 */
@@ -520,6 +621,270 @@ test('服务端不返回堆栈（哪怕请求体是坏 JSON）', async () => {
   });
   assertEqual(res.status, 400, '坏 JSON 应回 400');
   assert(!/at .*\(.*:\d+:\d+\)/.test(res.text), '响应不得包含堆栈帧');
+});
+
+// ---------------------------------------------------------------------------
+// Failure path（Final Audit 的 P0-1 / P0-3 / P0-4 / P0-5 / P0-6 / P0-8）
+//
+// 这一组用例存在的理由：审计发现「32 个套件全绿，却没人跑过任何一条失败路径」。
+// 下面每一条都对应一个曾经真实发生过的失败，且都带**正向对照** ——
+// 避免出现「实现整个坏掉时断言反而全绿」的假绿。
+// ---------------------------------------------------------------------------
+
+test('畸形请求目标回 4xx，且服务必须存活（P0-1 回归）', async () => {
+  const r = await ensure();
+  // `//` / `///` 会让 `new URL(target, base)` 抛 ERR_INVALID_URL；
+  // 浏览器地址栏里多打一个斜杠，request-target 就正是 `//`。
+  for (const target of ['//', '///', 'http://[', 'http://']) {
+    const text = await rawSocketRequest(r.srv.port, `GET ${target} HTTP/1.1`);
+    const statusLine = text.split('\r\n')[0] ?? '';
+    assert(
+      /^HTTP\/1\.\d 4\d\d/.test(statusLine),
+      `请求目标 ${JSON.stringify(target)} 必须回 4xx，实际响应行：${statusLine || '(无响应)'}`
+    );
+  }
+  // 真正的回归点：一个坏请求绝不能掀掉整个比赛服务（那一场就没法继续了）
+  const health = await get(r.srv.port, '/api/health');
+  assertEqual(health.status, 200, '畸形请求之后服务必须仍然存活');
+});
+
+test('畸形请求目标在 WS upgrade 路径上同样不杀服务（P0-1 回归）', async () => {
+  const r = await ensure();
+  // upgrade 监听器是**同步**的：那里抛出的异常直接就是 uncaughtException
+  await rawSocketRequest(r.srv.port, 'GET // HTTP/1.1', {
+    Upgrade: 'websocket',
+    Connection: 'Upgrade',
+    'Sec-WebSocket-Key': 'dGhlIHNhbXBsZSBub25jZQ==',
+    'Sec-WebSocket-Version': '13',
+  });
+  const health = await get(r.srv.port, '/api/health');
+  assertEqual(health.status, 200, 'WS upgrade 上的畸形目标之后服务必须仍然存活');
+});
+
+test('忙时重复命令被拒，且忙窗口内 board 如实标记 busy（P0-8 回归）', async () => {
+  const iso = await startIsolated();
+  try {
+    // install 内含一次真实 decoy preflight（秒级），是一个**稳定**的忙窗口
+    const installing = post(iso.port, '/api/judge/install', { team: 'A', sourceDir: ALGO_A });
+    await new Promise((r) => setTimeout(r, 150)); // 让服务端先把这条命令接起来
+
+    const dup = await post(iso.port, '/api/judge/use-slot', { team: 'A' });
+    assertEqual(dup.body.ok, false, '忙时的新命令必须被拒，不得排队进引擎');
+    assert(
+      (dup.body.errors as string[]).join(' ').includes('尚未完成'),
+      `拒绝理由必须是人话，实际 ${JSON.stringify(dup.body.errors)}`
+    );
+    const busyBoard = await judgeState(iso.port);
+    assertEqual(busyBoard.busy, true, '忙窗口内 board 必须如实标记 busy（否则裁判会一直白点）');
+
+    const res = await installing;
+    assert(res.body.ok, `安装本身必须成功：${JSON.stringify(res.body.errors)}`);
+    // 正向对照：忙窗口结束后 busy 必须释放，否则上面的断言在「永远 busy」时也成立
+    const idleBoard = await boardUntil(iso.port, (b) => !b.busy, 30_000, 'busy 释放');
+    assertEqual(idleBoard.busy, false, '命令结束后 busy 必须释放');
+  } finally {
+    await iso.srv.close();
+  }
+});
+
+test('算法 CRASH：如实上板、不泄漏诊断，且 run-to-end 不在 COUNTDOWN 启用（P0-3 / P0-8 回归）', async () => {
+  const iso = await startIsolated({ teamA: ALGO_CRASH });
+  try {
+    const spectatorMessages: ServerMessage[] = [];
+    const ws = connect(iso.port, 'spectator', spectatorMessages);
+    await waitFor(ws);
+
+    await act(iso.port, 'use-slot-a');
+    await act(iso.port, 'use-slot-b');
+    await act(iso.port, 'preflight');
+    await act(iso.port, 'start');
+
+    // ---- P0-3：PUBLIC 时 run-to-end 可用（正向对照）----
+    const atPublic = await judgeState(iso.port);
+    assertEqual(atPublic.phase, 'PUBLIC', '开赛后应停在 PUBLIC');
+    assert(
+      atPublic.actions.find((a) => a.key === 'run-to-end')!.enabled,
+      'PUBLIC 阶段 run-to-end 必须可用（正向对照）'
+    );
+
+    await act(iso.port, 'reveal');
+    await act(iso.port, 'start-round');
+    const atCountdown = await judgeState(iso.port);
+    assertEqual(atCountdown.phase, 'COUNTDOWN', 'START 之后应停在 COUNTDOWN');
+    assertEqual(
+      atCountdown.actions.find((a) => a.key === 'run-to-end')!.enabled,
+      false,
+      'COUNTDOWN 阶段**不得**启用 run-to-end —— 点了必然抛错，且会留下粘住的 lastError'
+    );
+
+    // ---- P0-5：先制造一条陈旧的失败说明 ----
+    // 直接打 session：COUNTDOWN 下推后台循环，第一句 beginRound() 必然抛错。
+    // （正常 UI 路径已经被上面那条门禁挡住了，这里是在验证**真的出错过之后**能不能自愈。）
+    void iso.srv.session.runToEnd();
+    const errored = await boardUntil(iso.port, (b) => b.lastError !== null, 10_000, 'lastError 出现');
+    assert(errored.lastError, '后台推进失败必须留下可读的说明');
+
+    // ---- P0-8 + P0-5：结算本轮（一条**成功**的命令）----
+    await act(iso.port, 'compute');
+    const after = await judgeState(iso.port);
+
+    assertEqual(after.lastError, null, '成功的命令必须清除陈旧的失败说明（P0-5）');
+
+    const judgeErrors = (after.lastRound?.errors ?? []).join(' | ');
+    assert(judgeErrors.includes('CRASH'), `裁判板必须如实展示 CRASH，实际：${judgeErrors || '(空)'}`);
+    assert(judgeErrors.includes('Team A'), `错误必须指明是哪一方，实际：${judgeErrors}`);
+
+    // 大屏也要说话，但不得带任何开发者诊断
+    const spectatorJson = JSON.stringify(spectatorMessages);
+    assert(spectatorJson.includes('CRASH'), '观众板必须也展示 CRASH（大屏不是哑的）');
+    for (const bad of ['/Users/', '/private/', '/var/folders/', 'at Object.', 'node_modules', 'sourceDir']) {
+      assert(!spectatorJson.includes(bad), `观众通道不得出现 "${bad}"`);
+    }
+
+    ws.close();
+  } finally {
+    await iso.srv.close();
+  }
+});
+
+test('算法 TIMEOUT：如实上板（P0-8 回归）', async () => {
+  const iso = await startIsolated({ teamA: ALGO_TIMEOUT });
+  try {
+    const board = await playFirstRealRound(iso.port);
+    const errors = (board.lastRound?.errors ?? []).join(' | ');
+    assert(errors.includes('TIMEOUT'), `裁判板必须如实展示 TIMEOUT，实际：${errors || '(空)'}`);
+    assert(errors.includes('Team A'), `错误必须指明是哪一方，实际：${errors}`);
+    // 超时的一方必须被记为「本轮没有攻击」，而不是伪造一个结果
+    assertEqual(board.lastRound?.attacksExecuted.includes('A'), false, '超时的一方不得被记为执行了攻击');
+  } finally {
+    await iso.srv.close();
+  }
+});
+
+test('run-to-end 期间页面刷新（重连）即恢复现场并自行收敛到终局（P0-8 回归）', async () => {
+  const r = await ensure();
+  const port = r.srv.port;
+  // 演练留下的第二场：槽位已就绪，推到正式比赛
+  await act(port, 'preflight');
+  await act(port, 'start');
+
+  const run = await post(port, '/api/judge/run-to-end', {});
+  assert(run.body.ok, 'run-to-end 应立即受理');
+  assertEqual(run.body.detail?.background, true, 'run-to-end 必须是后台任务，不得阻塞请求');
+
+  // ① 重复命令必须被拒 —— 否则后台循环会被开两份
+  const dup = await post(port, '/api/judge/run-to-end', {});
+  assertEqual(dup.body.ok, false, 'run-to-end 进行中不得再受理第二条');
+  assert((dup.body.errors as string[]).join(' ').includes('尚未完成'), '拒绝理由必须是人话');
+
+  // ② 「刷新页面」≈ 新开一条 WS：必须立刻拿到当前现场，而不是空白
+  const live = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=judge`);
+  const first = await new Promise<JudgeBoard>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('重连后 5s 内未收到 board')), 5000);
+    live.on('message', (raw: Buffer) => {
+      const m = JSON.parse(String(raw)) as ServerMessage;
+      if (m.type === 'board') {
+        clearTimeout(t);
+        resolve(m.board as JudgeBoard);
+      }
+    });
+    live.on('error', reject);
+  });
+  assert(first.phase !== 'SETUP', `重连必须拿到进行中的现场，实际 phase=${first.phase}`);
+
+  // ③ 重连的客户端不做任何操作，也会自行收敛到终局
+  const terminal = await new Promise<JudgeBoard>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('重连的 WS 未收到终局 board')), MATCH_TIMEOUT_MS);
+    live.on('message', (raw: Buffer) => {
+      const m = JSON.parse(raw as unknown as string) as ServerMessage;
+      if (m.type === 'board' && (m.board as JudgeBoard).phase === 'MATCH_END') {
+        clearTimeout(t);
+        resolve(m.board as JudgeBoard);
+      }
+    });
+  });
+  live.close();
+  assert(terminal.verdict, '重连的客户端必须能拿到终局判决');
+
+  // ④ 比赛本身没被重复命令破坏，正常跑完后也不得残留失败说明（P0-5）
+  const finalBoard = await waitForMatchEnd(port);
+  assert(finalBoard.verdict, '终局必须带判决');
+  assertEqual(finalBoard.lastError, null, '比赛正常跑完后不得残留失败说明');
+});
+
+test('回放列表与加载排除「未终结」与「旧版自相矛盾」的产物（P0-4 回归）', async () => {
+  const root = tmpDir('replay-classify');
+  const write = (id: string, match: unknown): void => {
+    const dir = path.join(root, 'matches', id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'match.json'), JSON.stringify(match));
+    fs.writeFileSync(path.join(dir, 'replay.json'), JSON.stringify({ schemaVersion: 1, matchId: id, frames: [] }));
+  };
+  const base = { schemaVersion: 1, rounds: [], startTime: '2026-01-01T00:00:00Z', endTime: '2026-01-01T00:10:00Z' };
+
+  // 正常终结 —— 必须出现在列表里（正向对照：否则「全排除」也是绿的）
+  write('GOOD-ONE', { ...base, matchId: 'GOOD-ONE', endReason: 'ELIMINATION', winner: 'A' });
+  // 未终结：每轮落盘会让它进目录，但不得冒充正常结果
+  write('UNFINISHED-ONE', { ...base, matchId: 'UNFINISHED-ONE', endReason: 'NONE', winner: 'draw' });
+  // 修复前的旧产物：一方全灭却被写成平局（本机 artifacts/ 里就躺着 130 场这种）
+  write('LEGACY-ONE', { ...base, matchId: 'LEGACY-ONE', endReason: 'ELIMINATION', winner: 'draw' });
+
+  const listed = listReplays(root).map((e) => e.matchId);
+  assertEqual(listed, ['GOOD-ONE'], `只有已终结且自洽的场次能进正常回放列表，实际 ${JSON.stringify(listed)}`);
+
+  const good = loadReplay(root, 'GOOD-ONE');
+  assert(good.ok, '正常终结的产物必须加载得到（正向对照）');
+
+  const unfinished = loadReplay(root, 'UNFINISHED-ONE');
+  assertEqual(unfinished.ok, false, '未终结的比赛不得作为回放加载');
+  assertEqual((unfinished as { status: number }).status, 409, '必须与「没有这场比赛」区分开');
+
+  const legacy = loadReplay(root, 'LEGACY-ONE');
+  assertEqual(legacy.ok, false, '自相矛盾的旧产物不得作为回放加载');
+  assert(
+    (legacy as { message: string }).message.includes('自相矛盾'),
+    `拒绝理由必须说清是数据问题，实际：${(legacy as { message: string }).message}`
+  );
+  // 与「不存在」区分：不存在的仍是 404
+  assertEqual((loadReplay(root, 'NoSuchMatch') as { status: number }).status, 404, '不存在的场次仍回 404');
+});
+
+test('默认 runtime 槽位根与受跟踪的 algorithms/ 隔离，且播种只读（P0-6 回归）', () => {
+  // ① 默认槽位根必须**不在**受跟踪的 algorithms/ 里
+  assert(
+    RUNTIME_SLOT_ROOT !== CANONICAL_SLOT_ROOT &&
+      !RUNTIME_SLOT_ROOT.startsWith(CANONICAL_SLOT_ROOT + path.sep),
+    `默认运行期槽位根不得落在受跟踪的 algorithms/ 内，实际 ${RUNTIME_SLOT_ROOT}`
+  );
+  assertEqual(RUNTIME_SLOT_ROOT, path.join(REPO, 'runs', 'slots'), '默认运行期槽位根应为 runs/slots（已被 .gitignore 忽略）');
+
+  // ② 播种：从 canonical 复制到运行期根，源目录一个字节都不能变
+  const fingerprint = (dir: string): string =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .flatMap((e) => (e.isDirectory() ? [e.name].concat(fs.readdirSync(path.join(dir, e.name)).map((f) => `${e.name}/${f}`)) : [e.name]))
+      .sort()
+      .join(',');
+  const before = fingerprint(CANONICAL_SLOT_ROOT);
+  const dest = path.join(tmpDir('seed'), 'slots');
+  seedRuntimeSlots(CANONICAL_SLOT_ROOT, dest);
+  assertEqual(fingerprint(CANONICAL_SLOT_ROOT), before, '播种不得改写 canonical 槽位');
+  assert(fs.existsSync(path.join(dest, 'team-a', 'solver.py')), '播种必须产出可用的运行期槽位');
+  assert(
+    fs.readFileSync(path.join(dest, 'team-a', 'solver.py')).equals(fs.readFileSync(path.join(CANONICAL_SLOT_ROOT, 'team-a', 'solver.py'))),
+    '播种出来的槽位内容必须与 canonical 一致'
+  );
+
+  // ③ 已存在的运行期槽位绝不能被 canonical 覆盖回去 ——
+  //    否则选手已经投递进槽位的算法会被静默抹掉
+  const payload = '# 选手投递的算法，绝不能被覆盖\n';
+  fs.writeFileSync(path.join(dest, 'team-a', 'solver.py'), payload);
+  seedRuntimeSlots(CANONICAL_SLOT_ROOT, dest);
+  assertEqual(
+    fs.readFileSync(path.join(dest, 'team-a', 'solver.py'), 'utf-8'),
+    payload,
+    '已存在的运行期槽位不得被 canonical 覆盖'
+  );
 });
 
 test('收尾：关闭服务', async () => {

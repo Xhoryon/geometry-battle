@@ -144,14 +144,61 @@ function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse): boo
   return true;
 }
 
-export function createRequestHandler(deps: HttpDeps) {
-  return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const port = ((): number => {
-      const a = req.socket.localPort;
-      return typeof a === 'number' ? a : 0;
-    })();
+/**
+ * 解析请求目标。
+ *
+ * `new URL('//', base)` / `new URL('///', base)` / `new URL('http://[', base)`
+ * 这类**畸形请求目标**会让 `new URL` 抛 `ERR_INVALID_URL`。那是一次*请求*的错误，
+ * 不是进程的错误 —— 必须就地收敛成 `null`（→ 400）。
+ *
+ * 原实现把这一句放在所有校验之前、且不在任何 try 内，于是浏览器地址栏里
+ * 多打一个斜杠（`http://127.0.0.1:17800//` 的 request-target 就是 `//`）
+ * 就能让整个比赛服务进程退出（Final Audit P0-1）。
+ */
+export function parseRequestTarget(raw: string | undefined): URL | null {
+  try {
+    return new URL(raw ?? '/', 'http://127.0.0.1');
+  } catch {
+    return null;
+  }
+}
 
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+export function createRequestHandler(deps: HttpDeps) {
+  /**
+   * 最后一道闸：`handle` 是 async 的，而 `main.ts` 用 `void handler(req, res)` 调用它 ——
+   * 没人接这个 promise，**一条漏出去的 rejection 就是一次进程退出**。
+   * 因此这里把逃逸的异常收敛成一次 500 响应（绝不回堆栈），
+   * 让「一个坏请求」最多影响「那一个请求」。
+   *
+   * 注意这不是「吞掉异常继续跑」：能走到这里说明前面的分支都已经被正确地
+   * 局部兜住了，剩下的是真正的未知异常，而它只影响当前这个响应。
+   * 进程级未知异常由 `main.ts` 的 unhandledRejection / uncaughtException 处理（记录 + 退出）。
+   */
+  return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    try {
+      await route(deps, req, res);
+    } catch {
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+      sendJson(res, 500, { ok: false, errors: ['服务器内部错误'] });
+    }
+  };
+}
+
+async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const port = ((): number => {
+    const a = req.socket.localPort;
+    return typeof a === 'number' ? a : 0;
+  })();
+
+  const url = parseRequestTarget(req.url);
+  if (!url) {
+    // 畸形目标（`//`、`///`、`http://[` …）：回 4xx，**服务必须继续活着**
+    sendJson(res, 400, { ok: false, errors: ['请求目标无法解析'] });
+    return;
+  }
     // **不整段 decodeURIComponent**：那会把 `%2F` 变成真实的路径分隔符，
     // 让「路由匹配」和「路径分段」被同一段输入操纵。id 一律在取用时单独解码，
     // 且解码结果只用于**查表**（见 replays.ts），不用于拼路径。
@@ -243,7 +290,6 @@ export function createRequestHandler(deps: HttpDeps) {
       const status = msg.includes('JSON') || msg.includes('过大') ? 400 : 500;
       sendJson(res, status, { ok: false, errors: [status === 400 ? msg : '服务器内部错误'] });
     }
-  };
 }
 
 async function dispatchCommand(

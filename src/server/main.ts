@@ -11,6 +11,7 @@
  * 与终端裁判台一样，**传了临时目录就绝不会碰仓库里的 `algorithms/`**。
  */
 
+import * as fs from 'fs';
 import * as http from 'http';
 import * as path from 'path';
 import { spawn } from 'child_process';
@@ -18,9 +19,44 @@ import { MatchSession } from './session';
 import { createRequestHandler } from './http';
 import { attachWebSocket } from './ws';
 import { openBrowser } from './open';
+import { copyPackageDir } from '../submission/Package';
 import { DEFAULT_PORT, WireDifficulty } from './protocol';
 
 const PLATFORM_ROOT = path.resolve(__dirname, '..', '..');
+
+/**
+ * **canonical 槽位根**（规范 §2/§41）：`algorithms/team-a` / `team-b`，
+ * 受 git 跟踪 —— 它是仓库自带的起步数据，**不是**运行期可写目录。
+ */
+export const CANONICAL_SLOT_ROOT = path.join(PLATFORM_ROOT, 'algorithms');
+
+/**
+ * **运行期槽位根**（`npm run app` 的默认值）。
+ *
+ * 默认值**不能**是 `algorithms/`：安装流水线用 rename **整体替换** `team-a` / `team-b`
+ * （`src/submission/Slot.ts` 的 `commitSlot`），于是一场正规比赛就会改写受跟踪文件，
+ * 让工作区变脏、并可能把选手算法误提交进仓库（Final Audit P2-6）。
+ *
+ * 改用 `runs/slots`（已在 `.gitignore` 中），并在启动时从 canonical 槽位**播种一次**：
+ * 出厂即两个槽位 READY，「使用槽位算法」的零输入主流程不受影响，
+ * 而仓库里的 canonical 数据一个字节都不会变。
+ */
+export const RUNTIME_SLOT_ROOT = path.join(PLATFORM_ROOT, 'runs', 'slots');
+
+/**
+ * 把 canonical 槽位复制进运行期槽位根。
+ *
+ * **只在目标不存在时复制** —— 已存在的运行期槽位（可能装着选手算法）
+ * 绝不能被仓库里的 canonical 数据覆盖回去，否则一场比赛的投递会被静默抹掉。
+ */
+export function seedRuntimeSlots(canonicalRoot: string, runtimeRoot: string): void {
+  for (const team of ['team-a', 'team-b'] as const) {
+    const src = path.join(canonicalRoot, team);
+    const dest = path.join(runtimeRoot, team);
+    if (fs.existsSync(dest) || !fs.existsSync(src)) continue;
+    copyPackageDir(src, dest);
+  }
+}
 
 export interface StartOptions {
   port?: number;
@@ -42,9 +78,19 @@ export interface RunningServer {
 
 /** 启动服务；端口占用时回落到一个空闲端口 */
 export async function startServer(opts: StartOptions = {}): Promise<RunningServer> {
-  const slotRoot = opts.slotRoot ?? path.join(PLATFORM_ROOT, 'algorithms');
+  const slotRoot = opts.slotRoot ?? RUNTIME_SLOT_ROOT;
   const artifactRoot = opts.artifactRoot ?? path.join(process.cwd(), 'artifacts');
   const distDir = opts.distDir ?? path.join(PLATFORM_ROOT, 'web', 'dist');
+
+  // 只在用**默认**槽位根时播种：显式传了 --slots 的调用方（测试、演练）
+  // 自己负责准备目录，不该被仓库里的 canonical 数据干扰。
+  if (!opts.slotRoot) {
+    try {
+      seedRuntimeSlots(CANONICAL_SLOT_ROOT, slotRoot);
+    } catch {
+      /* 播种失败不阻断启动：槽位会是 EMPTY，裁判台会如实显示 */
+    }
+  }
 
   const session = new MatchSession({
     slotRoot,
@@ -138,7 +184,8 @@ async function main(): Promise<void> {
   console.log(`  裁判台   ${running.url}/judge`);
   console.log(`  观众大屏 ${running.url}/spectator`);
   console.log(`  回放     ${running.url}/replay/<matchId>`);
-  console.log(`  算法槽位 ${opts.slotRoot ?? path.join(PLATFORM_ROOT, 'algorithms')}`);
+  console.log(`  算法槽位 ${opts.slotRoot ?? RUNTIME_SLOT_ROOT}`);
+  console.log(`           （canonical 只读副本：${CANONICAL_SLOT_ROOT}）`);
   console.log(`  产物目录 ${opts.artifactRoot ?? path.join(process.cwd(), 'artifacts')}`);
   console.log(`  终端裁判台仍可用：npm run judge\n`);
 
@@ -156,14 +203,30 @@ async function main(): Promise<void> {
   }
 
   let closing = false;
-  const shutdown = async (): Promise<void> => {
+  const shutdown = async (code = 0): Promise<void> => {
     if (closing) return;
     closing = true;
+    // 兜底：close() 自身若卡住也必须让进程退出 —— 产物已逐轮落盘，不会丢
+    const force = setTimeout(() => process.exit(code), 3000);
+    force.unref?.();
     await running.close();
-    process.exit(0);
+    process.exit(code);
   };
-  process.on('SIGINT', () => void shutdown());
-  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', () => void shutdown(0));
+  process.on('SIGTERM', () => void shutdown(0));
+
+  // 最后一道闸：**只记录并安全退出**，绝不吞掉异常继续跑。
+  //
+  // 「继续运行」听起来更顽强，实际更危险：比赛系统在未知状态下推进，会产出
+  // 不可信的判定与产物。逐轮落盘保证了已打完的回合不丢，重启即可继续。
+  // 注意这不替代 HTTP/WS 侧的局部兜底 —— 单个坏请求不该走到这里。
+  const fatal = (kind: string) => (e: unknown): void => {
+    console.error(`\n[${kind}] 未捕获的异常，服务即将退出：`);
+    console.error(e instanceof Error ? (e.stack ?? e.message) : e);
+    void shutdown(1);
+  };
+  process.on('unhandledRejection', fatal('unhandledRejection'));
+  process.on('uncaughtException', fatal('uncaughtException'));
 }
 
 if (require.main === module) {

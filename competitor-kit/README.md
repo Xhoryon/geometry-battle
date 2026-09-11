@@ -135,7 +135,7 @@ Runtime       CPython 3.9.6，第三方包 NONE
 DSL           14 个白名单节点，节点 ≤128 / 深度 ≤12 / 常数 ≤1000
 结果通道      output/result.json（唯一）
 计时          各自 GO 起算，500 ms
-比赛终止      ELIMINATION（STALEMATE: NOT YET IMPLEMENTED）
+比赛终止      ELIMINATION / MUTUAL_ELIMINATION / STALEMATE（连续 20 回合零击杀）/ HARD_ROUND_LIMIT（第 60 回合）
 ```
 
 `competitor-kit/` 里的每一份文件都由平台测试持续核对：

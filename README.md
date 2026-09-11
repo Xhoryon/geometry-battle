@@ -9,7 +9,7 @@
 双方队伍各提交一个算法包，装进两个**固定槽位** `algorithms/team-a` 与 `algorithms/team-b`。
 每个回合，平台分两阶段向双方注入**逐字节相同**的输入文件
 （`public_state.json` → `reveal_state.json`），双方算法各自输出一条函数曲线 `y = f(x)`；
-曲线从自己的 Shooter 出发，在射程内**严格经过对方点**即构成击杀。
+曲线从自己的**固定 Emitter** 出发，在射程内**严格经过对方点**即构成击杀。
 
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
 **START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
@@ -95,7 +95,7 @@ python3 solver.py --team A \
 |------|------|
 | 只允许两个键 | `schema_version`（必须是 `"1.1"`）与 `dsl`；`hits` / `winner` / `computeTime` 之类一律非法 |
 | 原子写 | 先写 `result.json.tmp`，`flush` + `fsync` 后原子 `rename` 成 `result.json` |
-| deadline | 2000 ms 内形成完整合法文件 → 接收；否则 TIMEOUT |
+| deadline | 500 ms 内形成完整合法文件 → 接收；否则 TIMEOUT |
 | ONE OUTPUT ONLY | 每回合只接收一次结果，不能重新提交 |
 | stdout | **不是**结果通道，仅被捕获/限长/留档 |
 | stderr | 允许有限 debug log，有大小限制，不参与判定 |
@@ -106,20 +106,27 @@ SDK 模板见 [`starter/solver.py`](starter/solver.py)（含 `emit()` 原子写�
 
 | 阶段 | 文件 | 内容 |
 |------|------|------|
-| PRE-REVEAL | `public_state.json` | 轮次、场地、**双方全部点**（含 `alive: false` 的死点）；**不含**障碍物、种子、任何 Shooter |
-| REVEAL | `reveal_state.json` | 增量：双方 Shooter id、障碍物、以及 `public_state_sha256` |
+| PRE-REVEAL | `public_state.json` | 轮次、场地、**双方的固定 Emitter 坐标**、**双方全部点**（含 `alive: false` 的死点）；**不含**障碍物、地图种子 |
+| REVEAL | `reveal_state.json` | 增量：障碍物、以及 `public_state_sha256` |
 
 `public_state.json`：
 
 ```json
-{"schema_version":"1.1","match_id":"M-1","round":4,"map":{"xmin":-20,"xmax":20,"ymin":-12,"ymax":12},"points":[{"id":"A1","team":"A","x":-14,"y":6,"alive":true},{"id":"A2","team":"A","x":-10,"y":-3,"alive":false}]}
+{"schema_version":"1.1","match_id":"M-1","round":4,"map":{"xmin":-20,"xmax":20,"ymin":-12,"ymax":12},"emitters":{"A":{"x":-18,"y":0},"B":{"x":18,"y":0}},"points":[{"id":"A1","team":"A","x":-14,"y":6,"alive":true},{"id":"A2","team":"A","x":-10,"y":-3,"alive":false}]}
 ```
 
 `reveal_state.json`：
 
 ```json
-{"schema_version":"1.1","match_id":"M-1","round":4,"public_state_sha256":"92fa…","shooters":{"A":"A4","B":"B2"},"obstacles":[{"id":"O1","type":"rectangle","xmin":-1,"xmax":2,"ymin":-5,"ymax":1},{"id":"O2","type":"circle","cx":4,"cy":3,"radius":2}]}
+{"schema_version":"1.1","match_id":"M-1","round":4,"public_state_sha256":"92fa…","obstacles":[{"id":"O1","type":"rectangle","xmin":-1,"xmax":2,"ymin":-5,"ymax":1},{"id":"O2","type":"circle","cx":4,"cy":3,"radius":2}]}
 ```
+
+> **Revision 3：锚点是常量，不再是每轮选出的「Shooter」。**
+> Team A 的 Emitter 恒为 `(-18, 0)`、Team B 恒为 `(18, 0)`，**整场不变**、
+> 不可击杀、不计入存活数、也不是胜利目标 —— 它只是攻击函数的**数学发射锚点**，
+> 不是战斗点，因此**不在 `points` 里**。
+> 它属于**公开**结构：从第 1 轮起就在 `public_state.json` 的 `emitters` 里可见，
+> 不需要等揭盲。`reveal_state.json` 里**没有**、也不会有 `shooters` 字段。
 
 **绑定自检（建议选手在入口处照抄）：**
 
@@ -134,14 +141,17 @@ assert hashlib.sha256(open(a.public, "rb").read()).hexdigest() == reveal["public
 **三段式节奏（公平性关键）：**
 
 ```
-PRE-REVEAL   public_state.json 就位，算法进程尚未创建
-   ↓  双方选点并 LOCK
-REVEAL       reveal_state.json 生成，算法仍未运行
+PRE-REVEAL   public_state.json 就位（含固定 Emitter），算法进程尚未创建
+   ↓
+REVEAL       reveal_state.json 生成（障碍物），算法仍未运行
    ↓  裁判按下 START（现场可停任意久，停多久都不影响公平）
 START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → 计算
 ```
 
-计时仍从**各自** GO 写入时刻起算，与 V1.0 一致。
+Revision 3 起**每轮不再有人工选点、也没有 SHOOTER LOCK**：锚点整场固定，
+PUBLIC 阶段双方拿到的就是同一对 Emitter 坐标。
+
+计时从**各自** GO 写入时刻起算。
 
 **最小可运行示例（官方 starter 的简化版）：**
 
@@ -160,12 +170,12 @@ public = json.loads(raw.decode("utf-8"))
 reveal = json.load(open(a.reveal))
 assert hashlib.sha256(raw).hexdigest() == reveal["public_state_sha256"]  # 绑定自检
 
-by_id = {p["id"]: p for p in public["points"]}
-s = by_id[reveal["shooters"][a.team]]                      # Shooter 坐标在 public 点表里查
+# 固定 Emitter 从第 1 轮起就在 public 里，是常量，不必去 points 里找
+s = public["emitters"][a.team]
 enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"]]
 t = enemies[0]
 
-# f(x) = y_s + m·(x - x_s)：严格经过自己的 Shooter，且是 C^∞ 的
+# f(x) = y_e + m·(x - x_e)：严格经过自己的 Emitter，且是 C^∞ 的
 m = 0.0 if abs(t["x"] - s["x"]) < 1e-6 else (t["y"] - s["y"]) / (t["x"] - s["x"])
 
 dsl = {
@@ -216,14 +226,14 @@ os.replace(tmp, a.output)
 | 常量绝对值 | ≤ 1000 |
 | 凸性变号次数（射击区间内） | ≤ 100 |
 | 抗混叠采样预算 | ≤ 400,000 点 |
-| 单次计算超时 | 2000 ms（每方从自己的 GO 写入时刻起算） |
+| 单次计算超时 | **500 ms**（每方从自己的 GO 写入时刻起算） |
 | 内存上限 | 512 MB |
 | CPU / 线程 | 1 核 / 1 线程（`OMP_NUM_THREADS` 等全部钉死为 1） |
 | stdout 上限 | 256 KB |
 | stderr 上限 | 64 KB |
 
-**函数硬性要求：** 必须经过自己的 Shooter（`|f(x_s) − y_s| ≤ 1e-6`，`ε = HIT_EPSILON`），
-在射击区间内有限、连续、C²。
+**函数硬性要求：** 必须经过自己的**固定 Emitter**（`|f(x_e) − y_e| ≤ 1e-6`，`ε = HIT_EPSILON`），
+在射击区间内有限、连续、C²。`x_e` / `y_e` 是**常量**（A 为 `(-18, 0)`、B 为 `(18, 0)`）。
 （注意：这里的 1e-6 与「命中判定」的 1e-6 是两个**不同**概念，不要混用。）
 
 ### 5. 固定 Runtime（双方完全相同）
@@ -237,7 +247,7 @@ os.replace(tmp, a.output)
 | CPU 配额 | 1 核 |
 | 内存配额 | 512 MB |
 | 线程上限 | 1（`OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS`） |
-| 超时 | 2000 ms |
+| 超时 | 500 ms |
 
 冻结清单的唯一来源是 [`src/submission/Runtime.ts`](src/submission/Runtime.ts) 的 `FROZEN_RUNTIME`。
 开赛时平台会**实测**宿主解释器并与清单比对，结果写入审计日志（`RuntimeFrozen` 事件）；
@@ -261,8 +271,22 @@ os.replace(tmp, a.output)
 - **命中**：`|f(x_p) − y_p| ≤ 1e-6`，且该点位于攻击方向上、且位于**首次障碍物接触之前**
 - **障碍物**：轨迹在第一次与任何障碍物接触处终止；接触点之前的点可被击杀，接触点及其之后的点不受影响
 - **先手**：先输出合法解的一方先开火，后手随后开火
-- **锁定攻击权**：START 之后双方各获得一次本轮独立且不可撤销的攻击权。Shooter 只是本轮攻击函数的**数学发射锚点** —— 它在本轮开火前被击杀**不会**取消本队的攻击，函数仍必须满足 `f(x_shooter) = y_shooter`。攻击不执行的唯一原因是 `TIMEOUT` / `INVALID` / `CRASH`。
+- **锁定攻击权**：START 之后双方各获得一次本轮独立且不可撤销的攻击权。固定 Emitter 只是攻击函数的**数学发射锚点**，它**不会死**（不在 `points` 里），函数仍必须满足 `f(x_e) = y_e`。攻击不执行的唯一原因是 `TIMEOUT` / `INVALID` / `CRASH`。
 - **同归于尽**：若某一轮结束后双方存活数同时归零，判 **DRAW**（`endReason = MUTUAL_ELIMINATION`），不得因为谁是先手就把胜利判给先手方
+
+**终止保证（Rule Revision 3 §17）：四类结束方式覆盖全部情形，任何合法比赛都在有限时间内终止。**
+终止判定落在引擎内部，不是调用方可选的参数 —— 因此任何入口（终端裁判台、Web UI）
+都跑不出一场不终止的比赛。
+
+| 终止原因 | 触发条件 | 结果 |
+|---|---|---|
+| `ELIMINATION` | 一方存活数归零、另一方仍有存活 | 幸存方获胜 |
+| `MUTUAL_ELIMINATION` | 同一轮结束后双方同时归零 | DRAW |
+| `STALEMATE` | **连续 20 个回合双方合计击杀数为 0** | DRAW |
+| `HARD_ROUND_LIMIT` | 到达**第 60 回合**（无论局面如何） | DRAW |
+
+僵持计数器按**击杀**归零，不看命中、也不看谁先手：双方都交了合法解但谁也打不中，
+同样计入僵持。判和就是判和 —— 平台没有任何隐藏评分或 tiebreak。
 
 ---
 

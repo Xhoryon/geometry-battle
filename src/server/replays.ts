@@ -65,6 +65,62 @@ export function resolveMatchDir(artifactRoot: string, matchId: string): string |
   return resolved;
 }
 
+// ============================================================================
+// 产物自洽性分类
+//
+// 回放列表是现场观众与裁判**唯一**能看到的「历史结果」。因此这里不是「尽量显示」，
+// 而是「证明它可信才显示」—— 一场未终结的比赛、或一份来自旧版本、结果自相矛盾的
+// 产物，绝不能伪装成一个正常结果出现在列表里（Final Audit P2-4）。
+// ============================================================================
+
+/** 四类终局原因（Rule Revision 3 §17）—— 此外的任何值都不是一次正常终结 */
+const TERMINAL_REASONS = new Set<NonNullable<MatchLog['endReason']>>([
+  'ELIMINATION',
+  'MUTUAL_ELIMINATION',
+  'STALEMATE',
+  'HARD_ROUND_LIMIT',
+]);
+
+export type ReplayCompatibility = 'ok' | 'unfinished' | 'legacy' | 'broken';
+
+export interface ReplayClassification {
+  status: ReplayCompatibility;
+  /** 人话原因；`ok` 时为空串 */
+  reason: string;
+}
+
+/**
+ * 判定一份 MatchLog 能不能作为**正常回放**展示。
+ *
+ * 判据（全部来自规则本身，不引入新的语义）：
+ *   1. 必须已经终结：`endReason` ∈ 四类之一。`'NONE'` = 未终结，缺失 = 旧版本。
+ *   2. 终局原因与胜者必须自洽：ELIMINATION 必须有一方获胜；
+ *      其余三类必须判和。这一条专门拦下修复前「一方全灭却被写成 draw」的旧产物。
+ *
+ * 本机 `artifacts/` 里就躺着 130 场这样的历史产物 —— 不做这一步，
+ * 回放页会把「平局」和「ELIMINATION」同时打在屏幕上。
+ */
+export function classifyMatch(match: MatchLog | null | undefined): ReplayClassification {
+  if (!match || typeof match !== 'object') return { status: 'broken', reason: '产物缺失或无法解析' };
+
+  const end = match.endReason;
+  if (end === undefined || end === null) {
+    return { status: 'legacy', reason: '这场比赛的产物来自旧版本（没有终局原因字段），结果不可信' };
+  }
+  if (!TERMINAL_REASONS.has(end)) {
+    return { status: 'unfinished', reason: '这场比赛没有正常终结，不能作为回放' };
+  }
+  const winnerOk =
+    end === 'ELIMINATION' ? match.winner === 'A' || match.winner === 'B' : match.winner === 'draw';
+  if (!winnerOk) {
+    return {
+      status: 'legacy',
+      reason: `终局原因 ${end} 与胜者 ${String(match.winner)} 自相矛盾（旧版本产物），结果不可信`,
+    };
+  }
+  return { status: 'ok', reason: '' };
+}
+
 export interface ReplayIndexEntry {
   matchId: string;
   winner: 'A' | 'B' | 'draw';
@@ -93,6 +149,9 @@ export function listReplays(artifactRoot: string): ReplayIndexEntry[] {
     const match = readJson<MatchLog>(path.join(dir, 'match.json'));
     const replay = readJson<Replay>(path.join(dir, 'replay.json'));
     if (!match || !replay) continue;
+    // 只有「已终结且自洽」的场次才进正常回放列表（Final Audit P2-4）。
+    // 被判掉的场次并非删除 —— 它们的产物仍在磁盘上，只是不冒充正常结果。
+    if (classifyMatch(match).status !== 'ok') continue;
     out.push({
       matchId: match.matchId,
       winner: match.winner,
@@ -126,5 +185,12 @@ export function loadReplay(artifactRoot: string, matchId: string): LoadReplayRes
   const match = readJson<MatchLog>(path.join(dir, 'match.json'));
   const replay = readJson<Replay>(path.join(dir, 'replay.json'));
   if (!match || !replay) return { ok: false, status: 404, message: '这场比赛的产物不完整' };
+
+  // 产物存在但不可信时**明确拒绝**，而不是把一份自相矛盾的结果当正常回放渲染。
+  // 状态码与「没有这场比赛」区分开：这不是路径探测，是数据完整性问题 ——
+  // 现场必须知道「这场为什么看不了」。（matchId 不可枚举，不构成信息泄漏。）
+  const c = classifyMatch(match);
+  if (c.status !== 'ok') return { ok: false, status: 409, message: c.reason };
+
   return { ok: true, replay, match };
 }

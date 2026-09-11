@@ -17,10 +17,15 @@ V1.1 启动契约（见 competitor-kit/ALGORITHM_REQUIREMENTS.md §2 与 §3）�
 
 输入（规范 §10/§37）：
     public_state.json  揭盲前的公开世界：schema_version / match_id / round /
-                       map{xmin,xmax,ymin,ymax} / points[{id,team,x,y,alive}]
-                       —— 含死点（alive=false），但**不含**障碍物与任何 Shooter。
-    reveal_state.json  揭盲增量：public_state_sha256 / shooters{A,B}（只给 id）/
-                       obstacles[]。用 public_state_sha256 可自检两份输入是否配对。
+                       map{xmin,xmax,ymin,ymax} / **emitters{A,B}** /
+                       points[{id,team,x,y,alive}]
+                       —— 含死点（alive=false），但**不含**障碍物。
+                       Emitter 是**公开**结构（Revision 3 §6）：它是常量、整场不变、
+                       不可击杀、不计入存活数，因此**不在 points 里**，要从
+                       `public["emitters"][team]` 取。
+    reveal_state.json  揭盲增量：public_state_sha256 / obstacles[]。
+                       —— Revision 3 起**没有** shooters 字段（锚点已在 public 里）。
+                       用 public_state_sha256 可自检两份输入是否配对。
 
 输出（规范 §11/§25/§26/§27）：
     只写 `--output` 指定的 `result.json`：
@@ -38,7 +43,8 @@ DSL 白名单（Plan V1 §11）：
       sin, cos, tan, sqrt, log, exp
     - 禁止：if/else/switch/?:, min, max, abs, floor, ceil, round, sign, step,
       Heaviside, 布尔与比较运算
-    - 函数必须严格经过自己的 Shooter 点 f(x_s) = y_s
+    - 函数必须严格经过自己的**固定 Emitter**：f(x_e) = y_e
+      （x_e / y_e 是常量：A 为 (-18, 0)，B 为 (18, 0)）
     - 节点数 ≤ 128，深度 ≤ 12，常量 |v| ≤ 1000
     - 在射击区间内必须有限、连续、C²，二阶导变号次数 ≤ 100
 """
@@ -86,7 +92,7 @@ def emit(args, dsl):
     os.replace(tmp, args.output)
 
 
-def shooter_of(public, reveal, team):
+def emitter_of(public, reveal, team):
     """发射锚点 = 固定 Emitter（Rule Revision 3 §4）。
 
     Emitter 的坐标**直接在 public_state.json 里**，不再是 reveal 里的一个 id、
@@ -111,17 +117,17 @@ def node_variable():
     return {"type": "variable", "value": "x"}
 
 
-def build_line_through_shooter(shooter_x, shooter_y, target_x, target_y):
+def build_line_through_emitter(emitter_x, emitter_y, target_x, target_y):
     """
-    构造经过 Shooter 的直线：
-        f(x) = y_s + m * (x - x_s)
+    构造经过**自己的固定 Emitter** 的直线：
+        f(x) = y_e + m * (x - x_e)
 
     直线是 C^∞ 的，二阶导恒为 0，凸性变号次数为 0，天然满足验证。
-    目标方向取存活敌人的质心；若敌人恰好与 Shooter 同 x 坐标，
+    目标方向取存活敌人的质心；若敌人恰好与 Emitter 同 x 坐标，
     则退化为水平线（斜率 0），仍然是合法函数。
     """
-    dx = target_x - shooter_x
-    dy = target_y - shooter_y
+    dx = target_x - emitter_x
+    dy = target_y - emitter_y
 
     if abs(dx) < 1e-6:
         slope = 0.0
@@ -137,14 +143,14 @@ def build_line_through_shooter(shooter_x, shooter_y, target_x, target_y):
     return {
         "type": "add",
         "args": [
-            node_number(shooter_y),
+            node_number(emitter_y),
             {
                 "type": "mul",
                 "args": [
                     node_number(slope),
                     {
                         "type": "sub",
-                        "args": [node_variable(), node_number(shooter_x)],
+                        "args": [node_variable(), node_number(emitter_x)],
                     },
                 ],
             },
@@ -153,7 +159,7 @@ def build_line_through_shooter(shooter_x, shooter_y, target_x, target_y):
 
 
 def solve(team, public, reveal):
-    me = shooter_of(public, reveal, team)
+    me = emitter_of(public, reveal, team)
     sx, sy = me["x"], me["y"]
 
     enemies = alive_enemies_of(public, team)
@@ -165,7 +171,7 @@ def solve(team, public, reveal):
     else:
         tx, ty = sx, sy
 
-    return build_line_through_shooter(sx, sy, tx, ty)
+    return build_line_through_emitter(sx, sy, tx, ty)
 
 
 def main():

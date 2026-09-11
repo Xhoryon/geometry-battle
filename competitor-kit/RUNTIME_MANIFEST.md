@@ -110,7 +110,7 @@ cvxpy  z3  networkx  jax  tensorflow  statsmodels
 | CPU | 1 核 | 不要依赖并行 |
 | 线程上限 | 1 | `OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS` 均被钉为 `1` |
 | 内存 | 512 MB | 超限进程被终止 |
-| 单轮计算超时 | 2000 ms | 从你收到 `GO` 的时刻起算 |
+| 单轮计算超时 | 500 ms | 从你收到 `GO` 的时刻起算 |
 | stdout 上限 | 256 KB | 超限判失败；stdout **不是**结果通道 |
 | stderr 上限 | 64 KB | 可用于有限调试输出 |
 

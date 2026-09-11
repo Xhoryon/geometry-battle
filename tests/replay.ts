@@ -158,4 +158,46 @@ test('replay: 审计日志完整且单调', async () => {
   }
 });
 
+test('replay: 末帧的 endReason 必须反映四类终局，不得恒为 NONE（P0-2 回归）', async () => {
+  // 帧是在终局判定**之前** push 的，所以末帧的 endReason 曾经恒为 'NONE'：
+  // 顶层 replay/match 都是对的，但任何按帧渲染的下游（终端 `--replay`、
+  // 观众屏逐帧回放）永远不会显示 STALEMATE / HARD_ROUND_LIMIT 横幅。
+  // 契约见 `src/core/Logs.ts` 的 `ReplayFrame.endReason`。
+  const root = tmpDir('replay-lastframe');
+  const engine = new MatchEngine({
+    matchId: 'REPLAY-LASTFRAME',
+    seed: 660066,
+    pointCount: 6,
+    difficulty: 'easy',
+    artifactRoot: path.join(root, 'artifacts'),
+    sandboxRoot: path.join(root, 'sandboxes'),
+  });
+  assert(engine.upload('A', ALGO_A).ok, '上传 A 应成功');
+  assert(engine.upload('B', ALGO_B).ok, '上传 B 应成功');
+  assert((await engine.preflight()).ok, 'preflight 应通过');
+  assert(engine.startMatch().ok, '开始比赛应成功');
+
+  let rounds = 0;
+  while (engine.endReason() === 'NONE') {
+    assert(engine.judgeStartRound().ok, 'START ROUND 应成功');
+    await engine.runRound();
+    assert(++rounds <= 60, `比赛必须自行终止，实际跑了 ${rounds} 轮`);
+  }
+
+  const replay: Replay = engine.getReplay();
+  assert(replay.frames.length > 0, '回放必须有帧');
+
+  const last = replay.frames[replay.frames.length - 1];
+  const TERMINAL = ['ELIMINATION', 'MUTUAL_ELIMINATION', 'STALEMATE', 'HARD_ROUND_LIMIT'];
+  assert(TERMINAL.includes(replay.endReason), `顶层必须是四类终局之一，实际 ${replay.endReason}`);
+  assertEqual(last.endReason, replay.endReason, '末帧的 endReason 必须与顶层一致');
+  assert(TERMINAL.includes(last.endReason), `末帧必须记下一次正常终结，实际 ${last.endReason}`);
+
+  // 反向对照：非末帧必须仍然如实表示「比赛还在继续」——
+  // 否则「把每一帧都写成终局」这种退化也会让上面那条断言变绿。
+  for (const f of replay.frames.slice(0, -1)) {
+    assertEqual(f.endReason, 'NONE', `第 ${f.round} 帧不是末帧，endReason 必须是 NONE`);
+  }
+});
+
 void runAll('replay');

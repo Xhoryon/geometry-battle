@@ -11,11 +11,13 @@
  *     （重连恢复）。绝不随 ticker 重复广播。
  */
 
-import type { Server } from 'http';
+import type { IncomingMessage, Server } from 'http';
+import type { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { MatchSession } from './session';
 import { ClientMessage, ServerMessage, Topic, isTopic } from './protocol';
 import { checkOriginAndHost } from './security';
+import { parseRequestTarget } from './http';
 
 export interface WsHub {
   close(): Promise<void>;
@@ -30,9 +32,23 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
     return typeof addr === 'object' && addr ? addr.port : 0;
   };
 
+  /**
+   * upgrade 监听器是**同步**的：这里抛出的异常不会被任何 promise 接住，
+   * 直接就是 uncaughtException → 进程退出。而 `new URL('//')` 恰好就会抛 ——
+   * 一个畸形目标不该能掀掉整个比赛服务（Final Audit P0-1）。
+   * 因此整条 upgrade 处理路径都自带兜底。
+   */
   server.on('upgrade', (req, socket, head) => {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (url.pathname !== '/ws') {
+    try {
+      handleUpgrade(req, socket, head);
+    } catch {
+      socket.destroy();
+    }
+  });
+
+  function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+    const url = parseRequestTarget(req.url);
+    if (!url || url.pathname !== '/ws') {
       socket.destroy();
       return;
     }
@@ -52,9 +68,13 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
     wss.handleUpgrade(req, socket, head, (ws) => {
       // topic 是本次 upgrade 解析出来的，直接带进连接处理 ——
       // 不走 `emit('connection', ...)`（那条签名只有 ws/req，塞不进第三个参数）
-      handleConnection(ws, topic);
+      try {
+        handleConnection(ws, topic);
+      } catch {
+        ws.terminate();
+      }
     });
-  });
+  }
 
   function handleConnection(ws: WebSocket, topic: Topic): void {
     const send = (msg: ServerMessage): void => {

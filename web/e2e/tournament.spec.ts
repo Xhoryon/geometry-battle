@@ -204,10 +204,16 @@ test('完整赛事演练：载入 → 校验 → 开赛 → 多轮 → 终局 �
   const matchId = (await page.locator('[data-testid="match-id"]').innerText()).replace('MATCH ', '').trim();
   expect(matchId).toMatch(/^MATCH-/);
 
-  // ---- 6. 一键跑完余下回合 ----
+  // ---- 6. 一键跑完余下回合，并且**立刻刷新页面** ----
+  //
+  // run-to-end 是后台任务：刷新页面（≈ 断开并重建 WS）绝不能打断比赛，
+  // 页面也必须靠重连拿到的 board 自行恢复到现场 —— 不需要任何额外点击。
+  // 这是 Final Audit 的 P0-8 回归之一。
   await clickAction(page, 'run-to-end');
+  await page.reload();
+  await expect(page.locator('[data-testid="phase"]')).not.toHaveText('SETUP');
   await expect(page.locator('[data-testid="verdict"]')).toBeVisible({ timeout: 10 * 60 * 1000 });
-  clock.mark('6 跑完余下 → 终局');
+  clock.mark('6 跑完余下（含刷新恢复）→ 终局');
 
   const verdictText = await page.locator('[data-testid="verdict"]').innerText();
   expect(verdictText).toMatch(/TEAM [AB] 获胜|平局/);

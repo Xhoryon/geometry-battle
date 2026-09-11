@@ -189,7 +189,12 @@ export class MatchSession {
     this.busy = true;
     return (async () => {
       try {
-        return await fn();
+        const r = await fn();
+        // 一次**成功**的命令必须清掉上一场留下的失败说明。
+        // 不清的话，一次失败的 run-to-end 会让裁判台的红字一直挂到下一场
+        // （`lastError` 此前只在 runToEnd 开头被重置）（Final Audit P2-5）。
+        if (r.ok) this.lastError = null;
+        return r;
       } catch (e) {
         // 引擎对「不该发生的顺序」会抛异常；这里翻成人话，不让它变成 500
         return { ok: false, errors: [(e as Error).message] };

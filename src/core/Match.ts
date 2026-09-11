@@ -1023,6 +1023,16 @@ export class MatchEngine {
 
     const finalWinner: 'A' | 'B' | 'draw' | null = winner ?? (this.terminalReason ? 'draw' : null);
     if (this.terminalReason) {
+      // 帧在上面就 push 了（判定需要 aliveAfter / mutualElimination，而那些数据
+      // 帧里也要用），所以这里是**补写**终局原因。
+      //
+      // 没有这一步，落盘的最后一帧会永远谎称 `endReason: 'NONE'` ——
+      // 顶层 replay/match 是对的，但任何按帧渲染的下游（终端 `--replay` 与
+      // 观众屏的逐帧回放）就永远不显示 STALEMATE / HARD_ROUND_LIMIT 横幅，
+      // 契约 `Logs.ts` 里「本帧终结比赛时的结束原因」也就被违反了（Final Audit P2-1）。
+      const lastFrame = this.frames[this.frames.length - 1];
+      if (lastFrame && lastFrame.round === round) lastFrame.endReason = this.terminalReason;
+
       this.phase = 'MATCH_END';
       machine.matchEnd();
       this.audit.log('MatchEnded', { winner: finalWinner, endReason: this.terminalReason });
