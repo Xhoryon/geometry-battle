@@ -122,6 +122,42 @@ export function distanceToObstacle(p: Point, obstacle: Obstacle): number {
 }
 
 /**
+ * 两个障碍物之间的**最小间距**（负数表示相交/重叠）。
+ *
+ * 为什么需要它：`MapGenerator` 逐个独立生成障碍物，只检查「是否越出场地」与
+ * 「是否把一方封死」，**从不检查障碍物之间是否重合**（V1.2 Gap 四）。
+ * 生成时与 `validateMap` 都用这一个实现，避免两套几何各说各话。
+ *
+ * 目前生成器只产出 rectangle 与 circle，因此只实现这两种的组合；
+ * 其它类型返回 `-Infinity`（保守地判为「相交」），
+ * 让调用方在引入新类型时**必须**先补上几何，而不是静默放行。
+ */
+export function distanceBetweenObstacles(a: Obstacle, b: Obstacle): number {
+  if (a.type === 'circle' && b.type === 'circle') {
+    const [ax, ay] = a.center;
+    const [bx, by] = b.center;
+    return Math.hypot(ax - bx, ay - by) - a.radius - b.radius;
+  }
+  if (a.type === 'rectangle' && b.type === 'rectangle') {
+    // 轴对齐矩形：两个方向上的「负间距」取较大者
+    const dx = Math.max(a.xmin - b.xmax, b.xmin - a.xmax);
+    const dy = Math.max(a.ymin - b.ymax, b.ymin - a.ymax);
+    if (dx > 0 || dy > 0) return Math.hypot(Math.max(dx, 0), Math.max(dy, 0));
+    return Math.max(dx, dy); // 两个方向都重叠 → 内部间距（负）
+  }
+  if (a.type === 'circle' && b.type === 'rectangle') return distanceBetweenObstacles(b, a);
+  if (a.type === 'rectangle' && b.type === 'circle') {
+    const [cx, cy] = b.center;
+    // 圆心到矩形的最短距离（点到 AABB），再减去半径
+    const nx = Math.max(a.xmin, Math.min(cx, a.xmax));
+    const ny = Math.max(a.ymin, Math.min(cy, a.ymax));
+    return Math.hypot(cx - nx, cy - ny) - b.radius;
+  }
+  // segment / polygon：尚未被生成器产出 —— 判为相交，迫使调用方显式处理
+  return Number.NEGATIVE_INFINITY;
+}
+
+/**
  * 检查点是否在障碍物上（距离小于阈值）
  */
 export function isOnObstacle(p: Point, obstacle: Obstacle, threshold: number = 2): boolean {

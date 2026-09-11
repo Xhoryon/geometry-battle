@@ -18,6 +18,7 @@ const SUITES = [
   'official-starter',
   'map-fairness',
   'obstacle-block',
+  'obstacle-geometry',
   'fixed-emitter',
   'locked-attack-right',
   'termination',
