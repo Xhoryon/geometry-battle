@@ -100,6 +100,13 @@ export interface MatchLog {
   endTime: string;
   winner: 'A' | 'B' | 'draw';
   /**
+   * 本场的发射锚点（V1.2 §一：开赛前由双方各自选定并锁定）。
+   *
+   * 审计价值：事后必须能回答「这一场双方是从哪个点开火的」——
+   * 它不再是平台常量，因此必须落盘。双方未锁定时为 null。
+   */
+  emitters: { A: { id: string; position: Point }; B: { id: string; position: Point } } | null;
+  /**
    * 结束原因（V1.1 规则修订 §8）。
    *   - `ELIMINATION`：一方归零、另一方存活，正常分胜负
    *   - `MUTUAL_ELIMINATION`：同一轮结束后双方都归零 → 平局（`winner = 'draw'`）
@@ -184,6 +191,8 @@ export interface Replay {
   teamAName: string;
   teamBName: string;
   winner: 'A' | 'B' | 'draw';
+  /** 本场的发射锚点，与 MatchLog 同源（V1.2 §一） */
+  emitters: MatchLog['emitters'];
   /** 回放的结束原因与 MatchLog 一致（§22：回放必须能表达 stalemate 与 mutual elimination） */
   endReason: MatchLog['endReason'];
   frames: ReplayFrame[];

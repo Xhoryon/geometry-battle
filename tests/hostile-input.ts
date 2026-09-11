@@ -136,6 +136,7 @@ async function runOneRoundWith(
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
 
   assert(engine.startMatch().ok, 'startMatch 应成功');
+  engine.autoSelectEmitters();
   assert(engine.judgeStartRound().ok, '应可 START ROUND');
 
   const result = await engine.runRound();

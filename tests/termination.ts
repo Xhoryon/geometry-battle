@@ -74,6 +74,7 @@ async function ready(o: Opts): Promise<MatchEngine> {
   const pre = await engine.preflight();
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
   return engine;
 }
 

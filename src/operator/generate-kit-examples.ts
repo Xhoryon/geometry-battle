@@ -80,6 +80,7 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
   const pre = await engine.preflight();
   if (!pre.ok) throw new Error(`Preflight 失败: ${pre.errors.join('; ')}`);
   const started = engine.startMatch();
+  engine.autoSelectEmitters();
   if (!started.ok) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
 
   // Rule Revision 3 §5：每轮不再有人工选点。发射锚点是固定的 Emitter，

@@ -1,15 +1,19 @@
 /**
- * fixed-emitter —— 固定 Emitter 的结构语义（V1.1 Rule Revision 3 §2–§7/§9）
+ * fixed-emitter —— 发射锚点的结构语义
  *
- * 本套件取代旧的 `dual-shooter-selection`：那份契约（每轮从存活点里挑一个当
- * Shooter、锁定、下一轮重选）已随 §5 删除。取而代之要锁的是**新结构**：
+ * 规则沿革：
+ *   - Rev 1 / Rev 2：每轮从本方存活点里选一个 Shooter，可能被击杀。
+ *   - Rev 3：锚点变成**全局常量** `(-18,0)` / `(18,0)`，整场不变、不可击杀、不是战斗点。
+ *   - **V1.2（本文件对齐的版本）**：锚点改为**每队在开赛前从自己的初始点里选一个**，
+ *     各自独立选择、**双方锁定之前互不可见**；双方都锁定后公开，整场不可更换。
  *
- *   1. Emitter 是**常量**，整场比赛不变，不由任何人选择（§2–§4）；
- *   2. Emitter **不是战斗点**：不计入存活数、不能作为胜利目标（§3/§9）；
- *   3. Emitter **不可击杀**：轨迹穿过它不产生任何击杀，它也不在任何点表里（§7）；
- *   4. 函数的锚点必须是 Emitter（§4）；
- *   5. Emitter 坐标从第 1 轮起就在 `public_state.json` 里，且双方字节相同（§6）；
- *   6. 引擎**不再提供**任何选点 API —— 旧语义在接口层面就不存在（§5/§8）。
+ * 变的是「它从哪来」，不变的是 Rev 3 确立的实质（本套件逐条锁死）：
+ *
+ *   1. 锚点在**一场比赛内是固定的**，锁定后不可更换；
+ *   2. 它**不是战斗点**：不计入存活数、不能作为胜利目标；
+ *   3. 它**不可击杀**：轨迹穿过它不产生任何击杀，它也不在任何点表里；
+ *   4. 函数的锚点必须是它（`|f(x_e) − y_e| ≤ 1e-6`）；
+ *   5. 锁定之前，它不出现在任何会被参赛代码读到的输入里（public_state）。
  */
 
 import * as fs from 'fs';
@@ -68,8 +72,8 @@ function makeEngine(matchId: string, seed = 4242, pointCount = 6): MatchEngine {
   });
 }
 
-/** 走完上传 + preflight + startMatch */
-async function ready(matchId: string, algoA = SNIPER, algoB = SLOW_SNIPER, seed = 4242) {
+/** 走完上传 + preflight + startMatch，停在 EMITTER_SELECT 阶段 */
+async function readyToSelect(matchId: string, algoA = SNIPER, algoB = SLOW_SNIPER, seed = 4242) {
   const engine = makeEngine(matchId, seed);
   assert(engine.upload('A', algoA).ok, 'A 应能上传');
   assert(engine.upload('B', algoB).ok, 'B 应能上传');
@@ -80,120 +84,145 @@ async function ready(matchId: string, algoA = SNIPER, algoB = SLOW_SNIPER, seed 
 }
 
 // ===========================================================================
-// 1. Emitter 是常量，整场不变
+// 1. 选择阶段：双方独立、锁定前互不可见
 // ===========================================================================
 
-test('fixed-emitter: Emitter 坐标是全局常量，且整场比赛不变', async () => {
-  assertEqual(EMITTERS.A, { x: -18, y: 0 }, 'A 的 Emitter 必须是约定常量');
-  assertEqual(EMITTERS.B, { x: 18, y: 0 }, 'B 的 Emitter 必须是约定常量');
+test('fixed-emitter: 开赛后必须各自选定 Emitter 并锁定，才能进入 READY', async () => {
+  const engine = await readyToSelect('FE-SELECT');
+  assertEqual(engine.getSnapshot().phase, 'EMITTER_SELECT', '开赛后应停在 Emitter 选择阶段');
+  assertEqual(engine.emittersRevealed(), false, '尚未锁定，锚点不可见');
 
-  const engine = await ready('FE-CONST');
-  const snap0 = engine.getSnapshot();
-  assertEqual(snap0.emitters!.A.position, EMITTERS.A, '快照里的 A Emitter 必须等于常量');
-  assertEqual(snap0.emitters!.B.position, EMITTERS.B, '快照里的 B Emitter 必须等于常量');
+  // 锁一方不够
+  assert(engine.selectEmitter('A', 'A1').ok, 'A 应能选择');
+  assert(engine.lockEmitter('A').ok, 'A 应能锁定');
+  assertEqual(engine.getSnapshot().phase, 'EMITTER_SELECT', '只锁一方不得进入 READY');
+  assertEqual(engine.emittersRevealed(), false, '只锁一方，锚点仍不可见');
+  assert(engine.emitterCandidates('B').length > 0, 'B 仍应有候选（A 的选择不影响它）');
 
-  // 跨多轮取一次：锚点必须逐轮完全相同
-  const seen: string[] = [];
-  for (let i = 0; i < 3; i++) {
-    const r = await engine.runRound();
-    seen.push(JSON.stringify(engine.getSnapshot().emitters));
-    assertEqual(r.emitterA, 'A0', `第 ${r.round} 轮 A 的锚点标识应固定`);
-    assertEqual(r.emitterB, 'B0', `第 ${r.round} 轮 B 的锚点标识应固定`);
-    if (engine.endReason() !== 'NONE') break;
+  // 锁双方 → READY
+  assert(engine.selectEmitter('B', 'B2').ok, 'B 应能选择');
+  assert(engine.lockEmitter('B').ok, 'B 应能锁定');
+  assertEqual(engine.getSnapshot().phase, 'READY', '双方锁定后应进入 READY');
+  assertEqual(engine.emittersRevealed(), true, '双方锁定后锚点公开');
+  assertEqual(engine.getEmitters().A.id, 'A1', 'A 的锚点应是它选的那个点');
+  assertEqual(engine.getEmitters().B.id, 'B2', 'B 的锚点应是它选的那个点');
+});
+
+test('fixed-emitter: 锁定之后不可更换（整场不可变）', async () => {
+  const engine = await readyToSelect('FE-IMMUTABLE');
+  engine.selectEmitter('A', 'A1');
+  engine.lockEmitter('A');
+  assert(!engine.selectEmitter('A', 'A2').ok, '锁定后不得改选');
+  assert(!engine.lockEmitter('A').ok, '不得重复锁定');
+
+  engine.selectEmitter('B', 'B1');
+  engine.lockEmitter('B');
+  const before = JSON.stringify(engine.getEmitters());
+  // 跑一整轮之后锚点必须一模一样
+  await engine.runRound();
+  assertEqual(JSON.stringify(engine.getEmitters()), before, '整场锚点不得变化');
+});
+
+test('fixed-emitter: 只能选自己队的点', async () => {
+  const engine = await readyToSelect('FE-OWN');
+  assert(!engine.selectEmitter('A', 'B1').ok, 'A 不得选 B 的点');
+  assert(!engine.selectEmitter('A', 'NOPE').ok, '不得选不存在的点');
+  assert(engine.selectEmitter('A', 'A3').ok, 'A 应能选自己的点');
+  assertEqual(engine.getSnapshot().emitterSelection.A.selected!.id, 'A3', '选择应被记录');
+});
+
+test('fixed-emitter: 未锁定之前不得开赛、不得揭盲、不得出输入', async () => {
+  const engine = await readyToSelect('FE-GATE');
+  engine.selectEmitter('A', 'A1');
+  engine.lockEmitter('A'); // 只锁一方
+
+  assert(!engine.judgeStartRound().ok, '未锁定前不得 START');
+  assert(!engine.emittersRevealed(), '未锁定前锚点不可见');
+
+  let threw = false;
+  try {
+    engine.beginRound();
+  } catch {
+    threw = true;
   }
-  assert(seen.length > 1, '至少应跑过两轮');
-  for (const s of seen) assertEqual(s, seen[0], 'Emitter 必须整场不变');
+  assert(threw, '未锁定前不得开始本轮 —— 否则输入里就没有锚点坐标');
 });
 
-test('fixed-emitter: 地图携带的 Emitter 就是常量，且计入地图哈希', async () => {
-  const engine = await ready('FE-MAP');
-  const map = engine.getSnapshot().map!;
-  assertEqual(map.emitterA, EMITTERS.A, '地图的 emitterA 必须等于常量');
-  assertEqual(map.emitterB, EMITTERS.B, '地图的 emitterB 必须等于常量');
-  assertEqual(map.stateHash.length, 64, '地图哈希应为 sha256');
-});
+test('fixed-emitter: 双方锁定前互不可见 —— 但引擎内部记录双方的选择', async () => {
+  const engine = await readyToSelect('FE-HIDDEN');
+  engine.selectEmitter('A', 'A1');
+  engine.lockEmitter('A');
 
-test('fixed-emitter: validateMap 拒绝被障碍物封死的 Emitter', () => {
-  // Emitter 被障碍物埋住 = 该队永远打不到任何东西，必须整局作废（§3）
-  const bad = validateMap({
-    seed: 1,
-    teamA: [{ x: -10, y: 5 }],
-    teamB: [{ x: 10, y: 5 }],
-    emitterA: EMITTERS.A,
-    emitterB: EMITTERS.B,
-    obstacles: [{ type: 'circle', center: [EMITTERS.A.x, EMITTERS.A.y], radius: 1 }],
-    stateHash: 'x',
-  });
-  assert(!bad.valid, 'Emitter 被障碍物埋住的地图必须非法');
-  assert(
-    bad.errors.some((e) => e.includes('Emitter A')),
-    `错误信息必须点名 Emitter A，实际: ${bad.errors.join('; ')}`
-  );
+  const sel = engine.getSnapshot().emitterSelection;
+  assertEqual(sel.A.locked, true, 'A 自己已锁定');
+  assertEqual(sel.A.selected!.id, 'A1', 'A 能看到自己的选择');
+  assertEqual(sel.B.locked, false, 'B 尚未锁定');
+  assertEqual(sel.B.selected, null, 'B 尚未选择');
+  assertEqual(sel.revealed, false, '整体尚未公开');
+  // emitters 在双方锁定前为 null —— 任何投影都不可能提前泄漏
+  assertEqual(engine.getSnapshot().emitters, null, '未公开时快照的 emitters 必须为 null');
 });
 
 // ===========================================================================
-// 2/3. Emitter 不是战斗点，也不可击杀
+// 2. Emitter 不是战斗点，也不可击杀
 // ===========================================================================
 
-test('fixed-emitter: Emitter 不是战斗点 —— 不计入存活数、不在点表里', async () => {
-  const engine = await ready('FE-NOTPOINT', SNIPER, SLOW_SNIPER, 777);
-  const snap = engine.getSnapshot();
+test('fixed-emitter: 被选中的点从战斗点集合里移除（其余才是 Combat Points）', async () => {
+  const engine = await readyToSelect('FE-NOTPOINT', SNIPER, SLOW_SNIPER, 777);
+  assertEqual(engine.emitterCandidates('A').length, 6, '选择前 A 有 6 个候选');
 
-  assertEqual(snap.points.length, 12, '6v6 应只有 12 个**战斗**点');
-  for (const p of snap.points) {
-    assert(!p.id.endsWith('0'), `点表里不得出现 Emitter（实际含 ${p.id}）`);
-    assert(p.id !== 'A0' && p.id !== 'B0', `点表里不得出现 Emitter（实际含 ${p.id}）`);
-  }
-  assertEqual(snap.alive.A + snap.alive.B, 12, '存活数只数战斗点，不含 Emitter');
+  engine.selectEmitter('A', 'A1');
+  engine.lockEmitter('A');
+  engine.selectEmitter('B', 'B1');
+  engine.lockEmitter('B');
+
+  const after = engine.getSnapshot();
+  assertEqual(after.points.filter((p) => p.team === 'A').length, 5, 'A 的锚点应被移出战斗点');
+  assertEqual(after.points.filter((p) => p.team === 'B').length, 5, 'B 的锚点应被移出战斗点');
+  assert(!after.points.some((p) => p.id === 'A1' || p.id === 'B1'), '锚点不得留在 points 里');
+  assertEqual(after.alive.A + after.alive.B, 10, '存活数只数战斗点，不含锚点');
 });
 
-test('fixed-emitter: 轨迹穿过敌方 Emitter 不产生任何击杀（不可击杀）', () => {
-  // A 的 Emitter 在 (-18,0)，B 的在 (18,0)。y = 0 这条直线正好穿过对方 Emitter。
+test('fixed-emitter: 轨迹穿过敌方 Emitter 不产生任何击杀', () => {
   const ast = lineAst(EMITTERS.A, EMITTERS.B);
-  const enemies = [{ id: 'B1', position: { x: 4, y: 5 } }]; // 不在弹道上
+  const enemies = [{ id: 'B1', position: { x: 4, y: 5 } }];
   const out = judgeShot(ast, EMITTERS.A, 'A', enemies, []);
-
-  assert(!out.hits.includes('B0'), '敌方 Emitter 不得被命中');
-  assert(!out.hits.includes('A0'), '己方 Emitter 当然也不得被命中');
-  assertEqual(out.hits, [], '这条弹道上没有战斗点，因此不应有任何命中');
-
-  // 轨迹本身仍然正常传播到场地边界（Emitter 不是障碍物）
+  assert(!out.hits.includes('B0') && !out.hits.includes('A0'), '锚点不得被命中');
+  assertEqual(out.hits, [], '这条弹道上没有战斗点，不应有任何命中');
   const endX = out.trajectory[out.trajectory.length - 1].x;
-  assert(Math.abs(endX - FIELD.xMax) < 1e-6, `轨迹应到场地边界 x=${FIELD.xMax}，实际 ${endX}`);
+  assert(Math.abs(endX - FIELD.xMax) < 1e-6, '锚点不是障碍物，轨迹应正常传到场地边界');
 });
 
-test('fixed-emitter: 整场比赛结束后 Emitter 仍然"在"（它没有生死状态）', async () => {
-  const engine = await ready('FE-IMMORTAL', SNIPER, SLOW_SNIPER, 909);
-  const before = JSON.stringify(engine.getSnapshot().emitters);
-  const r = await engine.runRound();
+test('fixed-emitter: 整场比赛结束后锚点状态不变', async () => {
+  const engine = await readyToSelect('FE-IMMORTAL', SNIPER, SLOW_SNIPER, 909);
+  engine.selectEmitter('A', 'A2');
+  engine.lockEmitter('A');
+  engine.selectEmitter('B', 'B3');
+  engine.lockEmitter('B');
+  const before = JSON.stringify(engine.getEmitters());
 
+  const r = await engine.runRound();
   for (const id of r.killed) {
-    assert(id !== 'A0' && id !== 'B0', `击杀列表里不得出现 Emitter（实际含 ${id}）`);
+    assert(id !== 'A2' && id !== 'B3', `击杀列表里不得出现 Emitter（实际含 ${id}）`);
   }
-  assertEqual(JSON.stringify(engine.getSnapshot().emitters), before, 'Emitter 状态不得因战斗改变');
-  // RoundLog 也没有任何「Emitter 是否存活」的字段 —— 那个问题在新规则下不存在
+  assertEqual(JSON.stringify(engine.getEmitters()), before, '锚点不得因战斗改变');
   assert(!('emitterAAliveAfterRound' in r.log), '日志不得出现「Emitter 存活」类字段');
 });
 
 // ===========================================================================
-// 4. 函数的锚点必须是 Emitter
+// 3. 函数锚点
 // ===========================================================================
 
-test('fixed-emitter: 函数必须经过自己的 Emitter（瞄战斗点当锚点会被拒）', async () => {
-  // 这条算法把函数锚在**敌方第一个战斗点的 y** 上 —— 它在几何上「瞄着一个点」，
-  // 但不是自己的 Emitter。锚点判定用的必须是固定 Emitter，因此它必然因
-  // NOT_THROUGH_SHOOTER 被 Preflight 拒。
-  //
-  // （防守：若该点的 y 恰好等于 Emitter 的 y，就把常数抬 3 —— 以免这条用例
-  //   因为「正好落在 Emitter 上」而假通过。）
+test('fixed-emitter: 函数必须经过本队自己的 Emitter', async () => {
+  // 这条算法锚在**自己队的另一个点**上（decoy 世界里的第二个本队点），
+  // 而不是平台给的那个锚点 → Preflight 必须以 NOT_THROUGH_SHOOTER 拒绝。
   const wrongAnchor = `import json, os
 ${PY_ARGV_PRELUDE}${PY_EMIT}with open(args.public, "r") as f:
     public = json.load(f)
 me = public["emitters"][args.team]
-enemy = "B" if args.team == "A" else "A"
-foes = sorted((p for p in public["points"] if p["team"] == enemy and p.get("alive", True)),
-              key=lambda p: p["id"])
-y = foes[0]["y"] if foes else 0.0
+own = [p for p in public["points"] if p["team"] == args.team]
+t = own[1] if len(own) > 1 else own[0]
+y = t["y"]
 if abs(y - me["y"]) < 1e-9:
     y = y + 3.0
 emit({"type": "add", "args": [
@@ -207,86 +236,83 @@ emit({"type": "add", "args": [
   const engine = makeEngine('FE-ANCHOR', 4242);
   assert(engine.upload('A', pkg).ok, '上传应成功');
   assert(engine.upload('B', SLOW_SNIPER).ok, '上传应成功');
-  // Preflight 就会拦下它：锚点错 = 函数不合法
   const pre = await engine.preflight();
-  assert(!pre.ok, '锚在战斗点上的算法必须被 Preflight 拒绝');
+  assert(!pre.ok, '锚在别的点上的算法必须被 Preflight 拒绝');
   assert(
     pre.errors.some((e) => e.includes('NOT_THROUGH_SHOOTER')),
     `拒绝原因必须点明 NOT_THROUGH_SHOOTER，实际: ${pre.errors.join('; ')}`
   );
 });
 
-test('fixed-emitter: 经过自己 Emitter 的常函数合法（锚点判定用的是 Emitter 坐标）', () => {
-  const ast = lineAst(EMITTERS.A, { x: EMITTERS.A.x, y: EMITTERS.A.y }); // 过 Emitter 的常函数
-  const out = judgeShot(ast, EMITTERS.A, 'A', [{ id: 'B1', position: { x: 4, y: EMITTERS.A.y } }], []);
-  assertEqual(out.hits, ['B1'], 'y = y_emitter 的常函数应命中同 y 的敌人');
-});
-
 // ===========================================================================
-// 5. Emitter 在 public_state 里，双方字节相同
+// 4. 公开契约
 // ===========================================================================
 
-test('fixed-emitter: Emitter 从第 1 轮起就在 public_state，且 A/B 字节相同', async () => {
-  const engine = await ready('FE-PUBLIC');
+test('fixed-emitter: 锚点坐标随 public_state 下发，且双方字节相同', async () => {
+  const engine = await readyToSelect('FE-PUBLIC');
+  engine.selectEmitter('A', 'A4');
+  engine.lockEmitter('A');
+  engine.selectEmitter('B', 'B5');
+  engine.lockEmitter('B');
+
+  const em = engine.getEmitters();
   const pre = engine.beginRound();
-  assertEqual(pre.round, 1, '第一轮应为 1');
 
-  // 按协议重算这一轮的 public_state：Emitter 必须直接出现在里面（§6）
-  const map = engine.getSnapshot().map!;
+  // 用**协议构造器**按引擎快照重算这一轮的 public_state，再拿哈希与引擎比对 ——
+  // 哈希相等即证明引擎下发的正是这份字节（不依赖任何测试专用后门）。
+  const snap = engine.getSnapshot();
   const built = buildPublicState({
     matchId: 'FE-PUBLIC',
-    round: 1,
-    emitters: { A: map.emitterA, B: map.emitterB },
-    points: [],
+    round: pre.round,
+    emitters: { A: em.A.position, B: em.B.position },
+    points: snap.points.map((p) => ({
+      id: p.id,
+      team: p.team,
+      x: p.position.x,
+      y: p.position.y,
+      alive: p.alive,
+    })),
   });
-  const pub = JSON.parse(built.json);
-  assertEqual(pub.emitters, { A: { x: -18, y: 0 }, B: { x: 18, y: 0 } }, 'public 必须直接给出 Emitter 坐标');
+  assertEqual(built.sha256, pre.publicStateHash, '引擎下发的 public_state 必须就是这份字节');
 
-  // reveal 不再承担任何 Shooter/Emitter 信息（§5/§6）
-  const rev = buildRevealState({
-    matchId: 'FE-PUBLIC',
-    round: 1,
-    publicStateSha256: built.sha256,
-    obstacles: map.obstacles,
-  });
-  assert(!rev.json.includes('shooters'), 'reveal 不得再含 shooters');
-  assert(!rev.json.includes('emitter'), 'Emitter 属 public，不得出现在 reveal');
+  const parsed = JSON.parse(built.json);
+  assertEqual(parsed.emitters.A, { x: em.A.position.x, y: em.A.position.y }, 'public 必须给出 A 的锚点坐标');
+  assertEqual(parsed.emitters.B, { x: em.B.position.x, y: em.B.position.y }, 'public 必须给出 B 的锚点坐标');
+  assert(
+    !parsed.points.some((p: { id: string }) => p.id === 'A4' || p.id === 'B5'),
+    '锚点被移出战斗点：points 里不得有它'
+  );
 
-  // 同一轮重复构造必须字节稳定（哈希可复核）
-  const again = buildPublicState({
-    matchId: 'FE-PUBLIC',
-    round: 1,
-    emitters: { A: map.emitterA, B: map.emitterB },
-    points: [],
-  });
-  assertEqual(again.sha256, built.sha256, '同一轮重复构造必须得到同一份字节');
+  // reveal 仍然只含障碍物
+  const rev = engine.revealRound();
+  assertEqual(rev.revealStateHash.length, 64, '揭盲应产出哈希');
+  const revParsed = JSON.parse(
+    buildRevealState({
+      matchId: 'FE-PUBLIC',
+      round: pre.round,
+      publicStateSha256: built.sha256,
+      obstacles: snap.map!.obstacles,
+    }).json
+  );
+  assert(!('shooters' in revParsed), 'reveal 不得含 shooters');
+  assert(!('emitter' in revParsed) && !('emitters' in revParsed), '锚点属 public，不得出现在 reveal');
 });
 
 // ===========================================================================
-// 6. 引擎不再提供选点 API
+// 5. 地图层的锚点公平性（Rev 3 的校验保留，作用于 decoy 常量）
 // ===========================================================================
 
-test('fixed-emitter: 引擎不再暴露任何 Shooter 选择 API（§5）', async () => {
-  const engine = await ready('FE-NOAPI');
-  const e = engine as unknown as Record<string, unknown>;
-  for (const gone of ['selectShooter', 'lockShooter']) {
-    assert(!(gone in e), `MatchEngine 不得再暴露 ${gone}（Rule Revision 3 §5 已删除该流程）`);
-  }
-  // 快照里也不再有 shooters / locked
-  const snap = engine.getSnapshot() as unknown as Record<string, unknown>;
-  assert(!('shooters' in snap), '快照不得再有 shooters 字段');
-  assert(!('locked' in snap), '快照不得再有 locked 字段');
-  assert('emitters' in snap, '快照必须提供 emitters');
-});
-
-test('fixed-emitter: 一轮不需要任何人工动作即可跑完（流程只剩 PUBLIC→REVEAL→START→COMPUTE）', async () => {
-  const engine = await ready('FE-NOACTION', SNIPER, SLOW_SNIPER, 1234);
-  const r = await engine.runRound(); // 唯一的显式调用
-  assertEqual(r.round, 1, '应结算第 1 轮');
-  assertEqual(r.log.attacksExecuted.length >= 1, true, '至少有一方执行了攻击');
-  const phases = r.machinePhases;
-  assert(phases.includes('PUBLIC'), `状态机必须经过 PUBLIC，实际 ${phases.join(' → ')}`);
-  assert(!phases.includes('SHOOTER_SELECTION' as never), '状态机不得再有 SHOOTER_SELECTION');
+test('fixed-emitter: validateMap 拒绝被障碍物埋住的 Emitter 常量（decoy 用）', () => {
+  const bad = validateMap({
+    seed: 1,
+    teamA: [{ x: -10, y: 5 }],
+    teamB: [{ x: 10, y: 5 }],
+    emitterA: EMITTERS.A,
+    emitterB: EMITTERS.B,
+    obstacles: [{ type: 'circle', center: [EMITTERS.A.x, EMITTERS.A.y], radius: 1 }],
+    stateHash: 'x',
+  });
+  assert(!bad.valid, 'Emitter 常量被障碍物埋住的地图必须非法');
 });
 
 void runAll('fixed-emitter');

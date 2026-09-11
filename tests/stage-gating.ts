@@ -38,6 +38,7 @@ async function lockedEngine(matchId: string): Promise<MatchEngine> {
   assert(engine.upload('B', ALGO_B).ok, '上传 B 应成功');
   assert((await engine.preflight()).ok, 'preflight 应通过');
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
   return engine;
 }
 
@@ -172,7 +173,12 @@ test('stage-gating: 输入字节在冻结后重新生成仍是同一份（同一
     threw = e instanceof MatchEngineError;
   }
   assert(threw, '比赛未开始就揭盲必须抛 MatchEngineError');
+
+  // 开赛 → 双方锁定 Emitter → 可以揭盲
   fresh.startMatch();
+  fresh.autoSelectEmitters();
+  const rev = fresh.revealRound();
+  assertEqual(rev.revealStateHash.length, 64, '锁定 Emitter 之后应能正常揭盲');
 });
 
 void runAll('stage-gating');

@@ -71,6 +71,7 @@ test('preflight-decoy: --seed 撞上派生种子时换种子，绝不重合（§
 
   // 比赛地图的实际用种（生成器可能微调）也必须与 decoy 不同
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
   const matchMap = engine.getSnapshot().map;
   assert(matchMap, '开赛后应持有比赛地图');
   assert(d.decoyMapSeed !== matchMap.seed, 'decoy 实际用种不得等于比赛地图实际用种');

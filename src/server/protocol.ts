@@ -45,6 +45,8 @@ export type WirePhase =
   | 'UPLOAD_A'
   | 'UPLOAD_B'
   | 'PREFLIGHT'
+  /** 双方各自选择本场的 Fixed Emitter 并锁定（V1.2） */
+  | 'EMITTER_SELECT'
   | 'READY'
   | 'PUBLIC'
   | 'REVEAL'

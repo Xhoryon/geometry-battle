@@ -41,6 +41,7 @@ import {
 } from './InputProtocol';
 import {
   COMPUTE_TIMEOUT_MS,
+  EMITTERS,
   FIELD,
   HARD_ROUND_LIMIT,
   MEMORY_LIMIT_MB,
@@ -94,6 +95,14 @@ export type MatchPhase =
   | 'UPLOAD_A'
   | 'UPLOAD_B'
   | 'PREFLIGHT'
+  /**
+   * 双方各自选择本场的 Fixed Emitter 并锁定（V1.2 规则修订）。
+   *
+   * 选择独立进行、**双方锁定之前互不可见**；双方都锁定后进入 `READY`，
+   * 被选中的点从战斗点集合中移除，成为整场不可更换、不可击杀的发射锚点。
+   */
+  | 'EMITTER_SELECT'
+  /** 双方 Emitter 已锁定，可以开始本轮（V1.2 起才有实义） */
   | 'READY'
   /** PUBLIC 阶段：本轮 public_state.json 已冻结，等待 REVEAL（Rule Rev 3 §5） */
   | 'PUBLIC'
@@ -170,7 +179,19 @@ export interface MatchSnapshot {
   map: GeneratedMap | null;
   points: PointState[];
   /** 固定 Emitter（常量，整场不变；Rule Revision 3 §2–§4） */
+  /** 双方**都已锁定**之后的发射锚点；未锁定时为 null（V1.2 §一） */
   emitters: { A: { id: string; position: Point }; B: { id: string; position: Point } } | null;
+  /**
+   * Emitter 选择过程的**完整状态**（含双方的私有点）。
+   *
+   * 「对方选了没有、选了什么」在双方锁定前是隐藏信息：引擎给出真相，
+   * 服务端按观看者角色裁剪。
+   */
+  emitterSelection: {
+    A: { locked: boolean; selected: { id: string; position: Point } | null };
+    B: { locked: boolean; selected: { id: string; position: Point } | null };
+    revealed: boolean;
+  };
   alive: { A: number; B: number };
   winner: 'A' | 'B' | 'draw' | null;
   packages: { A: { hash: string; name: string } | null; B: { hash: string; name: string } | null };
@@ -193,7 +214,8 @@ const SLOT_INSTALL_PHASES: ReadonlySet<MatchPhase> = new Set<MatchPhase>([
   'UPLOAD_A',
   'UPLOAD_B',
   'PREFLIGHT',
-  'READY',
+  // V1.2：`READY` 过去是无人设置的死词，现在有了实义 —— 它表示
+  // 「比赛已开始、双方 Emitter 已锁定」。此时的槽位必须冻结，故移出本集合。
 ]);
 
 export class MatchEngine {
@@ -222,6 +244,12 @@ export class MatchEngine {
    * 回放绘制）就天然碰不到它，不需要在每处加 role 判断。
    */
   private points: PointState[] = [];
+
+  // ---- V1.2 规则修订：Fixed Emitter 由双方各选一点 ----
+  /** 各方选定的 Emitter（引用 `points` 里的对象；未选时为 null） */
+  private emitterChoice: { A: PointState | null; B: PointState | null } = { A: null, B: null };
+  /** 各方是否已锁定自己的选择 */
+  private emitterLocked: { A: boolean; B: boolean } = { A: false, B: false };
 
   private packages: { A: SealedPackage | null; B: SealedPackage | null } = { A: null, B: null };
   private preflightDone = false;
@@ -555,10 +583,20 @@ export class MatchEngine {
       ...map.teamA.map((p, i): PointState => ({ id: `A${i + 1}`, team: 'A', position: p, alive: true })),
       ...map.teamB.map((p, i): PointState => ({ id: `B${i + 1}`, team: 'B', position: p, alive: true })),
     ];
-    this.phase = 'PUBLIC';
+    // 候选集合：本方全部点位都可能是 Emitter（V1.2 规则修订）。
+    // 双方锁定之后，被选中的两个点会被**移出**战斗点集合（`lockEmitter`）。
+    this.emitterChoice = { A: null, B: null };
+    this.emitterLocked = { A: false, B: false };
+    this.phase = 'EMITTER_SELECT';
     this.roundNumber = 0;
     this.startedAt = new Date();
-    this.audit.log('MatchStarted', { seed: map.seed, mapHash: map.stateHash, points: map.teamA.length });
+    this.audit.log('MatchStarted', {
+      seed: map.seed,
+      mapHash: map.stateHash,
+      points: map.teamA.length,
+      // V1.2：Emitter 不再由平台固定，而是双方在开赛前各自选定
+      emitterSelection: 'PENDING',
+    });
     // 规范 §5：把「双方环境完全相同」落成可审计的证据 —— 冻结清单 + 宿主实测差异。
     // 差异不阻断比赛（选手机器上可能没有 numpy），但会如实留在审计日志里。
     const runtime = checkRuntime();
@@ -574,24 +612,131 @@ export class MatchEngine {
   // 固定 Emitter（Rule Revision 3 §2–§4）
   // ========================================================================
 
-  /**
-   * 双方本场比赛的固定 Emitter。
-   *
-   * 取自地图（`MapGenerator` 用 `Rules.EMITTERS` 常量写入并计入地图哈希），
-   * 整场比赛不变、不由任何人选择、不会死亡。**没有** `alive` 字段 ——
-   * 「Emitter 是否存活」这个问题在新规则下不存在（§3）。
-   */
   /** Preflight 是否已通过（队伍面板的「就绪」判据；规范 §26）。 */
   isPreflightPassed(): boolean {
     return this.preflightDone;
   }
 
+  // ========================================================================
+  // Fixed Emitter（V1.2 规则修订：由双方在开赛前各选一点并锁定）
+  //
+  // 沿革：Revision 3 把锚点定为**全局常量** `EMITTERS`。V1.2 改为
+  // **每队从自己的初始点里选一个**，因为参赛者与主办方需要一个「布阵」环节。
+  // 不变的部分（Revision 3 §3 的实质）一条没动：
+  //   - 整场不变、锁定后不可更换；
+  //   - 不可击杀、不是战斗点、不能作为胜利目标；
+  //   - 函数必须严格经过它（|f(x_e) − y_e| ≤ 1e-6）。
+  // 变的部分只有「它从哪来」。
+  // ========================================================================
+
+  /** 该队可选的 Emitter 候选：本方**全部仍在场上的**点位 */
+  emitterCandidates(team: 'A' | 'B'): PointState[] {
+    return this.points.filter((p) => p.team === team);
+  }
+
+  /**
+   * 选定本场的 Emitter（尚未锁定，可以改）。
+   *
+   * 只能在 `EMITTER_SELECT` 阶段、且本队尚未锁定时调用。
+   */
+  selectEmitter(team: 'A' | 'B', pointId: string): { ok: boolean; error: string | null } {
+    if (this.phase !== 'EMITTER_SELECT') {
+      return { ok: false, error: `当前阶段 ${this.phase} 不能选择 Emitter` };
+    }
+    if (this.emitterLocked[team]) {
+      return { ok: false, error: `${team} 的 Emitter 已锁定，不可更改` };
+    }
+    const point = this.points.find((p) => p.id === pointId);
+    if (!point) return { ok: false, error: `未知的点: ${pointId}` };
+    if (point.team !== team) return { ok: false, error: `${pointId} 不属于 ${team}` };
+
+    this.emitterChoice[team] = point;
+    this.audit.log('EmitterSelected', { point: pointId, position: point.position }, team);
+    return { ok: true, error: null };
+  }
+
+  /**
+   * 锁定本队的 Emitter。锁定后整场不可更换（V1.2 §一）。
+   *
+   * 双方都锁定后：
+   *   - 两个被选中的点**从战斗点集合中移除**（其余本队点才是 Combat Points）；
+   *   - 阶段转为 `READY`，可以开始本轮。
+   *
+   * 这一步之后 `getEmitters()` 才可用 —— 在那之前平台也不知道锚点在哪，
+   * 因此 public_state.json 不可能提前泄漏。
+   */
+  lockEmitter(team: 'A' | 'B'): { ok: boolean; error: string | null } {
+    if (this.phase !== 'EMITTER_SELECT') {
+      return { ok: false, error: `当前阶段 ${this.phase} 不能锁定 Emitter` };
+    }
+    if (this.emitterLocked[team]) {
+      return { ok: false, error: `${team} 的 Emitter 已经锁定` };
+    }
+    const chosen = this.emitterChoice[team];
+    if (!chosen) return { ok: false, error: `${team} 尚未选择 Emitter` };
+
+    this.emitterLocked[team] = true;
+    this.audit.log('EmitterLocked', { point: chosen.id }, team);
+
+    if (this.emitterLocked.A && this.emitterLocked.B) {
+      // 其余本队点 = 战斗点。Emitter 与 Revision 3 一样**不是**战斗点，
+      // 因此把它从 `points` 里移除，而不是加一个 role 标记 ——
+      // 「遍历 Points」的所有路径（胜负计数 / 敌人筛选 / 击杀应用）天然碰不到它。
+      const emitters = [this.emitterChoice.A!.id, this.emitterChoice.B!.id];
+      this.points = this.points.filter((p) => !emitters.includes(p.id));
+      this.phase = 'READY';
+      this.audit.log('BothEmittersLocked', {
+        A: this.emitterChoice.A!.id,
+        B: this.emitterChoice.B!.id,
+        combatPointsPerTeam: this.points.filter((p) => p.team === 'A').length,
+      });
+    }
+    return { ok: true, error: null };
+  }
+
+  /**
+   * **仅供无人值守演练与测试**：双方各选自己的第一个候选点并锁定。
+   *
+   * 存在的理由：`--auto` 的裁判台与大量回归用例需要一个「不需要人点」的开赛路径。
+   * **正式赛事必须由双方各自 `selectEmitter` / `lockEmitter`** ——
+   * 锦标赛 UI 与 `tests/tournament-*` 走的是真实的两阶段选择，
+   * 这条便利方法不在那条链路上。
+   */
+  autoSelectEmitters(): { A: string; B: string } {
+    for (const team of ['A', 'B'] as const) {
+      const first = this.emitterCandidates(team)[0];
+      if (!first) throw new MatchEngineError(`${team} 没有可选的 Emitter 候选点`);
+      const sel = this.selectEmitter(team, first.id);
+      if (!sel.ok) throw new MatchEngineError(sel.error ?? '选择 Emitter 失败');
+      const lock = this.lockEmitter(team);
+      if (!lock.ok) throw new MatchEngineError(lock.error ?? '锁定 Emitter 失败');
+    }
+    this.audit.log('EmitterAutoSelected', { reason: 'unattended / test helper' });
+    return { A: this.emitterChoice.A!.id, B: this.emitterChoice.B!.id };
+  }
+
+  /** 双方是否都已锁定（锁定之后双方的选择才可公开） */
+  emittersRevealed(): boolean {
+    return this.emitterLocked.A && this.emitterLocked.B;
+  }
+
+  /** 某一方是否已锁定自己的选择（本人可见） */
+  isEmitterLocked(team: 'A' | 'B'): boolean {
+    return this.emitterLocked[team];
+  }
+
+  /**
+   * 本场比赛的 Fixed Emitter。**双方锁定后才可用**。
+   *
+   * 返回的对象没有 `alive` 字段 —— 「Emitter 是否存活」这个问题不存在（Rev 3 §3）。
+   */
   getEmitters(): { A: { id: string; position: Point }; B: { id: string; position: Point } } {
-    const m = this.map;
-    if (!m) throw new MatchEngineError('缺少地图（Emitter 由地图携带）');
+    if (!this.emitterChoice.A || !this.emitterChoice.B) {
+      throw new MatchEngineError('Emitter 尚未由双方选定（V1.2：开赛前各选一点并锁定）');
+    }
     return {
-      A: { id: 'A0', position: m.emitterA },
-      B: { id: 'B0', position: m.emitterB },
+      A: { id: this.emitterChoice.A.id, position: this.emitterChoice.A.position },
+      B: { id: this.emitterChoice.B.id, position: this.emitterChoice.B.position },
     };
   }
 
@@ -612,8 +757,12 @@ export class MatchEngine {
    * 算法进程此刻**不存在**（规范 §14/§15）。幂等：同一轮重复调用返回同一份字节。
    */
   beginRound(): { round: number; publicStateHash: string } {
-    if (this.phase !== 'PUBLIC' && this.phase !== 'REVEAL') {
-      throw new MatchEngineError(`当前阶段 ${this.phase} 不能开始新一轮`);
+    if (this.phase !== 'READY' && this.phase !== 'PUBLIC' && this.phase !== 'REVEAL') {
+      throw new MatchEngineError(
+        this.phase === 'EMITTER_SELECT'
+          ? '双方尚未锁定 Emitter —— 开赛前每队必须先选定一个点作为本场的发射锚点'
+          : `当前阶段 ${this.phase} 不能开始新一轮`
+      );
     }
     if (!this.map) throw new MatchEngineError('比赛尚未开始');
 
@@ -640,6 +789,10 @@ export class MatchEngine {
     // 状态机随真实流程推进：本轮输入已冻结 → 进入揭盲/START 前的等待点。
     if (machine.getPhase() === 'ROUND_INTRO') machine.beginPublic();
     if (machine.getPhase() === 'PUBLIC') machine.readyForJudge();
+    // PUBLIC = 「本轮 public_state 已冻结，等待揭盲」。V1.2 之后开赛前的阶段是
+    // READY（Emitter 已锁定），因此这里必须显式推进到 PUBLIC —— 否则「能不能揭盲」
+    // 这类判断就失去了一个可依赖的阶段名。
+    this.phase = 'PUBLIC';
     return { round, publicStateHash: this.pendingPublic.sha256 };
   }
 
@@ -657,7 +810,9 @@ export class MatchEngine {
         roundStateHash: this.pendingHashes.roundStateHash,
       };
     }
-    if (this.phase !== 'PUBLIC') {
+    // READY 也允许揭盲：V1.2 之后开赛前的正常阶段是 READY（Emitter 已锁定），
+    // `revealRound()` 会自行补做 `beginRound()` 生成本轮输入。
+    if (this.phase !== 'PUBLIC' && this.phase !== 'READY') {
       throw new MatchEngineError(`当前阶段 ${this.phase} 不能揭盲（需已生成 PUBLIC）`);
     }
     if (!this.map) throw new MatchEngineError('缺少地图');
@@ -696,7 +851,7 @@ export class MatchEngine {
    */
   judgeStartRound(): { ok: boolean; error: string | null } {
     if (this.startGranted) return { ok: true, error: null };
-    if (this.phase === 'PUBLIC') {
+    if (this.phase === 'PUBLIC' || this.phase === 'READY') {
       try {
         this.revealRound();
       } catch (e) {
@@ -720,8 +875,11 @@ export class MatchEngine {
   async runRound(): Promise<RoundResult> {
     if (!this.map) throw new MatchEngineError('缺少地图');
     if (!this.packages.A || !this.packages.B) throw new MatchEngineError('缺少算法包');
+    if (!this.emittersRevealed()) {
+      throw new MatchEngineError('双方尚未锁定 Emitter（V1.2：开赛前每队各选一点）');
+    }
     if (!this.pendingPublic) this.beginRound();
-    if (this.phase === 'PUBLIC') this.revealRound();
+    if (this.phase === 'PUBLIC' || this.phase === 'READY') this.revealRound();
     const started = this.judgeStartRound();
     if (!started.ok) throw new MatchEngineError(started.error ?? 'START ROUND 失败');
     return this.computeRound();
@@ -755,7 +913,7 @@ export class MatchEngine {
     // ---- RoundState（Judge 侧校验用）----
     // 发射锚点是**常量**，不随回合变化，也不来自本轮的存活点（Rule Revision 3 §4）。
     const emitters = this.getEmitters();
-    const core = this.buildCore(round, emitters);
+    const core = this.buildCore(round);
 
     // ---- 密封副本完整性（P0-6）----
     for (const team of ['A', 'B'] as const) {
@@ -1040,7 +1198,8 @@ export class MatchEngine {
       machine.matchEnd();
       this.audit.log('MatchEnded', { winner: finalWinner, endReason: this.terminalReason });
     } else {
-      this.phase = 'PUBLIC';
+      // V1.2：Emitter 已在开赛前锁定，因此后续回合直接从 READY 进入下一轮
+      this.phase = 'READY';
       machine.nextRound();
     }
 
@@ -1101,7 +1260,24 @@ export class MatchEngine {
       seed: this.seed,
       map: this.map,
       points: this.points.map((p) => ({ ...p })),
-      emitters: this.map ? this.getEmitters() : null,
+      // 双方锁定之前 `getEmitters()` 会抛 —— 而队伍页恰恰要在那之前取快照
+      // （显示「等你选」）。这里给出**完整真相**；「谁能看到谁」由服务端投影决定。
+      emitters: this.emittersRevealed() ? this.getEmitters() : null,
+      emitterSelection: {
+        A: {
+          locked: this.emitterLocked.A,
+          selected: this.emitterChoice.A
+            ? { id: this.emitterChoice.A.id, position: this.emitterChoice.A.position }
+            : null,
+        },
+        B: {
+          locked: this.emitterLocked.B,
+          selected: this.emitterChoice.B
+            ? { id: this.emitterChoice.B.id, position: this.emitterChoice.B.position }
+            : null,
+        },
+        revealed: this.emittersRevealed(),
+      },
       alive: {
         A: this.points.filter((p) => p.team === 'A' && p.alive).length,
         B: this.points.filter((p) => p.team === 'B' && p.alive).length,
@@ -1139,6 +1315,7 @@ export class MatchEngine {
       // playtest 把它暴露了出来（0 场分胜负），修复见同轮回归
       // `full-match-e2e` 的「ELIMINATION 必须记下真正的胜者」。
       winner: this.getWinner() ?? 'draw',
+      emitters: this.emittersRevealed() ? this.getEmitters() : null,
       endReason: this.endReason(),
       rounds: [...this.rounds],
       finalAlive: {
@@ -1164,6 +1341,7 @@ export class MatchEngine {
       // playtest 把它暴露了出来（0 场分胜负），修复见同轮回归
       // `full-match-e2e` 的「ELIMINATION 必须记下真正的胜者」。
       winner: this.getWinner() ?? 'draw',
+      emitters: this.emittersRevealed() ? this.getEmitters() : null,
       endReason: this.endReason(),
       frames: [...this.frames],
     };
@@ -1266,8 +1444,8 @@ export class MatchEngine {
       .map((p) => ({ id: p.id, position: p.position }));
   }
 
-  private buildCore(round: number, _emitters: { A: { id: string }; B: { id: string } }): RoundStateCore {
-    return this.buildCoreFor(this.map!, round);
+  private buildCore(round: number): RoundStateCore {
+    return this.buildCoreFor(this.map!, round, this.getEmitters());
   }
 
   /**
@@ -1301,10 +1479,13 @@ export class MatchEngine {
             alive: p.alive,
           }));
 
+    // 只有 round === 0（preflight 的 decoy 世界）会走到这里。
+    // decoy 世界没有 Emitter 选择环节，用的仍是全局常量 —— 它与比赛种子无关，
+    // 也不泄漏任何本场信息（规范 §14/§15）。
     const publicState = buildPublicState({
       matchId: o.matchId,
       round: o.round,
-      emitters: { A: o.map.emitterA, B: o.map.emitterB },
+      emitters: { A: EMITTERS.A, B: EMITTERS.B },
       points,
     });
     const revealState = buildRevealState({
@@ -1316,7 +1497,11 @@ export class MatchEngine {
     return { publicJson: publicState.json, revealJson: revealState.json };
   }
 
-  private buildCoreFor(map: GeneratedMap, round: number): RoundStateCore {
+  private buildCoreFor(
+    map: GeneratedMap,
+    round: number,
+    emitters: { A: { id: string; position: Point }; B: { id: string; position: Point } }
+  ): RoundStateCore {
     const alive: AlivePoint[] = round === 0
       ? [
           ...map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, position: p })),
@@ -1330,9 +1515,9 @@ export class MatchEngine {
       mapHash: map.stateHash,
       obstacles: map.obstacles,
       points: alive,
-      // 固定 Emitter（Rule Revision 3 §3/§4）：整场不变、不可死亡、不是战斗点。
-      // 战斗中（round ≥ 1）与 decoy 世界（round === 0）用的是同一对常量。
-      emitters: { A: { id: 'A0', position: map.emitterA }, B: { id: 'B0', position: map.emitterB } },
+      // 发射锚点。正式回合是**双方选定的**那个点（V1.2），
+      // decoy 世界（round === 0）用全局常量（那里没有选择环节）。
+      emitters,
       teamAXRange: FIELD.teamAXRange,
       teamBXRange: FIELD.teamBXRange,
     };
@@ -1368,7 +1553,11 @@ export class MatchEngine {
     if (!outcome.success) return { ok: false, errors: [outcome.error ?? 'unknown'] };
     const { ast, reason } = this.parseAstDetailed(outcome);
     if (!ast) return { ok: false, errors: [`输出不是合法 DSL: ${reason}`] };
-    const core = this.buildCoreFor(map, 0);
+    // decoy 世界：没有 Emitter 选择环节，用全局常量（不泄漏本场任何信息）
+    const core = this.buildCoreFor(map, 0, {
+      A: { id: 'A0', position: EMITTERS.A },
+      B: { id: 'B0', position: EMITTERS.B },
+    });
     return this.validateAst(ast, team, core);
   }
 

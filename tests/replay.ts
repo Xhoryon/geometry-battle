@@ -39,6 +39,7 @@ async function playAndPersist(matchId: string, seed: number, pointCount = 6): Pr
   assert(engine.upload('B', ALGO_B).ok, '上传 B 应成功');
   assert((await engine.preflight()).ok, 'preflight 应通过');
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
 
   let rounds = 0;
   while (engine.getWinner() === null) {
@@ -74,8 +75,12 @@ test('replay: 删除算法包与沙箱后，回放仍可完整加载', async () 
     assert(frame.aliveBefore.length > 0, '帧必须自带开战前存活点');
     assert(frame.aliveAfter.length >= 0, '帧必须自带结算后存活点');
     // Rule Revision 3 §22：回放必须能画出整场不变的固定 Emitter。
-    assert(frame.emitters && frame.emitters.A && frame.emitters.B, '帧必须自带双方固定 Emitter');
-    assert(frame.emitters!.A.id === 'A0', 'Emitter 标识必须是固定的 A0');
+    assert(frame.emitters && frame.emitters.A && frame.emitters.B, '帧必须自带双方发射锚点');
+    // V1.2：锚点由双方在开赛前各选一点，因此标识是**那个点的 id**（不再是平台常量 A0）
+    assert(
+      /^A\d+$/.test(frame.emitters!.A.id) && /^B\d+$/.test(frame.emitters!.B.id),
+      `锚点标识必须是双方各自选定的点，实际 ${frame.emitters!.A.id} / ${frame.emitters!.B.id}`
+    );
   }
 });
 
@@ -176,6 +181,7 @@ test('replay: 末帧的 endReason 必须反映四类终局，不得恒为 NONE�
   assert(engine.upload('B', ALGO_B).ok, '上传 B 应成功');
   assert((await engine.preflight()).ok, 'preflight 应通过');
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
 
   let rounds = 0;
   while (engine.endReason() === 'NONE') {

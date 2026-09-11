@@ -210,6 +210,7 @@ async function playOneRound(
   const pre = await engine.preflight();
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
   engine.startMatch();
+  engine.autoSelectEmitters();
 
   // Rule Revision 3 §5：没有任何选点/锁定动作，直接开一轮。
   const result = await engine.runRound();
@@ -353,15 +354,21 @@ test('VER-1: A 慢 B 快时，先手必须是 B（先手顺序不是常量）', 
  * 只要每个方向上的射线不穿过第二个点即可。
  */
 function findScriptedSeed(): number {
+  // V1.2：锚点由双方各选一点。这里复刻 `autoSelectEmitters()` 的选择
+  // （各自候选里的第一个），因此 A 的锚点是 `teamA[0]`、B 的是 `teamB[0]`；
+  // 剩下的 `teamA[1..]` / `teamB[1..]` 才是战斗点。
   for (let seed = 1; seed < 20000; seed++) {
     const map = generateMapOrNull({ seed, pointCount: 6, difficulty: 'easy' });
     if (!map) continue;
+    const emitA = map.teamA[0];
+    const emitB = map.teamB[0];
     let ok = true;
-    for (let k = 0; k < 6 && ok; k++) {
+    // 战斗点各 5 个（6 个点里 1 个成了锚点）→ 最多 5 轮就见分晓
+    for (let k = 1; k < map.teamB.length && ok; k++) {
       const enemyOfA = map.teamB.slice(k).map((p, i) => ({ id: `B${k + i + 1}`, position: p }));
       const enemyOfB = map.teamA.slice(k).map((p, i) => ({ id: `A${k + i + 1}`, position: p }));
-      const ra = judgeShot(lineAst(EMITTERS.A, map.teamB[k]), EMITTERS.A, 'A', enemyOfA, map.obstacles);
-      const rb = judgeShot(lineAst(EMITTERS.B, map.teamA[k]), EMITTERS.B, 'B', enemyOfB, map.obstacles);
+      const ra = judgeShot(lineAst(emitA, map.teamB[k]), emitA, 'A', enemyOfA, map.obstacles);
+      const rb = judgeShot(lineAst(emitB, map.teamA[k]), emitB, 'B', enemyOfB, map.obstacles);
       if (ra.blocked || rb.blocked) ok = false;
       else if (ra.hits.length !== 1 || ra.hits[0] !== `B${k + 1}`) ok = false;
       else if (rb.hits.length !== 1 || rb.hits[0] !== `A${k + 1}`) ok = false;
@@ -381,11 +388,14 @@ test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW'
   const pre = await engine.preflight();
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
   engine.startMatch();
+  engine.autoSelectEmitters();
 
   const rounds: Awaited<ReturnType<MatchEngine['runRound']>>[] = [];
-  for (let k = 1; k <= 6; k++) {
-    // 没有任何选点动作 —— 每轮直接跑（Rule Revision 3 §5）
+  // 每轮双方各掉一个战斗点；各 5 个战斗点 → 第 5 轮同时归零。
+  // 用 endReason 收敛，而不是写死轮数 —— 点数配置变了也不用心算。
+  while (engine.endReason() === 'NONE') {
     rounds.push(await engine.runRound());
+    if (rounds.length > 12) throw new Error('脚本化对局未按预期收敛');
   }
 
   for (const r of rounds) {
@@ -398,7 +408,7 @@ test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW'
   }
 
   const last = rounds[rounds.length - 1];
-  assertEqual(last.aliveAfter, { A: 0, B: 0 }, '第 6 轮结束后双方都应归零');
+  assertEqual(last.aliveAfter, { A: 0, B: 0 }, '末轮结束后双方都应归零');
   assertEqual(last.mutualElimination, true, '该轮必须被标记为同归于尽');
   assertEqual(last.winner, 'draw', '同归于尽必须判平局 —— 不得因为 A 是先手就判 A 胜');
   assertEqual(engine.getWinner(), 'draw', '最终胜者必须是 draw');
@@ -414,13 +424,30 @@ test('R6: 同一轮结束后双方同时归零 —— MUTUAL_ELIMINATION / DRAW'
 test('R8: 每轮的发射锚点都是同一个固定 Emitter（不重选、不重算）', async () => {
   const { engine, result } = await playOneRound('LOCKED-R8', findEmitterHitSeed(), SNIPER, SLOW_SNIPER);
 
-  assertEqual(result.emitterA, 'A0', 'A 的锚点标识整场固定');
-  assertEqual(result.emitterB, 'B0', 'B 的锚点标识整场固定');
-  assertEqual(result.log.emitterA, 'A0', '日志必须记录同一个锚点');
+  // V1.2：锚点是双方各自选定的点，标识即那个点的 id —— 要点是**整场不变**
+  const locked = engine.getEmitters();
+  assertEqual(result.emitterA, locked.A.id, '锚点标识必须等于锁定时的选择');
+  assertEqual(result.emitterB, locked.B.id, '锚点标识必须等于锁定时的选择');
+  assertEqual(result.log.emitterA, result.emitterA, '同一场内锚点标识不得变化');
+
+  // 再跑一轮：锚点仍然一模一样（这是「不重选」的实质）
+  const r2 = await engine.runRound();
+  assertEqual(r2.emitterA, locked.A.id, '后续回合不得更换锚点');
+  assertEqual(r2.emitterB, locked.B.id, '后续回合不得更换锚点');
 
   const snap = engine.getSnapshot();
-  assertEqual(snap.emitters!.A.position, EMITTERS.A, '锚点坐标必须等于全局常量');
-  assertEqual(snap.emitters!.B.position, EMITTERS.B, '锚点坐标必须等于全局常量');
+  // V1.2：锚点坐标 = 双方各自选定的那个点的坐标（不再是全局常量）
+  const candA = engine.emitterCandidates('A');
+  const candB = engine.emitterCandidates('B');
+  assert(
+    snap.emitters!.A.position.x === locked.A.position.x && snap.emitters!.A.position.y === locked.A.position.y,
+    '锚点坐标必须等于锁定时的选择'
+  );
+  assert(
+    snap.emitters!.B.position.x === locked.B.position.x && snap.emitters!.B.position.y === locked.B.position.y,
+    '锚点坐标必须等于锁定时的选择'
+  );
+  assert(candA.length + candB.length === 10, '锚点已移出战斗点：剩下 10 个战斗点');
 
   // 单轮单次计算：只有一个耗时记录，输入哈希也只有一份
   assert(result.computeTimeMs.B !== null, 'B 仍只有一次计算的耗时记录');
