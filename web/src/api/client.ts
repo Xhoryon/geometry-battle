@@ -8,7 +8,7 @@
  *     走 `GET /api/trajectory/:id` 补一次 —— 这是恢复路径，不是常规路径。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   CommandResult,
   JudgeBoard,
@@ -216,33 +216,4 @@ export function useReplayList(): { replays: ReplayIndexEntry[]; error: string | 
     };
   }, []);
   return { replays, error };
-}
-
-/** 一次性 POST 的便捷包装（命令按钮用），带 pending 状态 */
-export function useCommand(): {
-  run: (path: string, body?: unknown) => Promise<CommandResult>;
-  pending: boolean;
-  lastErrors: string[];
-} {
-  const [pending, setPending] = useState(false);
-  const [lastErrors, setLastErrors] = useState<string[]>([]);
-  const mounted = useRef(true);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-    },
-    []
-  );
-
-  const run = useCallback(async (path: string, body: unknown = {}): Promise<CommandResult> => {
-    setPending(true);
-    const r = await command(path, body);
-    if (mounted.current) {
-      setPending(false);
-      setLastErrors(r.ok ? [] : r.errors);
-    }
-    return r;
-  }, []);
-
-  return { run, pending, lastErrors };
 }
