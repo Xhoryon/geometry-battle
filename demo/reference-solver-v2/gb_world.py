@@ -94,12 +94,26 @@ def build_world(team, public, reveal):
 # 障碍物几何（镜像 src/obstacle/Obstacle.ts 的距离定义）
 # ---------------------------------------------------------------------------
 
-def _obstacle_x_range(ob):
+def obstacle_x_span(ob):
+    """障碍物在 x 方向的占用区间（闭区间）。"""
     if ob.get("type") == "circle":
         cx = float(ob.get("cx", 0.0))
         r = float(ob.get("radius", 0.0))
         return cx - r, cx + r
     return float(ob.get("xmin", 0.0)), float(ob.get("xmax", 0.0))
+
+
+def obstacle_y_span(ob):
+    """障碍物在 y 方向的占用区间（闭区间）。"""
+    if ob.get("type") == "circle":
+        cy = float(ob.get("cy", 0.0))
+        r = float(ob.get("radius", 0.0))
+        return cy - r, cy + r
+    return float(ob.get("ymin", 0.0)), float(ob.get("ymax", 0.0))
+
+
+# 兼容旧内部的私有名（本模块内仍在用）
+_obstacle_x_range = obstacle_x_span
 
 
 def penetration(x, y, ob):

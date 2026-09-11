@@ -36,7 +36,8 @@ import time
 
 from gb_candidates import (
     Candidate, flat, interp_through, line_to,
-    multi_target_candidates, single_target_candidates,
+    multi_target_candidates, obstacle_waypoint_candidates,
+    single_target_candidates,
 )
 from gb_dsl import agrees_with_ast, assert_emittable
 from gb_world import COARSE_STEP, FINE_STEP, simulate
@@ -228,6 +229,12 @@ def choose_shot(world, budget_ms):
     singles = []
     for target in world.enemies:
         singles.extend(single_target_candidates(world.me_x, world.me_y, target))
+        # 被障碍物挡住的目标，单纯靠 BEND/WAVE 是够不着的（自由曲率只有 ±2.5），
+        # 补上「绕行路标」那一族，否则这些目标的击杀数永远是 0
+        if world.obstacles:
+            singles.extend(
+                obstacle_waypoint_candidates(world.me_x, world.me_y, target, world.obstacles)
+            )
     add_candidates(singles)
 
     # ---- 多点候选：只对单目标得分最高的若干目标做组合 ----
