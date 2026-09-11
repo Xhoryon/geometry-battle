@@ -44,7 +44,8 @@ DSL 白名单（Plan V1 §11）：
     - 禁止：if/else/switch/?:, min, max, abs, floor, ceil, round, sign, step,
       Heaviside, 布尔与比较运算
     - 函数必须严格经过自己的**固定 Emitter**：f(x_e) = y_e
-      （x_e / y_e 是常量：A 为 (-18, 0)，B 为 (18, 0)）
+      （x_e / y_e 由本队开赛前选定，**逐场不同** —— 从 public["emitters"][team] 读，
+        不要写死任何坐标；注意 preflight 的 decoy 世界锚点也不是平台常量）
     - 节点数 ≤ 128，深度 ≤ 12，常量 |v| ≤ 1000
     - 在射击区间内必须有限、连续、C²，二阶导变号次数 ≤ 100
 """

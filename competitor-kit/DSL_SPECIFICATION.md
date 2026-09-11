@@ -193,7 +193,8 @@ Team B：x ∈ [-20, x_e]
 { "type": "number", "value": 2 }
 ```
 
-> 上例在 Team A 的 Emitter `(-18, 0)` 下 `f(x_e) = 2 ≠ 0`，因此不通过。
+> 上例在 Team A 的 Emitter（`public_state.emitters.A`，设其 `y_e = 0`）下
+> `f(x_e) = 2 ≠ 0`，因此不通过。
 
 ---
 
@@ -202,9 +203,12 @@ Team B：x ∈ [-20, x_e]
 以下示例统一采用：
 
 ```text
-Team A，固定 Emitter E = (-18, 0)
-有效攻击范围 x ∈ [-18, 20]
+Team A，本场 Emitter E = (x_e, y_e)   ← 从 public_state.emitters 读
+有效攻击范围 x ∈ [x_e, 20]
 ```
+
+> 为便于阅读，下文示例把 `(x_e, y_e)` 具体写成 `(-18, 0)`。
+> **那只是举例**：真实坐标逐场不同，代码里必须从 `public_state.emitters` 取。
 
 ### 8.1 常数
 

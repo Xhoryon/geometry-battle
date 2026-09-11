@@ -414,3 +414,121 @@ npm run e2e                    → 1 passed（Playwright 真浏览器完整演�
 
 演练跑的是真比赛：seed 700001 / 6 点 / easy 下 3 回合 MUTUAL_ELIMINATION，
 逐轮击杀 5/4/3，每侧轨迹 400 点（上线前降采样到 240）。
+
+---
+
+## 阶段 12 — V1.2 Interactive Tournament Experience（`ecedff6` 之后）
+
+V1.2 的全部改动都在这个阶段。它只改**规则的一处**，但把整条参赛者路径从
+「终端投递」搬到了浏览器，并把裁判台重做成阶段驱动的向导。
+
+### 12.1 规则修正案：锚点交还给队伍
+
+V1.1 的固定 Emitter 是平台常量（A `(-18,0)` / B `(18,0)`）。V1.2 起，
+**每队在开赛前从自己的初始点里选一个并锁定**：
+
+```text
+SETUP → … → PREFLIGHT → START → EMITTER_SELECT → READY → PUBLIC → REVEAL → …
+```
+
+`lockEmitter` 双锁之后，被选中的那个点**从 `points` 数组里物理移除**
+（`Match.ts`），于是「敌方目标枚举 / 存活计数 / 胜负判定 / 回放绘制」
+这些遍历 `points` 的路径**结构性地**碰不到它 —— 不需要在每处加角色判断。
+`Rules.EMITTERS` 常量只剩两处用途：preflight 的 decoy 世界与 MapGenerator 的出生点间距。
+
+双方的选点在**都锁定之前互不可见**，且这不是前端隐藏：引擎快照在未公开时
+把 `emitters` 置为 `null`，服务端按观看者角色裁剪，参赛者板上**没有**对方的字段。
+
+### 12.2 参赛者路径
+
+`/team/a` `/team/b` 两页：浏览器上传算法包（目录 / 文件 / ZIP，ZIP 在浏览器里
+用 `DecompressionStream` 展开，服务端保持零依赖）、只读浏览自己的源码、
+在列表或画布上点选锚点并锁定。
+
+上传走的是**同一条**安装流水线（staging → validate → preflight → hash → seal → replace），
+浏览器没有任何绕过校验的通道。
+
+### 12.3 锦标赛模式：从「界面建议」变成「执行门禁」
+
+最初的实现只在 board 的 `enabled` 上做提示，而三个执行入口（`prepare` /
+`use-slot` / `install`）根本不查它 —— 一个直接的 POST 就能让一场「锦标赛」
+跑在出厂模板上（服务端启动时会把 `algorithms/team-*` 播种进槽位）。
+另外上传端点是**先装后拒**：包已经写进槽位了，拒绝只改了返回值。
+
+现在 `MatchSession.tournamentRejection` 在四个入口逐一设卡，且**先判后装**；
+`isBundledAlgorithm` 覆盖整个发行树（`starter/` `algorithms/` `competitor-kit/starter`
+`demo/*` `playtest/competitors/*`）。测试私有 fixture 不在名单里。
+
+### 12.4 preflight 的锚点盲区（本轮引入、本轮修复）
+
+锚点变成逐场选定之后，preflight 的 decoy 世界**仍在下发平台常量** ——
+于是它只能验证「算法能跑」，验证不了「算法会从 `public_state.emitters` 读锚点」。
+一个写死 `-18` 的算法会顺利通过本地自检与官方 Preflight，然后在正赛**每一轮**
+被判 `NOT_THROUGH_SHOOTER`。
+
+代码里留着证据：`validateOutcome` 有一个参数 `shooterPos`，两个调用点早就在传
+`decoyMap.teamA[0]`，但函数体内从未使用它 —— 原设计就是让 decoy 用 decoy 地图上的点，
+实现中途漂移成了常量，而输入与校验两边一致地漂移，所以谁也没发现。
+
+修法：`decoyEmitters(map)`（落在 `MapGenerator`）给出「decoy 地图上双方各自的第一个点」，
+输入构造与校验**共用同一个来源**，并把这两个点从 `points` 里移除（与正式回合一致）。
+本地自检工具 `LocalPreflight` 一并改用同一条规则 —— 它原先也读 `map.emitterA/B`，
+同样放行写死坐标的包，而它的文档还承诺着「本地自检规则 == 官方 Preflight 规则」。
+
+新增 `tests/fixtures/algos/hardcoded-anchor`（函数恒为 `y=0`，即「只经过 (-18,0)」）
+与 `preflight-decoy` 的一条回归，双向钉死这条性质。
+
+### 12.5 障碍物的「视觉重叠」：几何早就对了，错的是绘制
+
+`347180b` 已经把几何侧修好（`MIN_OBSTACLE_CLEARANCE = 1.0`）。
+现场看到的「重叠」来自渲染：`projection.ts` 把圆半径**只按 x 轴**缩放，
+而绘图区几乎不可能正好是 40:24 的等比缩放 —— 宽屏下圆被画得偏高，
+轨迹看着在碰到障碍物之前就停了，两个其实有间距的障碍物看着在重叠。
+
+改成两个轴各按自己的尺度缩放、画布用 `ctx.ellipse`。回归断言的是**几何等式**：
+数学圆上任意一点投影后必须落在画出的椭圆上（`((px-cx)/rx)² + ((py-cy)/ry)² = 1`），
+覆盖四个尺寸 —— 其中 400×240 恰好等于场地比例，是旧实现唯一看不出问题的尺寸。
+
+### 12.6 那条「永远跑不过」的验收演练
+
+V1.1 的 `npm run e2e` 是通过的。V1.2 重写 spec 之后**从未跑完过**，
+原因是 `clickAction` 直接点 `[data-action="…"]`：向导每一步只把一个动作放在
+主按钮上，其余收进 `Advanced Controls` 折叠区（`<details>`），
+点击隐藏元素会一直等可见性，于是测试挂到超时。
+
+作者其实写了 `openAdvanced()`，只是没接进去。修好之后又暴露两处：
+向导在 SETUP 步把 `use-slot-a` 排在 `prepare` 前面（把「一步做完」的主按钮
+挤进了折叠区）；坏包用例断言「未就绪」，但槽位里已装好的包**本来就不该被
+一次失败的上传动到**，显示「已就绪」才是诚实的。
+
+### 12.7 文档
+
+`README.md` 从 V1.1 更新到 V1.2（规则表、锚点语义、四条路由、锦标赛模式、
+套件数 32 → 34）。`competitor-kit/` 是**选手唯一会读的东西**，而它整篇还在教
+「Emitter 是常量 `(-18,0)`」—— 全部改掉，并加了一条防漂移回归
+（禁止再出现那几句旧话术，同时要求正向写明从 `public_state.emitters` 读）。
+本文件此前停在阶段 11。
+
+### 12.8 验证
+
+```text
+npm run typecheck / typecheck:web     → 0 错误
+npm test                              → 34/34 套件通过
+npm run e2e                           → 2 passed（真浏览器完整赛事演练）
+competitor-kit/tools/validate_submission.py starter           → PRE-FLIGHT PASS
+competitor-kit/tools/validate_submission.py hardcoded-anchor  → PRE-FLIGHT FAIL
+                                        （NOT_THROUGH_SHOOTER，报出样例世界的真实锚点）
+```
+
+演练跑的是真比赛：`/team/a` `/team/b` 各自上传真实算法包 → 各自选锚点并锁定 →
+揭晓 → START → 逐轮 → 终局 → 大屏 → 回放 → Reset → 第二场。
+每一处交互都是**点界面上的按钮**，不直接调 API。
+
+本轮新增/强化的回归（每条都做过「注入旧 bug → 确认变红 → 还原」）：
+
+```text
+preflight-decoy      decoy 锚点取自 decoy 地图，写死坐标的算法被拦下
+web-projection       圆的屏幕几何 = 数学圆在投影下的像（非等比尺寸）
+server-team          锦标赛门禁四个入口 + 主办方查看上传源码（含路径泄漏）
+competitor-kit       选手文档不得再把 Emitter 写成平台常量
+```

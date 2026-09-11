@@ -3,7 +3,7 @@
 **An educational algorithm competition sandbox for computational geometry,
 algorithm optimization, and AI-assisted programming.**
 
-中文名：几何斗殴 · 当前版本：V1.1 Platform
+中文名：几何斗殴 · 当前版本：V1.2 Platform
 
 **许可：PolyForm Noncommercial License 1.0.0** —— *source-available for noncommercial use*。
 **这不是 OSI 认可的开源许可**，商业用途需另行授权，详见 [许可与使用范围](#许可与使用范围)。
@@ -22,12 +22,15 @@ algorithm optimization, and AI-assisted programming.**
 **START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
 stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
 
-### V1.1 规则一览
+### V1.2 规则一览
+
+> **与 V1.1 的唯一规则差异**：固定 Emitter 不再是平台常量，而是**每队开赛前
+> 从自己的点里选定一个**（V1.2 §一）。其余全部不变。
 
 | 项目 | 值 |
 |------|-----|
 | 攻击函数 | 每回合输出一条 `y = f(x)`，必须严格经过自己的 Emitter（`\|f(x_e) − y_e\| ≤ 1e-6`） |
-| 固定 Emitter | A 恒为 `(-18, 0)`、B 恒为 `(18, 0)`，整场不变；是**数学发射锚点**，不是战斗点、不可击杀 |
+| 固定 Emitter | **开赛前由各队从自己的初始点里选定并锁定**，本场不变；是**数学发射锚点**，不是战斗点、不可击杀。坐标见 `public_state.emitters[team]` |
 | 战斗点 | 双方各自的点位（含 `alive: false` 的死点）；对方**存活**的战斗点位于射程内且函数严格经过即击杀 |
 | 障碍物 / 场地边界 | 轨迹在**首次障碍物接触**处永久终止；场地 `x ∈ [-20, 20]`、`y ∈ [-12, 12]` |
 | 单次计算上限 | **500 ms**（每方从自己的 GO 写入时刻起算；另有 512 MB / 1 核 / 1 线程） |
@@ -158,12 +161,14 @@ SDK 模板见 [`starter/solver.py`](starter/solver.py)（含 `emit()` 原子写�
 {"schema_version":"1.1","match_id":"M-1","round":4,"public_state_sha256":"92fa…","obstacles":[{"id":"O1","type":"rectangle","xmin":-1,"xmax":2,"ymin":-5,"ymax":1},{"id":"O2","type":"circle","cx":4,"cy":3,"radius":2}]}
 ```
 
-> **Revision 3：锚点是常量，不再是每轮选出的「Shooter」。**
-> Team A 的 Emitter 恒为 `(-18, 0)`、Team B 恒为 `(18, 0)`，**整场不变**、
+> **V1.2 §一：锚点由各队自选，不再是平台常量，也不再是每轮选出的「Shooter」。**
+> 开赛前，双方各自从**自己的初始点**里选一个并锁定；锁定之后它**整场不变**、
 > 不可击杀、不计入存活数、也不是胜利目标 —— 它只是攻击函数的**数学发射锚点**，
-> 不是战斗点，因此**不在 `points` 里**。
-> 它属于**公开**结构：从第 1 轮起就在 `public_state.json` 的 `emitters` 里可见，
-> 不需要等揭盲。`reveal_state.json` 里**没有**、也不会有 `shooters` 字段。
+> 不是战斗点，因此**不在 `points` 里**（被选中的那个点会从 `points` 中被移除）。
+>
+> 双方**都锁定之后**，两个坐标才公开：`public_state.json` 的 `emitters` 从这里开始
+> 每一轮都是同一对坐标。在此之前，对方在**服务端载荷里根本拿不到**你的选择
+> （不是前端藏起来）。`reveal_state.json` 里**没有**、也不会有 `shooters` 字段。
 
 **绑定自检（建议选手在入口处照抄）：**
 
@@ -185,10 +190,15 @@ REVEAL       reveal_state.json 生成（障碍物），算法仍未运行
 START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → 计算
 ```
 
-Revision 3 起**每轮不再有人工选点、也没有 SHOOTER LOCK**：锚点整场固定，
-PUBLIC 阶段双方拿到的就是同一对 Emitter 坐标。
+**每轮不再有人工选点、也没有 SHOOTER LOCK**：锚点在开赛前一次性选定并锁定，
+之后整场固定，PUBLIC 阶段双方拿到的就是同一对 Emitter 坐标。
 
 计时从**各自** GO 写入时刻起算。
+
+> **Preflight 用的是 decoy 锚点。** 赛前那次沙箱冒烟跑的是一个与本场比赛无关的
+> decoy 世界，它下发的锚点取自 **decoy 地图上双方各自的第一个点** —— 与正赛一样
+> 是逐场不同的坐标，不是平台常量。因此一个**写死坐标**的算法会在 Preflight
+> 就被拦下（`NOT_THROUGH_SHOOTER`），不会拖到正赛。本地自检工具同此规则。
 
 **最小可运行示例（官方 starter 的简化版）：**
 
@@ -207,7 +217,7 @@ public = json.loads(raw.decode("utf-8"))
 reveal = json.load(open(a.reveal))
 assert hashlib.sha256(raw).hexdigest() == reveal["public_state_sha256"]  # 绑定自检
 
-# 固定 Emitter 从第 1 轮起就在 public 里，是常量，不必去 points 里找
+# Emitter 是**本场选定**的（逐场不同），必须从 public 里读，不要写死坐标
 s = public["emitters"][a.team]
 enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"]]
 t = enemies[0]
@@ -270,7 +280,9 @@ os.replace(tmp, a.output)
 | stderr 上限 | 64 KB |
 
 **函数硬性要求：** 必须经过自己的**固定 Emitter**（`|f(x_e) − y_e| ≤ 1e-6`，`ε = HIT_EPSILON`），
-在射击区间内有限、连续、C²。`x_e` / `y_e` 是**常量**（A 为 `(-18, 0)`、B 为 `(18, 0)`）。
+在射击区间内有限、连续、C²。`x_e` / `y_e` 是**本场选定**的锚点坐标，逐场不同 ——
+从 `public_state.emitters[team]` 读，不要写死任何数值。
+射击区间随之从锚点起算：A 为 `x ∈ [x_e, 20]`、B 为 `x ∈ [-20, x_e]`。
 （注意：这里的 1e-6 与「命中判定」的 1e-6 是两个**不同**概念，不要混用。）
 
 ### 5. 固定 Runtime（双方完全相同）
@@ -340,20 +352,47 @@ npm run app          # 构建前端 → 起服务 → 绑定 127.0.0.1:17800 →
 
 | 路由 | 用途 |
 |---|---|
-| `/judge` | 裁判台：载入算法 → 校验 → 开赛 → 揭晓 → START → 结算 → 终局 → 重置 → 下一场 |
-| `/spectator` | 观众大屏：满屏竞技场 + 轨迹动画 + 存活数 + 计算状态。**只读**，无任何诊断信息 |
+| `/team/a` `/team/b` | **参赛者页**（V1.2）：上传自己的算法包（ZIP / 目录 / 单个 `solver.py`）→ 只读浏览自己的源码 → 从自己的点里选定并锁定本场 Fixed Emitter |
+| `/judge` | 裁判台（phase-driven 向导）：载入算法 → 校验 → **双方锁定 Emitter** → 揭晓 → START → 结算 → 终局 → 重置 → 下一场。可查看双方上传的算法源码 |
+| `/spectator` | 观众大屏：满屏竞技场 + 轨迹动画 + 存活数 + 计算状态 + 双方锚点。**只读**，无任何诊断信息 |
 | `/replay/:matchId` | 回放：用已落盘的 match/audit/replay 重放，**不重新运行任何算法** |
 
 裁判台的**正式主流程是「使用槽位算法」** —— 选手把算法投进**运行期槽位**
 `runs/slots/team-a|team-b` 之后，裁判点两下就能开赛，不需要知道任何文件路径。
 `/judge` 的「算法槽位」面板会写出**投递点路径、算法名、来源与包哈希**，
-投的是不是选手那份，一眼可对。
+投的是不是选手那份，一眼可对；文件清单可以逐一点开**直接看源码**。
 
 换算法有两条路：往运行期槽位根投递（正式流程），或在
 `Advanced · 替换算法与比赛设置` 里填**服务端**上的目录绝对路径（临时换）。
 两条路都写的是同一处。
 
 > 往仓库里的 `algorithms/` 投算法**不会**影响比赛 —— 它只是出厂 fixture。
+
+### 锦标赛模式（V1.2，默认开启）
+
+正式比赛**不允许平台自带的算法上场**。服务端对下列四个入口逐一设卡，
+只要算出来的包哈希命中「平台发行树」（`starter/`、`algorithms/team-*`、
+`competitor-kit/starter`、`demo/*`、`playtest/competitors/*`），一律拒绝：
+
+| 入口 | 行为 |
+|---|---|
+| 参赛者页上传 | **先判后装** —— 拒绝时槽位一个字节都不写 |
+| `install`（Advanced 按路径安装） | 拒绝，且不碰槽位 |
+| `use-slot` | 槽位里躺着自带算法时不许密封进本场 |
+| `prepare`（向导主按钮） | 同上 —— 它是最容易被绕过的那一条 |
+
+这不是「界面上把按钮变灰」：按钮的 `enabled` 只是提示，
+真正的拒绝在**执行时**发生，一个直接的 `POST` 绕不过去。
+
+```bash
+npm run app -- --no-tournament   # 开发自测用：允许出厂 starter 上场
+```
+
+> `--no-tournament` **只用于开发自测**。正式赛事加了这个开关，
+> 一场「正规比赛」就可能跑在模板算法上。
+>
+> 终端操作台（`src/operator/cli.ts`）是操作员显式指定 `--a/--b` 的专用入口，
+> 不存在「自动落回模板」的情形，因此没有这个开关。
 
 服务只绑定 `127.0.0.1`，并对命令请求做 Host + Origin 校验（拒绝跨站控制与 DNS rebinding）。
 
@@ -386,7 +425,7 @@ npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回�
 npm run typecheck
 npm run typecheck:web
 
-# 回归测试（32 个套件，清单见 tests/run-all.ts）
+# 回归测试（34 个套件，清单见 tests/run-all.ts）
 npm test
 npm test -- web-projection web-server      # 只跑指定套件
 
@@ -421,10 +460,13 @@ npm run stress
 │   ├── visualizer/    # 函数与轨迹可视化
 │   └── server/        # 本地 Web UI 的服务端（HTTP + WS + MatchSession）
 ├── web/               # 本地 Web UI 的前端（React + Vite + Canvas 2D）
-│   ├── src/           #   裁判台 / 观众大屏 / 回放三页 + Arena 画布
+│   ├── src/           #   参赛者页 / 裁判台 / 观众大屏 / 回放四页 + Arena 画布
 │   └── e2e/           #   Playwright 完整赛事演练
 ├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
+├── demo/              # 参考解（reference-solver-v2）
 ├── tests/             # 回归测试套件 + 算法 fixture
+├── docs/
+│   └── agent-context/ # 给接手的 AI/开发者的**当前有效事实**（状态、架构、规矩）
 └── Plans/
     ├── Input/         # 人输入的 Plan、规范与任务书
     └── Output/        # 审计报告、工作日志与交接文档
