@@ -34,6 +34,26 @@ npm test                                        # 全量 35 套件，含 timing-
 | `src/ui/`（终端文案） | `judge-console` `arena-view` `operator-e2e` |
 | 沙箱 / 计时 | `timing-fairness`（**很慢**，323s）`runner-isolation` `process-tree-cleanup` |
 
+### 机器负载会造成假红（这一条踩过两次）
+
+单次计算预算是**冻结的 500 ms**。机器一忙（macOS 的 `BTLEServer` 失控、
+浏览器渲染进程吃满核、Steam 等后台更新），沙箱里的 python 就会超时 →
+那一轮 `INVALID` → 依赖「每轮都有合法函数」的套件集体变红。
+
+观测到的特征：**所有**套件耗时同时膨胀（见过 `demo-repro` 5s → 201s、
+`timing-fairness` 330s → 415s）。看到这种幅度的膨胀，先量负载：
+
+```bash
+uptime; ps -A -o %cpu,comm | sort -rn | head
+```
+
+处理：**单独重跑那几个套件**。它们在安静环境下通过，就说明是环境不是回归 ——
+但仍然要在报告里说清楚「全量里红的是哪几个、为什么判为环境」。别默默重跑
+到自己满意为止。
+
+最敏感的套件：`replay`、`demo-repro`、`termination`、`operator-e2e`、
+`timing-fairness`、以及任何跑真实沙箱的。
+
 ### 写回归的规矩
 
 一条**不能抓住旧 bug 的回归等于没写**。加完断言后，把 bug 临时注入回去

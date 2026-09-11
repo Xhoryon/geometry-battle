@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.2 收口完成，工作树干净）。
+> 最后更新：2026-09-12（V1.2 最终产品波：界面走查 + ZIP 端到端 + 协议防漂移）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -15,10 +15,11 @@
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feature/v1.1-ui-protocol`（**名字已过时**，内容早已是 V1.2；没有另开分支） |
-| HEAD | `81cf5a8`（V1.2 收口；本轮共 10 个提交，见交接文档） |
+| 分支 | `feature/v1.2-interactive-tournament`（V1.2 命名分支，从稳定基线 `b439e10` 分出） |
+| HEAD | `fbf45af`（见 [V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md) 的提交清单） |
+| V1.2 平台稳定基线 | `b439e10` —— 上一波收口时的干净 HEAD，**未再改动** |
 | 工作树 | **干净**（`git status --porcelain` 为空） |
-| 版本标签 | `README.md` 已写 **V1.2 Platform**；两个 release tag **未移动** |
+| 版本标签 | 两个 release tag **未移动**；**尚未打 V1.2 tag**（按要求） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
 | 公开仓库 | <https://github.com/Xhoryon/geometry-battle> —— **独立脱敏导出历史**，与本地研发仓库 SHA 不互见 |
 
@@ -105,11 +106,22 @@
 | 观众大屏展示双方锚点 | `web/src/pages/SpectatorPage.tsx` | e2e |
 | **Preflight 真的检验锚点处理** | `MapGenerator#decoyEmitters` + `LocalPreflight` | `preflight-decoy` |
 | 障碍物按真几何绘制（椭圆） | `web/src/arena/projection.ts`、`ArenaCanvas.tsx` | `web-projection` |
-| 参考解 v2 | `demo/reference-solver-v2/` | preflight、`server-team` |
+| 参考解 v2 | `demo/reference-solver-v2/` | preflight、`server-team`、`demo-repro` |
 
-> **浏览器验收演练 `npm run e2e` 现在是通的**（2 passed）。它此前**从未跑完过** ——
-> V1.2 重写 spec 时 `clickAction` 直接点收进 `Advanced` 折叠区的按钮，
-> 隐藏元素永远等不到可见性。详见 development_log 阶段 12.6。
+### 界面（本波 UX 走查）
+
+| 能力 | 落点 | 验证 |
+|---|---|---|
+| 参赛者四步进度条「上传 → 校验 → 选锚点 → 锁定」（判据只来自服务端） | `TeamPage.tsx` 的 `steps` | 浏览器截图核对 |
+| 上传入口（文件夹 / 文件 / ZIP）可样式化且文案明确 | `TeamPage.tsx` + `.upload` | `zip-upload` |
+| 裁判台常驻双方状态条（算法名 / 就绪 / 锚点 / 密封哈希） | `JudgePage.tsx` 的 `judge__teams` | 浏览器截图核对 |
+| 观众大屏阶段横幅（说人话，不只印引擎阶段名） | `SpectatorPage.tsx` 的 `screen__banner` | 浏览器截图核对 |
+| 按钮 UA 默认外观全局重置 | `styles.css` | 截图（修掉文件清单的浅色底） |
+
+> **浏览器验收演练 `npm run e2e` 现在是通的**（3 passed：完整赛事演练 +
+> ZIP 上传演练）。它此前**从未跑完过** —— V1.2 重写 spec 时 `clickAction`
+> 直接点收进 `Advanced` 折叠区的按钮，隐藏元素永远等不到可见性。
+> 详见 development_log 阶段 12.6。
 
 ### 锦标赛模式（默认开）
 
@@ -213,8 +225,6 @@ V1.2 把锚点改成逐场选定之后，preflight 的 decoy 世界一度仍在�
 
 ### 5.3 尚未覆盖的验收面
 
-- **ZIP 上传路径没有端到端覆盖**：`unzipToFiles` 的两个分支（`stored` / `deflate`）
-  只在代码中存在，没有测试。`web/e2e` 走的是 `setInputFiles` 的普通文件路径。
 - `npm run e2e` 需要系统装有 Google Chrome（配置里 `channel: 'chrome'`）。
 - 终端操作台（`src/operator/`）没有锦标赛模式 —— 它是操作员显式指定
   `--a/--b` 的入口，不存在「自动落回模板」的情形，因此**刻意未加**。
@@ -244,12 +254,18 @@ npm run e2e                                    # Playwright 浏览器演练（�
 ```text
 npm run typecheck / typecheck:web   → 0 错误
 npm test                            → 35/35 套件通过，exit 0
-npm run e2e                         → 2 passed，连续跑了两次（每次含连续两场真实对局）
+npm run e2e                         → 3 passed，连续跑了两次
+                                      （完整赛事演练 + ZIP 上传演练，各含连续两场真实对局）
 ```
 
 > ⚠ **不要在门禁运行期间改源码。** 每个套件是独立的 `ts-node` 进程，
 > 中途落盘会让后启动的套件读到半改状态，产出「看似失败、单跑却通过」的假红。
 > 要改就先停下门禁。
+>
+> ⚠ **机器忙也会造成假红。** 单次计算预算是冻结的 500 ms；负载一高，
+> 沙箱里的 python 就会超时，依赖「每轮都有合法函数」的套件集体变红
+> （实测见过整个套件耗时膨胀 40 倍的）。识别方法：`uptime` +
+> `ps -A -o %cpu,comm | sort -rn | head`；处理办法见 DEVELOPMENT_RULES §2。
 
 ---
 
