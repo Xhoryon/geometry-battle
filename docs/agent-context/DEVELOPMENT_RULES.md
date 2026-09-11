@@ -8,7 +8,7 @@
 ## 1. 先信代码，再信文档
 
 `Plans/Output/` 下的审计报告与交接文档是**历史快照**，可能与代码不符。
-`docs/development_log.md` 停在 V1.1 阶段 11，没有 V1.2 条目。
+`docs/development_log.md` 已补到阶段 13（V1.2 收口）。
 
 发生冲突时：**以代码 + 当前冻结规范为准**，核实后**修正文档**，然后继续 ——
 不要停下来等确认，也不要照着过期文档改代码。
@@ -20,7 +20,7 @@
 ```bash
 npm run typecheck && npm run typecheck:web      # 秒级，改什么都先跑
 npx ts-node tests/run-all.ts <suite> [suite…]   # 只跑相关套件
-npm test                                        # 全量 34 套件，含 timing-fairness（约 10 分钟）
+npm test                                        # 全量 35 套件，含 timing-fairness（约 10 分钟）
 ```
 
 **全量只在 milestone 跑一次。** 平时按改动范围挑：
@@ -61,7 +61,7 @@ npm test                                        # 全量 34 套件，含 timing-
 ## 4. 代码风格
 
 - **注释讲「为什么」，不讲「做了什么」。** 尤其要写清楚**反直觉的那些决定**：
-  为什么 decoy 世界用常量锚点、为什么打点必须在 `write('GO')` 之后、
+  为什么 decoy 锚点取自 decoy 地图上的点、为什么打点必须在 `write('GO')` 之后、
   为什么 `snapshotDigest` 不许碰文件系统。这些是下一个人最容易改坏的地方。
 - **不要写「TODO 以后优化」式的注释。** 要么现在做，要么写进
   `PROJECT_STATE.md` 的「已知缺口」。
@@ -84,9 +84,9 @@ npm test                                        # 全量 34 套件，含 timing-
 
 ## 6. 端到端演练
 
-`npm run e2e` 是**唯一**证明 V1.2 参赛者闭环真的能跑的东西。它很慢
-（单次 15–20 分钟起步，真的起服务、真的跑沙箱、真的开浏览器），
-并且需要系统装有 Google Chrome（配置里 `channel: 'chrome'`）。
+`npm run e2e` 是**唯一**证明 V1.2 参赛者闭环真的能跑的东西：真的起服务、
+真的跑沙箱、真的开浏览器、跑完连续两场对局（约 15 秒）。
+它需要系统装有 Google Chrome（配置里 `channel: 'chrome'`）。
 
 改动前端**行为**（不只是样式）之后必须跑它。改 `web/src/` 的纯样式或纯死代码
 可以只跑 `typecheck:web` + `web-projection`。
