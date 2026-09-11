@@ -5,6 +5,7 @@
 
 import { Point } from '../field/Field';
 import { CanonicalNode, evaluateNode } from '../core/Ast';
+import { computeTrajectoryFrames } from '../ui/TrajectoryAnimator';
 
 export interface VisualizerConfig {
   width: number;
@@ -46,26 +47,23 @@ export function sampleFunctionPoints(
 }
 
 /**
- * 计算轨迹动画帧
+ * 计算轨迹动画帧（函数版）—— 薄封装，兼容既有前端调用方。
+ *
+ * 内部先采样一次，再交给 `TrajectoryAnimator.computeTrajectoryFrames` 做增量切分。
+ * 旧实现每一帧都从头重新采样，是 O(帧数 × 点数)；而且**用原始函数重算会画出
+ * 穿过障碍物的曲线**。
+ *
+ * **观众屏请直接用 `computeTrajectoryFrames`**，并把**引擎判定出的**轨迹传进去。
  */
 export function computeAnimationFrames(
   fn: CanonicalNode,
   xStart: number,
   xEnd: number,
-  frameCount: number = 30
+  frameCount: number = 30,
+  step: number = 0.05
 ): Point[][] {
-  const frames: Point[][] = [];
-  const direction = xEnd > xStart ? 1 : -1;
-  const totalDistance = Math.abs(xEnd - xStart);
-  const stepPerFrame = totalDistance / frameCount;
-
-  for (let i = 1; i <= frameCount; i++) {
-    const currentX = xStart + stepPerFrame * i * direction;
-    const framePoints = sampleFunctionPoints(fn, xStart, currentX, 0.05);
-    frames.push(framePoints);
-  }
-
-  return frames;
+  const points = sampleFunctionPoints(fn, xStart, xEnd, step);
+  return computeTrajectoryFrames(points, frameCount);
 }
 
 /**

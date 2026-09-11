@@ -193,6 +193,58 @@ export class AudienceScreenUI {
   }
 
   /**
+   * **简洁观众屏**（Rule Revision 3 §25）—— 现场投影用的单屏视图。
+   *
+   * 与 `renderArenaBoard` 的区别是「只留观众需要的东西」：
+   * 大的竞技场 + 一行状态 + 一行结果。没有哈希、没有路径、没有 JSON、
+   * 没有任何开发者诊断 —— 这一条由 `--spectator` 模式与 `operator-e2e` 的
+   * 「观众屏不泄漏」断言共同保证。
+   */
+  renderSpectatorBoard(o: {
+    snap: MatchSnapshot;
+    trajectoryA?: readonly Point[];
+    trajectoryB?: readonly Point[];
+    revealA?: number;
+    revealB?: number;
+    killed?: readonly string[];
+    headline?: string;
+    footnote?: string;
+  }): string {
+    const s = o.snap;
+    const lines: string[] = [];
+    const bar = '═'.repeat(63);
+    lines.push(bar);
+    lines.push(
+      `  ROUND ${String(s.round).padEnd(3)}   TEAM A ● ${String(s.alive.A).padEnd(3)}   TEAM B ● ${String(s.alive.B).padEnd(3)}` +
+        (o.headline ? `   ${o.headline}` : '')
+    );
+    lines.push(bar);
+    for (const line of renderArena(
+      {
+        obstacles: s.map?.obstacles ?? [],
+        emitters: s.emitters,
+        points: s.points.map((p) => ({ id: p.id, team: p.team, position: p.position, alive: p.alive })),
+        trajectoryA: o.trajectoryA,
+        trajectoryB: o.trajectoryB,
+        revealA: o.revealA,
+        revealB: o.revealB,
+        killed: o.killed,
+      },
+      59,
+      17
+    ).split('\n')) {
+      lines.push('  ' + line);
+    }
+    lines.push('  ' + arenaLegend());
+    if (o.footnote) {
+      lines.push(bar);
+      lines.push('  ' + o.footnote);
+    }
+    lines.push(bar);
+    return lines.join('\n');
+  }
+
+  /**
    * 本轮的状态与错误（§27 Error UX）。
    *
    * 正式 UI 必须能清楚表达 `INVALID` / `TIMEOUT` / `CRASH` ——

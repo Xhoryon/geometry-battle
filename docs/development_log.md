@@ -242,3 +242,89 @@ decoy seed、public/reveal 状态哈希**全都还在打**。是 `operator-e2e` 
 **本轮新增/重写的套件**：`fixed-emitter`(11) / `locked-attack-right`(10) /
 `termination`(5) / `arena-view`(7) / `operator-e2e`(4)；
 删除 `dual-shooter-selection`。
+
+---
+
+## 阶段 10 — Known-Gap Closure（`fd4c6b1` 之后）
+
+**目标**：只关闭**已经明确知道**的 Release Candidate 缺口，不碰核心规则。
+
+### 10.1 轨迹动画接线
+
+**问题**：`computeAnimationFrames` 是死代码，而且写法本身有两个毛病 ——
+每帧从头重采样（O(帧数 × 点数)），并且以**函数**为输入。
+
+**为什么以函数为输入是错的**：观众要看的是**判定结果**。原始函数会一路画到定义域
+尽头，而真实轨迹在第一次障碍物接触或第一次离开 Arena 处**永久终止**。
+用函数重采样会画出一条穿过障碍物的曲线 —— 现场看到的就是错的。
+
+**做法**：
+- `src/ui/TrajectoryAnimator.ts`：帧源是**已判定的轨迹**（`computeTrajectoryFrames`），
+  增量揭示；播放器在 TTY 上原位重绘（自写 ANSI，零依赖），非 TTY 退化为首/中/尾三帧。
+- `ArenaView` 支持按比例揭示轨迹（`revealA` / `revealB`），只影响绘制。
+- `computeAnimationFrames` 保留为薄封装（先采样一次，再交给增量切分），
+  并在注释里写明「观众屏请用轨迹版」。
+
+### 10.2 正式裁判入口
+
+**问题**：唯一能开赛的入口是 `npx ts-node src/operator/cli.ts` —— 那就是开发 CLI。
+
+**做法**：新增 `npm run judge`（`src/operator/judge.ts`）+ `src/ui/JudgeConsole.ts`：
+- **不给任何参数**也能开一场正规比赛（算法从固定槽位取，种子自动生成）；
+- 交互式菜单覆盖 §24 的 12 个动作（载入 / 校验 / 开始 / 揭晓 / START / 结算 /
+  跑完 / 回放 / 审计 / 重置 / 退出）；
+- `--auto` 供无人值守演练；`--spectator` 切到大屏；
+- `cli.ts` 保留为底层诊断工具，两者共用同一个 `MatchEngine` 与同一套 UI 组件。
+
+### 10.3 简洁观众屏
+
+`AudienceScreenUI.renderSpectatorBoard()`：大竞技场 + 一行状态 + 一行结果。
+没有控制台、没有哈希、没有路径、没有 JSON。由 `--spectator` 与
+`operator-e2e` 的「大屏不泄漏」断言共同保证。
+
+### 10.4 完整赛事演练
+
+`tests/operator-e2e.ts` 从 4 条扩到 8 条，走**正式裁判入口**完成
+「启动 → 载入算法 → 校验 → 比赛 → 终局 → 回放 → 审计 → 重置 → 下一场」，
+并断言「只给 `--auto` 也能开赛」。
+
+---
+
+### 10.5 过程中发现并修复的三个真问题
+
+**(1) 新增的裁判测试污染了仓库工作区。**
+测试忘了传 `--slots`，安装流水线把参考算法**真的装进了受跟踪的 `algorithms/`**。
+这与 `hostile-input` 曾经踩过的是同一个坑（记忆里记着，却在新测试里重犯了）。
+处理：`git checkout` + `git clean` 还原槽位；`runJudge()` 一律传 `--slots <tmp>`；
+新增「测试不得改写仓库里的固定算法槽位」回归 —— 它直接检查出厂状态
+（每个槽位只有 `manifest.json` + `solver.py`，且 `solver.py` 与 starter 逐字节相同）。
+
+**(2) 裁判台在管道输入下挂死。**
+两个叠加的原因：`readline` 在开赛前的载入 / Preflight 期间（好几秒）就已因 stdin EOF
+触发 `close`，第二次提问抛 `readline was closed`；而输入耗尽后又把空串当成
+「未知动作」无限循环。
+处理：**双模式输入** —— TTY 走 readline 提示，非 TTY 一次性读完所有行、逐行回答，
+行用完后优雅退出。附带好处：裁判台本身可以被脚本驱动。
+
+**(3) 控制台重复实现了引擎的门禁。**
+我用 `phase === 'READY'` 判断「能否开赛」，而 `MatchEngine.startMatch()` 真正的判据是
+「上传完毕（`UPLOAD_B`）+ `preflightDone`」—— 于是**校验通过之后反而开不了赛**。
+处理：删掉影子规则，直接把引擎返回的结论报出来。
+**教训与 Revision 3 的 Emitter 一致：判定只能有一个来源，UI 不许再猜一套。**
+
+### 10.6 验证范围（Fast Verification）
+
+本次改动只落在 `src/ui/`、`src/visualizer/AudienceDisplay.ts`（动画部分）、
+新增的 `src/operator/judge.ts` 与测试文件；**核心判定 / 计时 / 沙箱 / DSL 一行未改**。
+因此只跑定向集：
+
+```text
+npm run typecheck            → 0 错误
+tests/arena-view.ts          → 13/13
+tests/judge-console.ts       → 7/7
+tests/operator-e2e.ts        → 8/8（含 6 场真实比赛）
+```
+
+其余套件记为 `UNCHANGED — PRIOR PASS EVIDENCE`（`fd4c6b1` 的 29/29），
+可用 `git diff --name-only fd4c6b1..HEAD -- src/core/ src/runner/ src/map/ src/submission/`
+确认为空。

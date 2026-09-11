@@ -11,6 +11,7 @@
  */
 
 import { execFileSync, spawnSync } from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { MatchLog, Replay } from '../src/core/Logs';
@@ -189,4 +190,151 @@ test('operator-e2e: 操作台可重复使用 —— 同一入口连打两场（�
   assertEqual(replay.endReason, b.endReason, '回放必须记录同一个结束原因');
 });
 
+// ===========================================================================
+// 工作区保护（回归）
+// ===========================================================================
+
+/** 目录的逐文件 sha256 指纹 */
+function fingerprintDir(dir: string): string {
+  const entries: string[] = [];
+  const walk = (d: string, rel: string): void => {
+    for (const name of fs.readdirSync(d).sort()) {
+      if (name === '.staging' || name === '.slots') continue; // 槽位元数据本就可变
+      const full = path.join(d, name);
+      const r = path.join(rel, name);
+      if (fs.statSync(full).isDirectory()) walk(full, r);
+      else entries.push(`${r}:${crypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex')}`);
+    }
+  };
+  if (!fs.existsSync(dir)) return '(missing)';
+  walk(dir, '');
+  return entries.join('\n');
+}
+
+test('operator-e2e: 测试不得改写仓库里的固定算法槽位（工作区保护）', () => {
+  // 上面每一条 judge/operator 用例都会走「安装 → 替换槽位」流水线。
+  // 如果有一条忘了传 --slots，参赛算法就会被真的装进受跟踪的 algorithms/ ——
+  // 那是必须立刻变红的错误，而不是等到 `git status` 才发现。
+  const repoSlots = path.join(REPO, 'algorithms');
+  const fp = fingerprintDir(repoSlots);
+  assert(
+    fp !== '(missing)',
+    '仓库固定槽位 algorithms/ 必须存在（它出厂即 starter 的副本）'
+  );
+  // 出厂状态 = starter 的副本：每个槽位只应有 manifest.json 与 solver.py
+  for (const team of ['team-a', 'team-b']) {
+    const files = fs.readdirSync(path.join(repoSlots, team)).filter((f) => !f.startsWith('.'));
+    assertEqual(files.sort(), ['manifest.json', 'solver.py'], `${team} 必须仍是出厂状态`);
+    const same = fs
+      .readFileSync(path.join(repoSlots, team, 'solver.py'))
+      .equals(fs.readFileSync(path.join(REPO, 'starter', 'solver.py')));
+    assert(same, `${team}/solver.py 必须与 starter 逐字节相同`);
+  }
+});
+
 void runAll('operator-e2e');
+
+// ===========================================================================
+// 正式裁判入口（Rule Revision 3 §24/§33）
+//
+// 上面几条走的是底层操作台 `cli.ts`。这里走**面向裁判的入口** `judge.ts` ——
+// 它存在的意义就是「裁判不需要记 flag、不需要知道路径也能开一场正规比赛」。
+// ===========================================================================
+
+const JUDGE = path.join('src', 'operator', 'judge.ts');
+
+interface JudgeRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  matchDirs: string[];
+}
+
+/**
+ * 跑裁判台。
+ *
+ * **`--slots` 一律指向临时目录**：安装流水线会真的改写槽位根目录，
+ * 用仓库内的 `algorithms/` 会把参赛算法装进受跟踪的工作区
+ * （`hostile-input` 曾经踩过同一个坑）。这里连同下面的
+ * 「仓库槽位不得被测试改写」断言一起，把这类事故钉死。
+ */
+function runJudge(root: string, extra: string[]): JudgeRun {
+  const artifacts = path.join(root, 'artifacts');
+  const r = spawnSync(
+    'npx',
+    [
+      'ts-node', JUDGE, '--auto',
+      '--artifacts', artifacts,
+      '--slots', path.join(root, 'algorithms'),
+      '--points', '6', '--difficulty', 'easy',
+      ...extra,
+    ],
+    { cwd: REPO, encoding: 'utf8', timeout: TIMEOUT_MS }
+  );
+  const matches = path.join(artifacts, 'matches');
+  const matchDirs = fs.existsSync(matches)
+    ? fs
+        .readdirSync(matches)
+        .map((d) => path.join(matches, d))
+        .filter((d) => fs.existsSync(path.join(d, 'match.json')))
+    : [];
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, matchDirs };
+}
+
+test('judge: 只给 --auto 就能开一场正规比赛（不需要 --a/--b，不需要开发 flag）', () => {
+  const root = tmpDir('judge-solo');
+  // 把仓库出厂槽位复制到临时目录，复刻「裁判直接开赛」的默认路径，
+  // 但绝不写回仓库（见 runJudge 的说明）。
+  fs.cpSync(path.join(REPO, 'algorithms'), path.join(root, 'algorithms'), { recursive: true });
+  const run = runJudge(root, []);
+
+  assertEqual(run.status, 0, `裁判台应正常退出:\n${run.stdout}\n${run.stderr}`);
+  assertEqual(run.matchDirs.length, 1, '应产出恰好一场比赛的产物');
+
+  // 控制台板必须给出裁判需要的一切
+  assert(run.stdout.includes('JUDGE CONSOLE'), '应打印裁判控制台板');
+  assert(run.stdout.includes('Team A: READY'), '应显示 Team A 的就绪状态');
+  assert(run.stdout.includes('Team B: READY'), '应显示 Team B 的就绪状态');
+  assert(run.stdout.includes('MATCH RESULT'), '终局应打印比赛结果板');
+  assert(run.stdout.includes('End reason:'), '结果板必须给出终止原因');
+  assert(run.stdout.includes('AUDIT'), '应能直接查看审计摘要');
+
+  const log = readMatch(run.matchDirs[0]);
+  assert(
+    ['ELIMINATION', 'MUTUAL_ELIMINATION', 'STALEMATE', 'HARD_ROUND_LIMIT'].includes(log.endReason),
+    `必须以四类终止方式之一结束，实际 ${log.endReason}`
+  );
+  for (const name of ['match.json', 'audit.json', 'replay.json']) {
+    assert(fs.existsSync(path.join(run.matchDirs[0], name)), `产物必须包含 ${name}`);
+  }
+});
+
+test('judge: 一场结束后重置并直接开下一场（§33 的 reset → next match）', () => {
+  const root = tmpDir('judge-two');
+  // 用两个参考算法跑两场：既走「载入算法」的安装路径，又能快速分出胜负
+  const run = runJudge(root, ['--matches', '2', '--a', ALGO_A, '--b', ALGO_B]);
+
+  assertEqual(run.status, 0, `裁判台应正常退出:\n${run.stderr}`);
+  assertEqual(run.matchDirs.length, 2, '同一会话里应产出两场比赛的产物');
+  const ids = run.matchDirs.map((d) => readMatch(d).matchId);
+  assert(ids[0] !== ids[1], '两场必须是不同的 matchId');
+  for (const d of run.matchDirs) {
+    const log = readMatch(d);
+    assert(log.rounds.length >= 1, '每场都应至少跑过一轮');
+    assert(fs.existsSync(path.join(d, 'replay.json')), '每场都应有回放');
+  }
+  assert(run.stdout.includes('比赛 2 就绪'), '应明确打印「第二场已就绪」');
+});
+
+test('judge: 现场大屏模式不含任何开发者诊断（§25）', () => {
+  const root = tmpDir('judge-spectator');
+  const run = runJudge(root, ['--spectator', '--no-anim', '--a', ALGO_A, '--b', ALGO_B]);
+
+  assertEqual(run.status, 0, `大屏模式应正常退出:\n${run.stderr}`);
+  const out = run.stdout;
+  assert(out.includes('ROUND'), '大屏必须显示当前回合');
+  assert(out.includes('Ⓐ') && out.includes('Ⓑ'), '大屏必须画出固定 Emitter');
+  assert(!/\/Users\/|\/var\/folders\//.test(out), '大屏不得出现文件系统路径');
+  assert(!out.includes('sha256'), '大屏不得出现哈希');
+  assert(!out.includes('JUDGE CONSOLE'), '大屏不显示裁判控制台（那是裁判的东西）');
+});

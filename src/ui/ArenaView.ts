@@ -36,6 +36,14 @@ export interface ArenaFrame {
   /** 轨迹（已经降采样），A/B 分别绘制 */
   trajectoryA?: readonly Point[];
   trajectoryB?: readonly Point[];
+  /**
+   * 轨迹的**显示比例**（0..1）—— 动画用。
+   *
+   * 0 表示还没开始传播，1 表示整条轨迹都已画出。省略即 1（静态整条）。
+   * 只影响**绘制**，不影响任何判定：轨迹本身是引擎判定完的只读数据。
+   */
+  revealA?: number;
+  revealB?: number;
   /** 本轮被击杀的点（高亮用；文本模式下画成 ×） */
   killed?: readonly string[];
 }
@@ -55,6 +63,18 @@ const GLYPH = {
   corner: '+',
   vertical: '|',
 };
+
+/**
+ * 取轨迹的前 `ratio` 段（动画用）。
+ *
+ * 至少返回 1 个点（只要轨迹非空）—— 否则「刚开始传播」的那一帧会什么都看不见。
+ */
+function revealed(trajectory: readonly Point[] | undefined, ratio: number | undefined): readonly Point[] {
+  if (!trajectory || trajectory.length === 0) return [];
+  const r = ratio === undefined ? 1 : Math.min(1, Math.max(0, ratio));
+  if (r >= 1) return trajectory;
+  return trajectory.slice(0, Math.max(1, Math.round(r * trajectory.length)));
+}
 
 /** 把一个数学坐标映射到网格坐标（y 轴向上，网格行号向下，因此要翻转） */
 function projectX(x: number, cols: number): number {
@@ -95,8 +115,8 @@ export function renderArena(frame: ArenaFrame, cols = 59, rows = 17): string {
   }
 
   // ---- 2. 轨迹（不覆盖障碍物，让阻挡关系看得见）----
-  for (const p of frame.trajectoryA ?? []) put(p, GLYPH.trajA, false);
-  for (const p of frame.trajectoryB ?? []) put(p, GLYPH.trajB, false);
+  for (const p of revealed(frame.trajectoryA, frame.revealA)) put(p, GLYPH.trajA, false);
+  for (const p of revealed(frame.trajectoryB, frame.revealB)) put(p, GLYPH.trajB, false);
 
   // ---- 3. 战斗点 ----
   const killed = new Set(frame.killed ?? []);
