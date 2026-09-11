@@ -1,0 +1,29 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+artifacts/
+runs/
+
+# 算法槽位的上传暂存区与安装记录（规范 §31/§32）——
+# 二者都**不属于**算法包，绝不能进版本库，也不能进包哈希。
+algorithms/.staging/
+algorithms/.slots/
+
+# Playtest Harness 的槽位安装目录（playtest-only）。内容是 contenders 的
+# 已安装副本 + 安装记录，全部可由 `gb_playtest.py --install` 从
+# `playtest/competitors/` 重新生成；且 install-report.json 与 .slots/*.json
+# 记录了本机绝对路径，不适合作为基线证据入库。
+playtest/slots/
+
+# 例外：`*.log` 是全局规则，但每一轮 raw evidence 里逐场的平台 console
+# 日志都是原始证据链的一部分，必须随 raw/ 一起入库，故在此显式豁免。
+# 轮次目录层级不同（round-1: results/raw/...，round-2: results/round-2/raw/...），
+# 因此用 ** 跨层匹配，而不是写死某一轮的路径。
+!playtest/results/**/console.log
+
+# Web UI 构建产物与浏览器演练产物
+web/dist/
+test-results/
+playwright-report/
+web/e2e/.artifacts/

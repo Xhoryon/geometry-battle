@@ -1,0 +1,166 @@
+# Playtest 证据包 — 公开范围与复现方法
+
+本目录说明 `playtest/results/` 这份**精简证据包**公开了什么、省略了什么，
+以及第三方如何独立复现其中的主要结论。
+
+---
+
+## 0. 占位符
+
+本公开副本**不含任何生成机器上的绝对路径**。若在报告或命令块中见到下列占位符：
+
+| 占位符 | 含义 |
+|---|---|
+| `<repo>` | 本仓库根目录（即你 clone 下来的目录） |
+| `<workspace>` | 任意可写临时目录，例如本机 `/tmp/work` 下的一个子目录 |
+
+`sandbox-exec` 拒绝读取 `/Users`、`/private/tmp` 等路径，这类**系统级前缀**出现在
+平台源码与回归测试里（`src/runner/SandboxRunner.ts`、`tests/web-server.ts` 等），
+是平台行为的真实描述，不是机器信息，因此原样保留。
+
+---
+
+## 1. 为什么要精简
+
+完整的 playtest 归档是 **4092 个文件 / 约 624 MB**，其中绝大部分是逐场 `replay.json`
+与 `console.log`：体积大、内容高度重复，并且记录了生成机器上的绝对路径。
+
+公开副本因此改为**可复现的精简证据包**：结论、指标与交叉核对数据**全部保留**；
+逐场原始产物按「**每场留最小记录 + 每对阵留代表性完整样本**」的方式保留。
+
+| | 文件数 | 体积 |
+|---|---|---|
+| 原始归档 | 4092 | ~624 MB |
+| 本公开副本 | 2153 | ~100 MB |
+
+---
+
+## 2. 公开了什么（完整保留，未删减）
+
+| 路径 | 内容 |
+|---|---|
+| `DUAL_ALGORITHM_PLAYTEST_REPORT.md` | Round-1 双算法基线报告 |
+| `round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md` | Round-2 三方平衡报告 |
+| `shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.md` | 取消规则修订后的再平衡报告 |
+| `<round>/metrics-*.json` | 逐场 records + 汇总指标 |
+| `<round>/*-summary.json` | 各轮汇总（含 §21 分位与 CF 汇总） |
+| `round-2/matrix-*.json` | §10 离线鲁棒性矩阵 |
+| `bench/` | §9 分阶段基准 |
+| `<round>/cf/verify-*.json` | **§18 门禁产物**（逐项计数与失配明细） |
+| `<round>/cf/rounds-*.json`、`cf/fn-*.json`、`cf/sim-*/` | 反事实与回合级取消归因 |
+| `round-2/platform-contaminated/` | §23 污染批**全部 8 个案例**的完整原始证据 |
+| `round-2/cap60-probe/`、`shooter-rule-revision/cap60-probe/` | 吸收态检验（cap 30 vs 60） |
+| `revision-3-timeout-bench/BENCHMARK.json` | Rule Revision 3 §11 超时基准的聚合结论 |
+| `../harness/` 与 `../competitors/` | 全部 harness 脚本、conditions 与三个参考算法 |
+
+`cf/sim-*/` 是完整的（两种模式 × 180 场），未抽样。
+
+---
+
+## 3. 抽样公开了什么
+
+`<round>/raw/<pair>/` 下的逐场目录分两档：
+
+| 归档内容 | 保留策略 |
+|---|---|
+| **每场** | `match.json` + `summary.json` |
+| **代表性 seed**（每对阵 2 个 seed × 2 个先后手 = 4 场） | 完整产物：`match.json` / `summary.json` / `replay.json` / `audit.json` / `console.log` |
+
+保留 `match.json` 的**全部**场次是关键：`reproduce_round1.py` 与逐场对账都只依赖它。
+只有 `gb_check.py` 需要 `replay.json`，而它对缺失该文件的对局**显式跳过**
+（`worlds_from_raw()` 里的 `if not os.path.isfile(p): continue`），因此抽样不会让它报错。
+
+覆盖情况：
+
+| 轮次 | `match.json` | 完整产物样本 |
+|---|---|---|
+| Round-1（`raw/`） | 60 场 | 4 场 |
+| Round-2（`round-2/raw/`） | 180 场 | 12 场 |
+| Shooter rule revision | 180 场 | 12 场 |
+| Revision 3 | 180 场 | 12 场 |
+
+---
+
+## 4. 未公开什么，以及为什么
+
+| 未公开 | 原因 |
+|---|---|
+| 逐场 `replay.json` / `audit.json` / `console.log` 的其余场次（约 3300 个文件 / ~540 MB） | 体积大且高度重复；`match.json` 已包含复核所需的全部判定数据 |
+| `playtest/slots/` | 槽位安装记录与 `install-report.json`，含生成机器绝对路径；可由 `gb_playtest.py install` 从 `playtest/competitors/` 重新生成 |
+| `revision-3-timeout-bench/t{250,500,750}/` 的逐场产物 | `BENCHMARK.json` 已是自足的聚合结论（`timeoutRate` / `roundSides` / 缺失场次清单） |
+
+**这些数据并未丢失。** 按下一节重跑 harness 即可完整重建，且重建结果可与本目录下
+已公开的 `metrics-*.json` / `*-summary.json` / `cf/verify-*.json` 逐条比对。
+
+---
+
+## 5. 如何复现
+
+### 5.1 只读复核（不需要重跑平台）
+
+Round-1 基线可以**仅凭本仓库已入库的证据**重新推导 —— 这是最快的验真入口：
+
+```bash
+# 依赖：Python 3.9+，无需 npm install
+python3 playtest/harness/reproduce_round1.py
+```
+
+它解析 `playtest/results/raw/*/match.json`，与 `run-summary.json`、`metrics.json`、
+`crosscheck.json` 逐条对账，并与 `DUAL_ALGORITHM_PLAYTEST_REPORT.md` 中声称的数字比较。
+全部一致时打印 `ROUND-1 BASELINE REPRODUCED` 并以 `0` 退出；任一不一致则非零退出。
+
+> 该脚本对**本精简副本同样成立** —— 上表保留全部 60 场的 `match.json` 正是为此。
+
+### 5.2 重跑平台
+
+前置：Node.js + `npm install`（平台），Python 3.9+（harness）。
+
+```bash
+# 1. 安装参考算法到 playtest 槽位（受 .gitignore 忽略，不会污染工作区）
+python3 playtest/harness/gb_playtest.py install \
+    --fast playtest/competitors/solver-fast \
+    --optimizer playtest/competitors/solver-optimizer
+
+# 2. Round-1 双算法基线（本机约 8 分钟）
+python3 playtest/harness/gb_playtest.py run \
+    --conditions playtest/harness/conditions.json \
+    --out playtest/results/raw --max-rounds 30
+python3 playtest/harness/gb_playtest.py analyze \
+    --raw playtest/results/raw --out playtest/results
+
+# 3. Round-2 三方平衡（180 场，本机约 32 分钟）
+bash playtest/harness/run_round2_experiments.sh
+python3 playtest/harness/analyze_round2.py
+```
+
+Round-2 与 Shooter rule revision 的**完整**分步命令（含反事实、门禁、吸收态检验）
+见两份报告各自的「复现」小节，其产物索引也一并列出，可直接照抄。
+
+### 5.3 重建被省略的逐场产物
+
+上面第 2、3 步的 `--out playtest/results/raw`（或 `round-2/raw` 等）会重新生成完整的
+逐场 `replay.json` / `audit.json` / `console.log`。把它们与本目录已公开的汇总文件对账，
+即可确认公开副本与完整归档一致。
+
+```bash
+# 例：重建反事实缓存与门禁产物后，与已公开的 verify-*.json 比对
+for p in fast-vs-optimizer optimizer-vs-hybrid fast-vs-hybrid; do
+  python3 playtest/harness/gb_counterfactual.py verify \
+      --raw playtest/results/round-2/raw/$p \
+      --out playtest/results/round-2/cf/verify-$p.json
+done
+```
+
+> **注意（Shooter rule revision）**：不要复用 Round-2 的 `--out` 或 `--cache` ——
+> 那些归档属于**旧规则**。`gb_round2.py run` 对已归档的对局是幂等的（会跳过），
+> 复用到旧目录会得到 0 场新结果。详见该报告 §18 的说明。
+
+---
+
+## 6. 数据可信度边界
+
+- 本目录的汇总数字是**当时那台机器上**跑出来的；`metrics-*.json` 中的计算耗时反映该机器。
+- 平台自身的公平性保障（同 GO 时刻起算、mtime 计时、沙箱隔离等）见仓库根
+  [README](../../../README.md) 的「隔离与公平性」一节，以及 `tests/timing-fairness.ts`。
+- 精简只影响**证据的体积**，不影响任何已公开结论的**可复核性**：所有结论所依赖的
+  `match.json`、汇总与交叉核对产物都在。

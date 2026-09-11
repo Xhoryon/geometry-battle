@@ -1,0 +1,41 @@
+{
+  "_comment": "Rule Revision 3 §11 timeout benchmark. Same 3 map conditions, both slot arrangements, all 3 pairings, at 250/500/750 ms. The frozen reference solvers were NOT adapted (only their input-reading was ported to public_state.emitters). A round-side counts as a TIMEOUT if that side's runner errorCode is TIMEOUT.",
+  "budgets": {
+    "250ms": {
+      "matchesMissing": [
+        "fast-vs-optimizer/s101-p6-medium__fast-A",
+        "fast-vs-optimizer/s202-p6-medium__optimizer-A",
+        "fast-vs-optimizer/s303-p6-medium__fast-A",
+        "fast-vs-optimizer/s303-p6-medium__optimizer-A",
+        "optimizer-vs-hybrid/s202-p6-medium__hybrid-A",
+        "optimizer-vs-hybrid/s303-p6-medium__hybrid-A",
+        "optimizer-vs-hybrid/s303-p6-medium__optimizer-A"
+      ],
+      "note": "preflight failures too — algorithms exceeded the budget even in the small decoy world",
+      "roundSides": 128,
+      "timeoutRate": 0.1562,
+      "timeouts": {
+        "optimizer": 20
+      }
+    },
+    "500ms": {
+      "matchesMissing": [],
+      "note": "",
+      "roundSides": 218,
+      "timeoutRate": 0.0,
+      "timeouts": {}
+    },
+    "750ms": {
+      "matchesMissing": [],
+      "note": "",
+      "roundSides": 218,
+      "timeoutRate": 0.0,
+      "timeouts": {}
+    }
+  },
+  "conditions": [
+    "s101-p6-medium",
+    "s202-p6-medium",
+    "s303-p6-medium"
+  ]
+}
