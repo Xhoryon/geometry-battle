@@ -54,7 +54,12 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
   const [busyLocal, setBusyLocal] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [notes, setNotes] = useState<string[]>([]);
-  const [preview, setPreview] = useState<{ path: string; text: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    path: string;
+    text: string;
+    truncated: boolean;
+    binary: boolean;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,7 +109,13 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
     async (relPath: string) => {
       const r = await fetchTeamSource(team, relPath);
       if (!r.ok) setErrors(r.errors);
-      else setPreview({ path: relPath, text: r.text ?? '' });
+      else
+        setPreview({
+          path: relPath,
+          text: r.text ?? '',
+          truncated: Boolean(r.truncated),
+          binary: Boolean(r.binary),
+        });
     },
     [team]
   );
@@ -269,8 +280,20 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
                 <h2>{preview.path}</h2>
                 <span className="muted">只读</span>
               </div>
-              {/* 与裁判台的源码预览共用同一个类 —— 两端看到的是同一段代码 */}
-              <pre className="source-view">{preview.text}</pre>
+              {preview.binary ? (
+                <p className="muted" data-testid="team-source-binary">
+                  二进制文件 —— 不提供预览
+                </p>
+              ) : (
+                <>
+                  <pre className="source-view">{preview.text}</pre>
+                  {preview.truncated ? (
+                    <p className="muted" data-testid="team-source-truncated">
+                      内容已截断（仅显示开头部分）
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           )}
         </section>

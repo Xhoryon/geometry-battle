@@ -331,7 +331,13 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
           sendJson(res, 400, { ok: false, errors: r.errors });
           return;
         }
-        sendJson(res, 200, { ok: true, path: rel, text: r.text });
+        sendJson(res, 200, {
+          ok: true,
+          path: rel,
+          text: r.text,
+          truncated: r.truncated ?? false,
+          binary: r.binary ?? false,
+        });
         return;
       }
       // ---- 裁判端只读（V1.2 §一：主办方核对选手交上来的源码）----
@@ -347,7 +353,13 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
           sendJson(res, 400, { ok: false, errors: r.errors });
           return;
         }
-        sendJson(res, 200, { ok: true, path: rel, text: r.text });
+        sendJson(res, 200, {
+          ok: true,
+          path: rel,
+          text: r.text,
+          truncated: r.truncated ?? false,
+          binary: r.binary ?? false,
+        });
         return;
       }
       if (method === 'GET' && pathname.startsWith('/api/trajectory/')) {

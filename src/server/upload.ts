@@ -117,13 +117,52 @@ export function writeUploadedPackage(files: UploadedFile[]): StagedUpload {
 }
 
 /**
+ * 在线预览的体积上限。
+ *
+ * 超过就**截断**并如实标注，而不是拒绝 —— 一份合法的包里有大文件（比如很长的
+ * README）不该让主办方完全看不到它。同时这也让本端点不会变成
+ * 「一个没有上限的通用文件服务器」。
+ */
+export const PREVIEW_MAX_BYTES = 256 * 1024;
+
+/** 二进制嗅探只看开头这一段 */
+const BINARY_SNIFF_BYTES = 8192;
+
+/** 一次源码预览的结果 */
+export interface FilePreview {
+  /** 文本内容；`binary` 为 true 时是空串 */
+  text: string;
+  /** 内容超过 `PREVIEW_MAX_BYTES`，已截断 */
+  truncated: boolean;
+  /** 判定为二进制 —— 不提供预览，也不尝试解码 */
+  binary: boolean;
+}
+
+/**
+ * 二进制嗅探：开头这一段里出现 NUL 字节就当作二进制。
+ *
+ * 只做这一条廉价判断，不去猜编码 —— 包的扩展名白名单（`.py/.json/.txt/…`）
+ * 已经把二进制挡在门外，这里是给「万一」兜底，宁可说「不提供预览」，
+ * 也不要把一段乱码当源码渲染出来。
+ */
+function looksBinary(bytes: Buffer): boolean {
+  const n = Math.min(bytes.length, BINARY_SNIFF_BYTES);
+  for (let i = 0; i < n; i++) {
+    if (bytes[i] === 0) return true;
+  }
+  return false;
+}
+
+/**
  * 只读读回包内的一个文件（浏览源码）。
  *
  * 与上传同样的两道防线：先按相对路径的规则拒一次，再 `resolve` 复核一次。
  * 另外拒绝任何指向包外的符号链接 —— 包本身不允许符号链接（规范 §1），
  * 但这里不复用那条规则，而是直接查 `lstat`，避免依赖上游的校验顺序。
+ *
+ * 二进制与超长文件都走**受控降级**（`binary` / `truncated`），不抛错、不解码。
  */
-export function readPackageFile(packageDir: string, relPath: string): string {
+export function readPackageFile(packageDir: string, relPath: string): FilePreview {
   if (!isSafeRelPath(relPath)) throw new Error(`非法路径: ${relPath}`);
   const base = path.resolve(packageDir);
   const target = path.resolve(base, relPath);
@@ -142,11 +181,19 @@ export function readPackageFile(packageDir: string, relPath: string): string {
   }
   if (st.isSymbolicLink()) throw new Error('不允许读取符号链接');
   if (!st.isFile()) throw new Error('不是一个文件');
-  if (st.size > 512 * 1024) throw new Error('文件过大，不予在线浏览');
 
+  let bytes: Buffer;
   try {
-    return fs.readFileSync(target, 'utf-8');
+    bytes = fs.readFileSync(target);
   } catch {
     throw new Error(`读取失败: ${relPath}`);
   }
+
+  if (looksBinary(bytes)) return { text: '', truncated: false, binary: true };
+
+  const truncated = bytes.length > PREVIEW_MAX_BYTES;
+  const slice = truncated ? bytes.subarray(0, PREVIEW_MAX_BYTES) : bytes;
+  // 按字节截断可能切在多字节字符中间，末尾会落一个替换字符 —— 可接受：
+  // 与其在这里做编码推断，不如让「已截断」这个标注去解释它。
+  return { text: slice.toString('utf-8'), truncated, binary: false };
 }

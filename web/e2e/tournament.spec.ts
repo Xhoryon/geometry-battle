@@ -217,6 +217,15 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   // ---- 2. 两队**真实上传**（各自独立的浏览器上下文，互不可见）----
   const pageA = await page.context().newPage();
   const pageB = await page.context().newPage();
+
+  // §77：隐藏选择是**传输层**性质，不只是视觉性质。
+  // 因此把 B 端收到的每一条 WebSocket 文本帧都记下来，稍后逐字检查
+  // —— 只断言 DOM/innerText 是不够的，DOM 里没有不代表载荷里没有。
+  const bFrames: string[] = [];
+  pageB.on('websocket', (ws) => {
+    ws.on('framereceived', (f) => bFrames.push(String(f.payload)));
+  });
+
   await uploadPackage(pageA, 'A');
   clock.mark('Team A 上传算法包（含沙箱 preflight）');
   await uploadPackage(pageB, 'B');
@@ -237,7 +246,21 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   await expect(pageB.locator('[data-testid="team-emitters"]')).toHaveCount(0);
   const bText = await pageB.locator('body').innerText();
   expect(bText, 'B 端不得出现 A 的选择').not.toContain(idA);
-  clock.mark(`Team A 选定并锁定 Emitter（${idA}），且未泄漏给 B`);
+
+  // §77：载荷里也不许有 —— 服务端根本不发，而不是前端藏起来
+  expect(bFrames.length, 'B 端应当收到过 board 推送').toBeGreaterThan(0);
+  const leaked = bFrames.filter((f) => f.includes(idA));
+  expect(leaked, `B 端收到的 WebSocket 载荷里不得出现 A 的选择（${idA}）`).toEqual([]);
+  clock.mark(`Team A 选定并锁定 Emitter（${idA}），DOM 与 WS 载荷均未泄漏给 B`);
+
+  // §72 / §112：锁定是**服务端owns**的状态，刷新参赛者页必须原样恢复
+  await pageA.reload();
+  await expect(pageA.locator('[data-testid="team-candidates"]')).toBeVisible({ timeout: 60000 });
+  await expect(pageA.locator('[data-testid="team-emitter"] .tag')).toHaveText('已锁定');
+  await expect(pageA.locator('[data-testid="team-lock"]')).toBeDisabled();
+  const aReloaded = await pageA.locator('body').innerText();
+  expect(aReloaded, '刷新后 A 仍应看到自己选的那个点').toContain(idA);
+  clock.mark('参赛者页刷新后，Emitter 选择与锁定状态原样恢复');
 
   // ---- 5. B 也选并锁定 → 双方公开 ----
   const idB = await pickAndLock(pageB, 'B', 1);

@@ -254,18 +254,23 @@ export class MatchSession {
     team: TeamSlot,
     relPath: string,
     notReady: string
-  ): { ok: boolean; errors: string[]; text?: string } {
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
     const slot = this.setup.slotStates()[team];
     if (slot.status !== 'READY') return { ok: false, errors: [notReady] };
     try {
-      return { ok: true, errors: [], text: readPackageFile(slot.dir, relPath) };
+      const p = readPackageFile(slot.dir, relPath);
+      // 二进制与超长都是**受控降级**，不是错误：ok 仍为 true，由调用方如实展示。
+      return { ok: true, errors: [], text: p.text, truncated: p.truncated, binary: p.binary };
     } catch (e) {
       return { ok: false, errors: [(e as Error).message] };
     }
   }
 
   /** 参赛者视角：只读**本队**的源码 */
-  readOwnSource(team: TeamSlot, relPath: string): { ok: boolean; errors: string[]; text?: string } {
+  readOwnSource(
+    team: TeamSlot,
+    relPath: string
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
     return this.readSlotFile(team, relPath, '本队尚未安装算法包');
   }
 
@@ -275,7 +280,10 @@ export class MatchSession {
    * V1.2 §一要求主办方能在网页上查看上传的算法源码 —— 这正是「投的是不是
    * 选手那份」最直接的核对手段（哈希对不了人眼，源码可以）。
    */
-  readSlotSource(team: TeamSlot, relPath: string): { ok: boolean; errors: string[]; text?: string } {
+  readSlotSource(
+    team: TeamSlot,
+    relPath: string
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
     return this.readSlotFile(team, relPath, `Team ${team} 的槽位尚未就绪`);
   }
 

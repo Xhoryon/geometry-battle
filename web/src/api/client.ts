@@ -237,34 +237,38 @@ export const TEAM_PATHS = {
  * 参赛者端（`/api/team/source`）与裁判端（`/api/judge/source`）只有**路径**不同，
  * 读取与防护是服务端同一条实现 —— 这里也就不必写两份 fetch。
  */
-async function fetchSource(
-  base: string,
-  team: TeamSide,
-  relPath: string
-): Promise<{ ok: boolean; errors: string[]; text?: string }> {
+/**
+ * 一次源码预览的结果。
+ *
+ * `binary` / `truncated` 是服务端的**受控降级**（不是错误）：
+ * 二进制不尝试解码，超长如实标注「已截断」。
+ */
+export interface SourcePreview {
+  ok: boolean;
+  errors: string[];
+  text?: string;
+  truncated?: boolean;
+  binary?: boolean;
+}
+
+async function fetchSource(base: string, team: TeamSide, relPath: string): Promise<SourcePreview> {
   try {
     const res = await fetch(
       `${base}?team=${team.toLowerCase()}&path=${encodeURIComponent(relPath)}`
     );
-    return (await res.json()) as { ok: boolean; errors: string[]; text?: string };
+    return (await res.json()) as SourcePreview;
   } catch (e) {
     return { ok: false, errors: [`无法连接到本地服务：${(e as Error).message}`] };
   }
 }
 
 /** 参赛者视角：只读本队的源码 */
-export function fetchTeamSource(
-  team: TeamSide,
-  relPath: string
-): Promise<{ ok: boolean; errors: string[]; text?: string }> {
+export function fetchTeamSource(team: TeamSide, relPath: string): Promise<SourcePreview> {
   return fetchSource(TEAM_PATHS.source, team, relPath);
 }
 
 /** 裁判 / 主办方视角：可读**任一队**的源码（核对选手交上来的到底是什么） */
-export function fetchJudgeSource(
-  team: TeamSide,
-  relPath: string
-): Promise<{ ok: boolean; errors: string[]; text?: string }> {
+export function fetchJudgeSource(team: TeamSide, relPath: string): Promise<SourcePreview> {
   return fetchSource(JUDGE_READ_PATHS.source, team, relPath);
 }
 

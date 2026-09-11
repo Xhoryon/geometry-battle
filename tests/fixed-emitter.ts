@@ -123,6 +123,31 @@ test('fixed-emitter: 锁定之后不可更换（整场不可变）', async () =>
   assertEqual(JSON.stringify(engine.getEmitters()), before, '整场锚点不得变化');
 });
 
+test('fixed-emitter: 锁定**之前**可以改选，且对手看不到改了什么（§73）', async () => {
+  // 规格 §24：锁定前选手可以改选别的本方候选，UI 必须如实反映当前选择。
+  // 与「锁定后不可更换」是一对 —— 两条都要有，否则「锁定」的语义不完整。
+  const engine = await readyToSelect('FE-RESELECT');
+
+  assert(engine.selectEmitter('A', 'A1').ok, 'A 应能选 A1');
+  assertEqual(engine.getSnapshot().emitterSelection.A.selected!.id, 'A1', '选择应为 A1');
+
+  // 改选 —— 未锁定，必须允许
+  assert(engine.selectEmitter('A', 'A3').ok, '锁定前应能改选');
+  assertEqual(engine.getSnapshot().emitterSelection.A.selected!.id, 'A3', '改选后应变成 A3');
+
+  // 改选过程对 B 依然不可见：只知道「A 还没锁」
+  const sel = engine.getSnapshot().emitterSelection;
+  assertEqual(sel.A.locked, false, '改选不会顺带锁定');
+  assertEqual(sel.B.selected, null, 'B 仍未选择');
+  assertEqual(sel.revealed, false, '整体仍未公开');
+  assertEqual(engine.getSnapshot().emitters, null, '未公开时快照不得带出任何锚点坐标');
+
+  // 锁定之后才定死
+  assert(engine.lockEmitter('A').ok, 'A 应能锁定');
+  assert(!engine.selectEmitter('A', 'A4').ok, '锁定后不得再改选');
+  assertEqual(engine.getSnapshot().emitterSelection.A.selected!.id, 'A3', '锁定的就是改选后的那个');
+});
+
 test('fixed-emitter: 只能选自己队的点', async () => {
   const engine = await readyToSelect('FE-OWN');
   assert(!engine.selectEmitter('A', 'B1').ok, 'A 不得选 B 的点');

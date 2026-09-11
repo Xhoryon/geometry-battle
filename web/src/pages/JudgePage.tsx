@@ -244,7 +244,13 @@ export function JudgePage(): JSX.Element {
 
   // ---- 源码浏览（V1.2 §一：主办方核对选手交上来的到底是什么）----
   // 内容不随 board 推送 —— 点开哪个文件才去取哪个，取到的原文留在本地。
-  const [preview, setPreview] = useState<{ team: 'A' | 'B'; path: string; text: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    team: 'A' | 'B';
+    path: string;
+    text: string;
+    truncated: boolean;
+    binary: boolean;
+  } | null>(null);
   const [previewErrors, setPreviewErrors] = useState<string[]>([]);
 
   if (!board) {
@@ -293,7 +299,13 @@ export function JudgePage(): JSX.Element {
       setPreview(null);
       return;
     }
-    setPreview({ team, path: relPath, text: r.text ?? '' });
+    setPreview({
+      team,
+      path: relPath,
+      text: r.text ?? '',
+      truncated: Boolean(r.truncated),
+      binary: Boolean(r.binary),
+    });
   };
 
   // ---- 向导：阶段只决定「显示哪一步」 ----
@@ -549,9 +561,22 @@ export function JudgePage(): JSX.Element {
                 </h2>
                 <span className="muted">只读</span>
               </div>
-              <pre className="source-view" data-testid="judge-source-text">
-                {preview.text}
-              </pre>
+              {preview.binary ? (
+                <p className="muted" data-testid="judge-source-binary">
+                  二进制文件 —— 不提供预览
+                </p>
+              ) : (
+                <>
+                  <pre className="source-view" data-testid="judge-source-text">
+                    {preview.text}
+                  </pre>
+                  {preview.truncated ? (
+                    <p className="muted" data-testid="judge-source-truncated">
+                      内容已截断（仅显示开头部分）
+                    </p>
+                  ) : null}
+                </>
+              )}
             </div>
           ) : null}
         </section>

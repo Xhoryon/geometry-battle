@@ -14,6 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { startServer, RunningServer } from '../src/server/main';
+import { PREVIEW_MAX_BYTES, readPackageFile } from '../src/server/upload';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
@@ -471,6 +472,45 @@ test('server-team: 主办方能在网页上查看上传的算法源码（V1.2 §
   } finally {
     await ctx.server.close();
   }
+});
+
+test('server-team: 源码预览的边界 —— 嵌套 / 绝对路径 / 二进制 / 超长（§39–§41）', () => {
+  // 规格 §39–§41：预览必须用包内相对标识、拒绝越界路径、
+  // 二进制不解码、超长受控截断。这里直接测读取内核 —— 它是 HTTP 两端点共用的实现。
+  const dir = tmpDir('preview');
+  fs.mkdirSync(path.join(dir, 'utils'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'utils', 'helper.py'), '# nested\n');
+  fs.writeFileSync(path.join(dir, 'plain.py'), 'x = 1\n');
+  // 头部含 NUL —— 按二进制处理
+  fs.writeFileSync(path.join(dir, 'blob.py'), Buffer.from([0x50, 0x4b, 0x00, 0x01, 0xff, 0xfe]));
+  fs.writeFileSync(path.join(dir, 'big.py'), 'a'.repeat(PREVIEW_MAX_BYTES + 128));
+
+  // 普通文件与**嵌套**文件都能读到
+  assertEqual(readPackageFile(dir, 'plain.py').text, 'x = 1\n', '普通文件应可读');
+  assertEqual(readPackageFile(dir, 'utils/helper.py').text, '# nested\n', '嵌套文件应可读');
+
+  // 越界与未知一律抛错（消息里只回显调用方自己传的 relPath）
+  for (const bad of ['/etc/passwd', '../escape.py', 'nope.py', '', 'utils/../../x.py']) {
+    let threw = false;
+    try {
+      readPackageFile(dir, bad);
+    } catch {
+      threw = true;
+    }
+    assert(threw, `非法路径 ${JSON.stringify(bad)} 必须被拒`);
+  }
+
+  // 二进制：受控降级，不尝试解码
+  const bin = readPackageFile(dir, 'blob.py');
+  assertEqual(bin.binary, true, '含 NUL 的文件应判为二进制');
+  assertEqual(bin.text, '', '二进制不返回任何文本（绝不渲染乱码）');
+
+  // 超长：截断并标注，而不是拒绝 —— 大文件不该让主办方完全看不到
+  const big = readPackageFile(dir, 'big.py');
+  assertEqual(big.binary, false, '超长文本文件不是二进制');
+  assertEqual(big.truncated, true, '超过上限应标注已截断');
+  assert(big.text.length <= PREVIEW_MAX_BYTES, `截断后不应超过上限，实际 ${big.text.length}`);
+  assert(big.text.length > 0, '截断后仍应有内容可看');
 });
 
 void runAll('server-team');
