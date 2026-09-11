@@ -268,6 +268,38 @@ os.replace(tmp, a.output)
 
 ## 运行
 
+### 本地 Web UI（推荐）
+
+```bash
+npm install
+npm run app          # 构建前端 → 起服务 → 绑定 127.0.0.1:17800 → 自动开浏览器
+```
+
+打开后：
+
+| 路由 | 用途 |
+|---|---|
+| `/judge` | 裁判台：载入算法 → 校验 → 开赛 → 揭晓 → START → 结算 → 终局 → 重置 → 下一场 |
+| `/spectator` | 观众大屏：满屏竞技场 + 轨迹动画 + 存活数 + 计算状态。**只读**，无任何诊断信息 |
+| `/replay/:matchId` | 回放：用已落盘的 match/audit/replay 重放，**不重新运行任何算法** |
+
+裁判台的**正式主流程是「使用槽位算法」** —— 选手把算法投进 `algorithms/team-a|team-b`
+之后，裁判点两下就能开赛，不需要知道任何文件路径。临时换算法在
+`Advanced · 替换算法与比赛设置` 里（输入的是**服务端**上的目录绝对路径）。
+
+服务只绑定 `127.0.0.1`，并对命令请求做 Host + Origin 校验（拒绝跨站控制与 DNS rebinding）。
+
+```bash
+npm run app:dev      # 开发模式：服务 + vite dev server（HMR）
+npm run e2e          # Playwright 浏览器完整赛事演练（真实算法 + 真实浏览器）
+```
+
+> 浏览器演练默认用**系统已装的 Google Chrome**（`channel: 'chrome'`）。
+> 若要改用 Playwright 自带内核，删掉 `web/e2e/playwright.config.ts` 里的 `channel`
+> 后跑一次 `npx playwright install chromium`。
+
+### 终端（fallback，与 Web UI 完全等价）
+
 ```bash
 npm install
 
@@ -282,11 +314,13 @@ npx ts-node src/operator/cli.ts --a ./pkgA --slots /tmp/gb-slots    # 换用别�
 
 npx ts-node src/operator/cli.ts --replay ./artifacts/matches/<id>   # 只读回放
 
-# 类型检查
+# 类型检查（平台 + 服务端；前端另有 typecheck:web）
 npm run typecheck
+npm run typecheck:web
 
-# 回归测试（24 个套件，清单见 tests/run-all.ts）
+# 回归测试（32 个套件，清单见 tests/run-all.ts）
 npm test
+npm test -- web-projection web-server      # 只跑指定套件
 
 # 地图生成器压力验证（默认 300,000 张）
 npm run stress
@@ -309,15 +343,42 @@ npm run stress
 │   ├── map/           # MapGenerator（含 §47 公平性过滤）
 │   ├── submission/    # 包校验 / 密封 / 防篡改 / 算法槽位 / 固定 Runtime
 │   ├── runner/        # SandboxRunner（sandbox-exec + 进程组 + 计时屏障）
-│   ├── operator/      # 正式操作台 CLI
-│   ├── ui/            # 操作台 / 观众屏 / 裁判屏
-│   └── visualizer/    # 函数与轨迹可视化
+│   ├── operator/      # 正式操作台 CLI 与裁判台（终端）
+│   ├── ui/            # 终端操作台 / 观众屏 / 裁判屏（终端 fallback）
+│   ├── visualizer/    # 函数与轨迹可视化
+│   └── server/        # 本地 Web UI 的服务端（HTTP + WS + MatchSession）
+├── web/               # 本地 Web UI 的前端（React + Vite + Canvas 2D）
+│   ├── src/           #   裁判台 / 观众大屏 / 回放三页 + Arena 画布
+│   └── e2e/           #   Playwright 完整赛事演练
 ├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
 ├── tests/             # 回归测试套件 + 算法 fixture
 └── Plans/
     ├── Input/         # 人输入的 Plan、规范与任务书
     └── Output/        # 审计报告、工作日志与交接文档
 ```
+
+---
+
+## 本地 Web UI 的边界
+
+Web UI 是一个**包装层**，不是第二个引擎。两条结构性约束：
+
+1. **服务端不新增任何判定。** `src/server/` 里每个命令都是对 `MatchEngine`
+   （或终端裁判台共用的 `MatchSetupUI`）的一次调用；每个 board 字段都是引擎查询的拷贝。
+   命中 / 先手 / 击杀 / 胜负 / 僵持的计算一处也没有。
+   *UI 不许再猜一套规则* —— 动作按钮的启用判据逐条抄自引擎自己用的那个条件
+   （例：`startMatch()` 的真实判据是「双方已上传 + `preflightDone`」，
+   就读 `isPreflightPassed()`，**不许**拿 `phase === 'READY'` 这类代理量去猜）。
+
+2. **观众板是逐字段白名单。** `spectatorBoard()` 显式构造每一个字段，
+   没被拷贝的字段浏览器**根本收不到**。因此「大屏不泄漏开发者诊断」
+   是传输层的结构性事实，而不是一句需要人工维护的约定。
+   两道回归守着它：`tests/web-projection.ts`（键集合被钉死）与
+   `tests/web-server.ts`（真跑完一场后扫描观众通道）。
+
+轨迹的处理遵循同一条原则：**画布只消费引擎判定出的轨迹点**，浏览器只做
+reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出一条穿过障碍物的曲线，
+而真实轨迹在第一次接触障碍物处就永久终止了。
 
 ---
 

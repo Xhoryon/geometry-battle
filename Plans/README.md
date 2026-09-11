@@ -120,3 +120,17 @@ competitor-kit 的场地边界终止文档缺口。
 
 **本轮未修改任何规则、production Judge、Sandbox、timing 规则或正式算法槽位。**
 `v1.0.0-competition` → `26d7970` 未改变。
+
+## V1.1 本地 Web UI（2026-09-11）
+
+任务书：[`Input/Geometry Battle V1.1 Local Web UI.md`](Input/Geometry%20Battle%20V1.1%20Local%20Web%20UI.md)
+设计 spec：[`Output/V1.1 Local Web UI Design Spec.md`](Output/V1.1%20Local%20Web%20UI%20Design%20Spec.md)
+实现计划：[`Output/V1.1 Local Web UI Implementation Plan.md`](Output/V1.1%20Local%20Web%20UI%20Implementation%20Plan.md)
+交接文档：[`Output/V1.1 Local Web UI Handoff.md`](Output/V1.1%20Local%20Web%20UI%20Handoff.md)
+
+在 RC `42e5417` 之上，把 Engine / Judge / Replay 包装成 `npm run app` 一键启动的
+本地比赛应用（React + Vite 前端、`src/server/` 服务端、REST 命令 + WS 状态）。
+
+**未改一行核心判定**：`src/core/` `src/runner/` `src/map/` `src/submission/` `competitor-kit/`
+零 diff；终端裁判台 `src/operator/` `src/ui/` 同样零 diff（`npm run judge` 仍是等价 fallback）。
+`v1.0.0-competition` 未被触碰，且**未创建** `v1.1.0-competition`。

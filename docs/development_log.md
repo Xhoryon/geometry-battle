@@ -328,3 +328,89 @@ tests/operator-e2e.ts        → 8/8（含 6 场真实比赛）
 其余套件记为 `UNCHANGED — PRIOR PASS EVIDENCE`（`fd4c6b1` 的 29/29），
 可用 `git diff --name-only fd4c6b1..HEAD -- src/core/ src/runner/ src/map/ src/submission/`
 确认为空。
+
+---
+
+## 阶段 11 — 本地 Web UI（`42e5417` 之后）
+
+任务书：`Plans/Input/Geometry Battle V1.1 Local Web UI.md`。
+设计 spec：`Plans/Output/V1.1 Local Web UI Design Spec.md`。
+交接：`Plans/Output/V1.1 Local Web UI Handoff.md`。
+
+把稳定的 Engine / Judge / Replay 包装成 `npm run app` 一键启动的本地比赛应用。
+**未改一行核心判定**（`src/core/` `src/runner/` `src/map/` `src/submission/` `competitor-kit/`
+零 diff），终端裁判台也**一字未动**。
+
+### 11.1 架构：视图投影服务端
+
+被否决的方案是「薄 HTTP 代理」（把原始 `MatchSnapshot` 丢给浏览器，各页面自己挑字段）。
+问题不在代码量，而在**保证的性质**：那样「观众看不见 hash / 路径 / 诊断」会退化成
+前端黑名单 —— 只要有人往快照里加一个字段，大屏就静默泄漏。
+
+本设计把这条保证变成结构性事实：`spectatorBoard()` 是**逐字段白名单**拷贝，
+没拷贝到的字段浏览器根本收不到。
+
+```
+web/ (React + Vite + Canvas 2D)  ──REST 命令 / WS board──  src/server/ (ts-node)
+                                                                └─ 只读消费 src/core
+```
+
+### 11.2 施工中改掉的两处设计
+
+**(1) `run-to-end` 从「阻塞请求」改成后台任务。**
+原设计让 HTTP 请求一直挂到比赛结束 —— 一场最长 60 轮，那是分钟级请求，
+浏览器与 undici 都有超时，现场也不该「点一下然后转圈」。
+改成后台推进 + board 上暴露 `busy`，进度靠 WS 推的 board 看。
+
+**(2) Content-Type 校验只作用于 POST。**
+原先对所有非 GET 方法要求 JSON 体，于是 `PUT /api/health` 回 415 而不是 405 ——
+把一个纯粹的路由问题报成了协议问题。命令语义只有 POST 有。
+
+### 11.3 施工中抓到的三个真问题
+
+**(1) 越权测试的「全 null」是假绿。**
+`resolveMatchDir` 的越权用例一开始全绿 —— 因为我传错了根目录（传了 tmp 根而不是
+`artifactRoot`），于是**所有** id 都解析为 null，包括合法 id。
+加了「真实存在的 matchId 必须解析得到」的正向对照才暴露出来。
+**教训**：只断言「全部被拒绝」的用例，在实现整体坏掉时也是绿的。
+
+**(2) 观众板对照断言写错，测的是空集合。**
+`collectKeys` 的闭包捕获了外层的 `keys`，传入 `r.finalBoard` 后仍写进同一个集合，
+`judgeKeys` 永远为空。同样是「反空转对照」把它抓出来的。
+
+**(3) URL 规范化会吃掉 `..`。**
+`GET /api/replays/../../etc/passwd` 被 `new URL()` 规范化成 `/etc/passwd`，
+落到静态处理器（同样被拒），因此**回不到** replay 路由的 404。
+这不是漏洞，但说明「用某个具体状态码断言越权」是脆的 ——
+改成断言「绝不成功 + 绝不透露路径」，并在映射层单测里做精确断言。
+
+### 11.4 安全
+
+只绑定 `127.0.0.1` 挡不住 CSRF 与 DNS rebinding（请求确实来自本机）。
+三道闸：Host 白名单、Origin 必须缺席或同源、POST 必须是 JSON 体；不出 CORS 头。
+WS upgrade 走同一套校验 —— 否则一个恶意网页可以直接开一条直通裁判 topic 的信道。
+replay 的 `matchId` 是唯一会长进文件路径的用户输入：字符白名单 + **枚举命中**
+（路径从服务端自有列表里选，从来不拼）+ resolve 复核。
+
+### 11.5 前端
+
+React 19 + Vite 8，三条路由 `/judge` `/spectator` `/replay/:matchId`，
+竞技场用 Canvas 2D 绘制。视觉方向取自项目的世界 —— **坐标纸**：
+网格、轴、刻度数字都画出来（判定就发生在这些坐标里），
+签名元素是轨迹的发光头与**终止环**（攻击在哪里停下：命中 / 撞墙 / 出界）。
+两队用 aqua / amber（CVD 安全的高分离对），命中瞬间用白热闪，不引入第三种彩色。
+轨迹动画由 `requestAnimationFrame` 直接改画布，不经过 React state。
+
+### 11.6 验证
+
+```text
+npm run typecheck              → 0 错误（含新增 src/server/）
+npm run typecheck:web          → 0 错误
+npm run build:web              → 24 modules，dist 246 kB
+npx ts-node tests/web-projection.ts  → 20/20
+npx ts-node tests/web-server.ts      → 18/18（真 HTTP + 真 WS + 真算法）
+npm run e2e                    → 1 passed（Playwright 真浏览器完整演练）
+```
+
+演练跑的是真比赛：seed 700001 / 6 点 / easy 下 3 回合 MUTUAL_ELIMINATION，
+逐轮击杀 5/4/3，每侧轨迹 400 点（上线前降采样到 240）。
