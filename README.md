@@ -379,10 +379,15 @@ npm run stress
 
 ```
 几何斗殴/
-├── algorithms/        # 固定算法槽位（比赛工作人员与选手最关心的区域）
-│   ├── team-a/        #   Team A Slot —— 根目录必须有 solver.py
-│   ├── team-b/        #   Team B Slot
-│   └── .staging/ .slots/   # 上传暂存区 / 安装记录（不属于算法包，已 gitignore）
+├── runs/              # 运行期状态（已 gitignore）
+│   └── slots/         #   ★ 运行期槽位根 = 正式算法投递点
+│       ├── team-a/    #     Team A Slot —— 根目录必须有 solver.py
+│       ├── team-b/    #     Team B Slot
+│       └── .staging/ .slots/   # 上传暂存区 / 安装记录（不属于算法包）
+├── algorithms/        # canonical 出厂 fixture（受 git 跟踪，只读语义）
+│   ├── team-a/        #   Team A Slot 的出厂内容 —— 首次启动播种到 runs/slots
+│   └── team-b/        #   Team B Slot 的出厂内容
+│                      #   ⚠ 改这里**不会**改变比赛用的算法；投递请写 runs/slots
 ├── src/
 │   ├── core/          # Ast / Validator / Judge / Match / Round / Rules / RoundState / InputProtocol / Logs
 │   ├── field/         # 场地与点

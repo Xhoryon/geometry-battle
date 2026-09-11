@@ -31,6 +31,8 @@ import { generateKitExamples } from '../src/operator/generate-kit-examples';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const KIT = path.join(PLATFORM_ROOT, 'competitor-kit');
+/** 受跟踪的 canonical 出厂槽位目录（不是投递点） */
+const ALGORITHMS_DIR = path.join(PLATFORM_ROOT, 'algorithms');
 const STARTER_SRC = path.join(PLATFORM_ROOT, 'starter');
 
 /**
@@ -599,6 +601,9 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
     fs.readFileSync(path.join(KIT, f), 'utf-8'),
   ]);
   targets.push(['README.md(仓库根)', fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8')]);
+  // `algorithms/README.md` 是**投递者最可能打开的那一份**（它就在被描述的目录里）。
+  // 它在 388dd0d 之前一直是漏网的：给它加一句错误的 2000 ms，本套件曾经全绿。
+  targets.push(['algorithms/README.md', fs.readFileSync(path.join(ALGORITHMS_DIR, 'README.md'), 'utf-8')]);
 
   for (const [name, text] of targets) {
     assert(!/2000\s*ms/.test(text), `${name} 不得再出现 2000 ms（引擎是 500 ms）`);
@@ -624,10 +629,47 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
   assert(/出厂 fixture/.test(rootReadme), '仓库 README 必须写明 algorithms/ 只是出厂 fixture');
   assert(/投递点/.test(rootReadme), '仓库 README 必须点明「投递点」这个概念');
 
+  // ---- canonical 槽位目录自己的 README 必须讲对语义（Final Tag Re-Gate 的缺口）----
+  // 它在被描述的目录里，是投递者最可能先打开的一份 —— 教错方向的代价是
+  // 「投进去被静默忽略、比赛拿出厂 starter 跑完」。
+  const algorithmsReadme = fs.readFileSync(path.join(ALGORITHMS_DIR, 'README.md'), 'utf-8');
+  assert(
+    /runs\/slots/.test(algorithmsReadme),
+    'algorithms/README.md 必须写明运行期槽位根 runs/slots（正式投递点）'
+  );
+  assert(
+    !/唯一算法投放区|唯一算法投放点/.test(algorithmsReadme),
+    'algorithms/README.md 不得再自称「唯一算法投放区」—— 它只是出厂 fixture'
+  );
+  assert(
+    /不是投递点/.test(algorithmsReadme),
+    'algorithms/README.md 必须明确写出「本目录不是投递点」'
+  );
+  assert(
+    /出厂 fixture/.test(algorithmsReadme),
+    'algorithms/README.md 必须写明自己是出厂 fixture'
+  );
+  // 当前 timeout 语义不得漂移：这里是 500 ms，且必须说清起算点
+  assert(/500\s*ms/.test(algorithmsReadme), 'algorithms/README.md 必须写明 500 ms 预算');
+  assert(/GO/.test(algorithmsReadme), 'algorithms/README.md 必须写明预算从 GO 起算');
+  assert(!/2000/.test(algorithmsReadme), 'algorithms/README.md 不得再出现 2000');
+
+  // 根 README 的项目结构树同样要讲对：`algorithms/` 不得再被注为「槽位」。
+  const treeBlock = rootReadme.slice(rootReadme.indexOf('## 项目结构'), rootReadme.indexOf('## 本地 Web UI 的边界'));
+  assert(/runs\//.test(treeBlock), '项目结构树里必须出现 runs/（运行期槽位根）');
+  assert(
+    !/algorithms\/\s*#\s*固定算法槽位/.test(treeBlock),
+    '项目结构树不得再把 algorithms/ 注为「固定算法槽位」'
+  );
+
   // ---- 现行 CLI / 工具的文案同样面向选手，一并纳入防漂移 ----
   for (const f of ['validate-submission.ts', 'generate-kit-examples.ts', 'cli.ts', 'judge.ts']) {
     const t = fs.readFileSync(path.join(PLATFORM_ROOT, 'src', 'operator', f), 'utf-8');
     assert(!/2000/.test(t), `src/operator/${f} 不得再出现 2000（引擎是 500ms）`);
+    assert(
+      !/固定槽位 algorithms\/team-a/.test(t),
+      `src/operator/${f} 不得再声称默认槽位是 algorithms/team-a|team-b`
+    );
   }
 });
 

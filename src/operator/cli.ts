@@ -26,7 +26,8 @@
  *   npx ts-node src/operator/cli.ts [--a <pkgA>] [--b <pkgB>] [选项]
  *
  * 算法来源（规范 §2/§31/§32）：
- *   不给 --a/--b  → 直接使用固定槽位 algorithms/team-a|team-b 里的算法；
+ *   不给 --a/--b  → 直接使用**运行期槽位根**里的算法（默认 <repo>/runs/slots，
+ *                   即正式投递点；首次启动会从出厂 fixture `algorithms/` 播种一次）；
  *   给了 --a/--b  → 先按 staging → validate → preflight → hash → seal → replace
  *                   安装进槽位（坏包不会破坏现有槽位），再从槽位密封。
  *
@@ -132,7 +133,8 @@ function printHelp(): void {
                                   [--max-rounds 60] [--auto] [--artifacts dir]
   npx ts-node src/operator/cli.ts --replay <artifactDir>
 
-  不给 --a/--b 时直接使用固定槽位 algorithms/team-a|team-b 中的算法。`);
+  不给 --a/--b 时直接使用运行期槽位（默认 runs/slots，即正式投递点）中的算法。
+  仓库里的 algorithms/ 只是出厂 fixture —— 改它不会改变比赛用的算法。`);
 }
 
 /** 只读回放：不重新运行任何算法 */
