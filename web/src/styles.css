@@ -5,9 +5,16 @@
  * 所以网格、轴、刻度数字是结构而不是装饰。
  *
  * 纪律：
- *   - 不用渐变、不用圆角阴影 —— 现场要的是一台仪器，不是一个网页；
- *   - 彩色只给「有语义的东西」：A 队、B 队、命中闪、报错；
- *   - 所有数值一律等宽 + tabular 数字 —— 跨回合的耗时要能纵向对齐。
+ *   - 不用渐变、不用圆角阴影 —— 现场要的是一台仪器，不是一个网页
+ *     （唯一例外是 `.verdict` 的那层遮罩渐变，它保证判决文字压在竞技场上仍可读）；
+ *   - 彩色只给「有语义的东西」：A 队、B 队、命中闪、报错、以及**角色标识**；
+ *   - **等宽只给数值**。路径、哈希、计时代码是数据，用等宽；标题、按钮、
+ *     状态词、正文一律无衬线 —— 等宽满屏是终端，不是产品；
+ *   - 每一屏的主角是**竞技场**：导轨与侧栏低对比、窄边距，舞台吃掉剩下的全部。
+ *
+ * 角色区分（V1.2 §七）：`.judge` / `.screen` / `.replay` / `.team` 各自设一个
+ * `--role`，由顶部 2px 强调带与页内少量强调色统一消费 —— 是**一条带子**，
+ * 不是一块大色块。四个值都取自已有的语义色，没有新色相。
  */
 
 :root {
@@ -32,6 +39,18 @@
   --danger: #ff5470;
   --ok: #5fd18a;
 
+  /* 角色标识 —— 每屏在根选择器里覆写，见文件末尾「角色标识」一节 */
+  --role: var(--a);
+
+  /* 字号层级：标签 11 / 次要 12 / 数值 13 / 正文 14 / 强调 15 / 大数值 32 / 大标题 40 */
+  --fs-label: 11px;
+  --fs-sm: 12px;
+  --fs-num: 13px;
+  --fs-body: 14px;
+  --fs-lead: 15px;
+  --fs-display: 32px;
+  --fs-headline: 40px;
+
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
 }
@@ -51,7 +70,7 @@ body {
   background: var(--paper);
   color: var(--text);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-body);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
@@ -84,7 +103,8 @@ button {
    ========================================================================== */
 
 .eyebrow {
-  font-size: 10px;
+  font-size: var(--fs-label);
+  font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--dim);
@@ -94,14 +114,16 @@ button {
   border-bottom: 1px solid var(--rule);
 }
 
+/* 状态标签是**词**不是**数**：无衬线 + 字距，别让它读起来像一行日志 */
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
+  font-family: var(--sans);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
   border: 1px solid var(--rule);
   color: var(--muted);
 }
@@ -164,8 +186,10 @@ button {
 .act__body {
   min-width: 0;
 }
+/* 裁判台的主交互：标签比正文大一档 —— 一屏里最该被读到的是「能做什么」 */
 .act__label {
   display: block;
+  font-size: var(--fs-lead);
 }
 .act__hint {
   display: block;
@@ -206,7 +230,7 @@ button {
   padding: 8px 10px;
   margin: 0 0 10px;
   list-style: none;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: color-mix(in oklab, var(--danger) 75%, var(--text));
   max-height: 30vh;
   overflow: auto;
@@ -273,7 +297,7 @@ details.adv .adv__body {
 .round-mark__value {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 30px;
+  font-size: var(--fs-display);
   line-height: 1;
   font-weight: 600;
 }
@@ -286,7 +310,7 @@ details.adv .adv__body {
 .alive__count {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 30px;
+  font-size: var(--fs-display);
   line-height: 1;
   font-weight: 600;
 }
@@ -322,11 +346,13 @@ details.adv .adv__body {
   align-items: baseline;
   gap: 16px;
 }
+/* 判决是**一句话**，不是一段数据：无衬线、更大、字距收紧 */
 .verdict__winner {
-  font-family: var(--mono);
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-family: var(--sans);
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 .verdict__winner--a {
   color: var(--a);
@@ -335,7 +361,7 @@ details.adv .adv__body {
   color: var(--b);
 }
 .verdict__reason {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
@@ -347,23 +373,29 @@ details.adv .adv__body {
   align-items: center;
   gap: 26px;
 }
+/*
+ * 宽度是算出来的，不是猜的：名字 + 时间 + 状态 + 三个间隙 ≈ 205px。
+ * 原来 min-width 给 200px，条被挤到 0 宽 —— 「离超时还有多远」这条
+ * 最重要的信息在大屏上直接消失了。留出 280px，条至少 75px 起。
+ */
 .compute__side {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-width: 200px;
+  min-width: 280px;
 }
 .compute__name {
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--dim);
-  width: 52px;
+  width: 46px;
 }
 .compute__bar {
   position: relative;
   height: 3px;
-  flex: 1;
+  flex: 1 1 48px;
+  min-width: 48px;
   background: var(--rule);
   overflow: hidden;
 }
@@ -412,7 +444,7 @@ details.adv .adv__body {
 
 /* 大屏底部一行：状态说明。绝不出现哈希 / 路径 / JSON。 */
 .screen__note {
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--dim);
   overflow: hidden;
   white-space: nowrap;
@@ -462,7 +494,7 @@ details.adv .adv__body {
   margin-bottom: 8px;
 }
 .panel__title h2 {
-  font-size: 10px;
+  font-size: var(--fs-label);
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--dim);
@@ -483,9 +515,11 @@ details.adv .adv__body {
   gap: 8px;
 }
 .slot__status {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-family: var(--sans);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 .slot__status--ready {
   color: var(--ok);
@@ -540,7 +574,7 @@ details.adv .adv__body {
 .lastround__value {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: var(--fs-num);
 }
 
 .audit-list {
@@ -559,6 +593,26 @@ details.adv .adv__body {
   gap: 8px;
   padding: 2px 0;
   border-bottom: 1px solid color-mix(in oklab, var(--rule) 45%, transparent);
+}
+
+/*
+  只读源码预览 —— 裁判台与参赛者页共用。
+  两端看到的是同一段代码，样式也该是同一个，所以样式只写在这里，
+  页面里不再各抄一份内联样式。
+*/
+.source-view {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  white-space: pre;
+  tab-size: 4;
 }
 
 /* ==========================================================================
@@ -639,9 +693,9 @@ details.adv .adv__body {
 .btn {
   background: transparent;
   border: 1px solid var(--rule);
-  padding: 6px 14px;
+  padding: 7px 14px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 .btn:hover:not(:disabled) {
   border-color: color-mix(in oklab, var(--a) 55%, transparent);
@@ -665,6 +719,272 @@ details.adv .adv__body {
   color: var(--a);
   text-decoration: none;
   border-bottom: 1px solid color-mix(in oklab, var(--a) 40%, transparent);
+}
+
+/* ==========================================================================
+   角色标识 —— 一条 2px 的带子，不是一块色斑
+   --------------------------------------------------------------------------
+   四屏共用一个 `--role`：顶部强调带、页签名、以及页内少量强调消费它。
+   四个取值都来自已有的语义色，没有新色相。
+   ========================================================================== */
+
+.judge {
+  --role: var(--a); /* 裁判台：青 —— 操作台 */
+}
+.screen {
+  --role: var(--impact); /* 观众大屏：白 —— 展示面，最中性 */
+}
+.replay {
+  --role: var(--muted); /* 回放：灰蓝 —— 档案，已发生的事 */
+}
+.team {
+  --role: var(--ok); /* 选手端：绿 —— 自己人 */
+}
+
+.judge,
+.screen,
+.replay,
+.team {
+  position: relative;
+}
+
+/*
+ * 绝对定位是**必须的**：这四屏都是 grid 容器，若让 ::before 参与布局，
+ * 它会变成第一个网格项、把整页挤下去。绝对定位把它移出文档流。
+ */
+.judge::before,
+.screen::before,
+.replay::before,
+.team::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--role);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* 每屏的第一个 eyebrow 就是这一屏的名字 —— 用角色色点出来 */
+.judge__bar > .eyebrow:first-child,
+.replay__bar > .eyebrow:first-child,
+.team__rail > .eyebrow:first-child {
+  color: var(--role);
+  font-size: var(--fs-sm);
+  letter-spacing: 0.2em;
+}
+
+/* 导轨与侧栏退到背景：舞台才是主角 */
+.judge__bar,
+.replay__bar,
+.team__rail {
+  padding: 9px 16px;
+}
+.judge__side,
+.replay__side {
+  border-right: 1px solid color-mix(in oklab, var(--rule) 70%, transparent);
+}
+
+/* ==========================================================================
+   选手端（Team）—— 皮肤在此，页面由主 agent 组装
+   --------------------------------------------------------------------------
+   `__rail` 是顶部导轨，`__main` 是它下面的**可滚动纵列**。
+   两处都用 flex 纵向流而不是固定行数的网格：选手端是若干张面板顺次往下排，
+   面板数量由页面决定 —— 钉死行数会把多余的面板挤进隐式行、把内容裁掉。
+   ========================================================================== */
+
+.team {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.team__rail {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+
+/* 面板纵列，自己滚：顶部导轨固定，内容再长也不会把导轨顶走 */
+.team__main {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  min-width: 0;
+  padding: 14px 16px 28px;
+  overflow-y: auto;
+}
+
+/* 画布在哪个容器里都要铺满 —— 舞台总是最后一层背景，别再包一层定位 */
+.team canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 两侧阵营的面板：一条左侧竖带区分，不是整块染色 */
+.panel--a {
+  border-left: 2px solid color-mix(in oklab, var(--a) 65%, transparent);
+  padding-left: 10px;
+}
+.panel--b {
+  border-left: 2px solid color-mix(in oklab, var(--b) 65%, transparent);
+  padding-left: 10px;
+}
+
+/* 候选点按钮：可点、能选中、锁上后看得出「动不了了」 */
+.cand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.cand:hover:not(:disabled):not(.cand--selected) {
+  background: color-mix(in oklab, var(--role) 8%, transparent);
+  border-color: color-mix(in oklab, var(--role) 45%, transparent);
+}
+.cand:disabled {
+  cursor: not-allowed;
+  color: var(--dim);
+}
+.cand--selected {
+  border-color: color-mix(in oklab, var(--role) 70%, transparent);
+  background: color-mix(in oklab, var(--role) 12%, transparent);
+}
+/* 选中标记是一条贴边的竖条 —— 一个 flex 项，不占别的层 */
+.cand--selected::before {
+  content: '';
+  flex: none;
+  align-self: stretch;
+  width: 3px;
+  background: var(--role);
+}
+.cand--locked {
+  cursor: default;
+  color: var(--dim);
+  border-style: dashed;
+  border-color: color-mix(in oklab, var(--rule) 85%, transparent);
+}
+.cand--locked:hover {
+  background: transparent;
+}
+
+/* 颜色小方块：队伍 / 素材的颜色标记 */
+.swatch {
+  flex: none;
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--rule);
+}
+.swatch--a {
+  background: var(--a);
+}
+.swatch--b {
+  background: var(--b);
+}
+.swatch--off {
+  background: transparent;
+  border: 1px solid var(--rule);
+}
+
+/* ==========================================================================
+   窄屏（≤900px）—— 固定侧栏改为堆叠，而不是把舞台挤没
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .judge,
+  .replay {
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+  }
+
+  .judge__bar,
+  .replay__bar,
+  .team__rail {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+  }
+
+  /* 侧栏从「固定宽度的列」变成「舞台上方的一段」，自己滚 */
+  .judge__side,
+  .replay__side {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    max-height: 46vh;
+    padding-bottom: 18px;
+  }
+
+  /* 舞台仍然要有分量 —— 堆叠不等于把主角压扁。
+     order 让**竞技场排在侧栏之前**：窄屏上第一眼看到的应该是比赛，而不是表单。
+     （网格的自动排布是按 order 处理的，`__bar` 没有 order，仍排在最前。） */
+  .judge__main,
+  .replay__main {
+    order: 1;
+    min-height: 64vh;
+  }
+  .judge__side,
+  .replay__side {
+    order: 2;
+  }
+
+  .team__main {
+    padding: 12px 12px 24px;
+  }
+
+  .screen__rail {
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    padding: 10px 14px;
+  }
+  .screen__stage {
+    min-height: 52vh;
+  }
+  .round-mark__value,
+  .alive__count {
+    font-size: 24px;
+  }
+  .verdict {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 12px 14px;
+  }
+  .verdict__winner {
+    font-size: 26px;
+  }
+
+  /* 计算状态：一行一侧，条拿满宽度（此时标签不再有被挤掉的余地） */
+  .compute {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    width: 100%;
+  }
+  .compute__side {
+    min-width: 0;
+  }
+
+  .lastround {
+    padding: 10px 14px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
