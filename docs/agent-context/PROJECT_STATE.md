@@ -1,11 +1,13 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-11（V1.2 开发中，工作树未提交）。
+> 最后更新：2026-09-12（V1.2 收口完成，工作树干净）。
 >
-> 与它配套的还有三份：[V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
+> 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
+> [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
 > [ARCHITECTURE.md](ARCHITECTURE.md)（怎么分层）、
-> [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md)（怎么干活）。
+> [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md)（怎么干活）、
+> [V1.2_CONSERVATIVE_EXECUTION_SPEC.md](V1.2_CONSERVATIVE_EXECUTION_SPEC.md)（本轮执行规范）。
 
 ---
 
@@ -14,16 +16,11 @@
 | 项 | 值 |
 |---|---|
 | 分支 | `feature/v1.1-ui-protocol`（**名字已过时**，内容早已是 V1.2；没有另开分支） |
-| HEAD | `ecedff6` —— *feat(server): participant endpoints, tournament mode, and the judge prepare step (V1.2)* |
-| 工作树 | **脏**：V1.2 的前端与测试改动**大量未提交**（`git status` 见下） |
-| 版本标签 | `README.md` 已写 **V1.2 Platform**；仓库里没有 V1.2 的 git tag |
+| HEAD | `81cf5a8`（V1.2 收口；本轮共 10 个提交，见交接文档） |
+| 工作树 | **干净**（`git status --porcelain` 为空） |
+| 版本标签 | `README.md` 已写 **V1.2 Platform**；两个 release tag **未移动** |
+| 推送 | **尚未推送** —— 合并/推送由人类决定 |
 | 公开仓库 | <https://github.com/Xhoryon/geometry-battle> —— **独立脱敏导出历史**，与本地研发仓库 SHA 不互见 |
-
-未提交的一批改动覆盖 `README.md` / `competitor-kit/*` / `src/{core,server,ui,operator}` /
-`tests/*` / `web/*`。**没有一次提交**，因此 clone 或 CI 拿到的仍是 V1.1 末态。
-
-> ⚠ 接手第一件事：确认这批改动是你预期的，然后**提交**。在此之前，
-> 「V1.2 已完成」只存在于这个工作区里。
 
 ---
 
@@ -236,18 +233,18 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 34 套件（含 timing-fairness，约 10 分钟）
+npm test                                       # 全量 35 套件（含 timing-fairness，约 10 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
 `tests/run-all.ts` 在失败时**正确**地 `exit 1`。
 
-**最近一次完整验证（2026-09-11，全部通过）：**
+**最近一次完整验证（2026-09-12，全部通过）：**
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 34/34 套件通过，exit 0
-npm run e2e                         → 2 passed（真浏览器完整赛事演练，14.3s）
+npm test                            → 35/35 套件通过，exit 0
+npm run e2e                         → 2 passed，连续跑了两次（每次含连续两场真实对局）
 ```
 
 > ⚠ **不要在门禁运行期间改源码。** 每个套件是独立的 `ts-node` 进程，

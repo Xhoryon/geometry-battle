@@ -95,7 +95,7 @@ npm test                                        # 全量 34 套件，含 timing-
 
 ## 7. 交接
 
-新接手的人只需要读 `docs/agent-context/` 这四份 + `README.md`。
+新接手的人只需要读 `docs/agent-context/` 下这几份（先 PROJECT_STATE，再按需展开）+ `README.md`。
 **不要**一次性读 `Plans/`、`playtest/results/`、完整的 `development_log.md`
 或全部历史审计 —— 那会把上下文撑爆，而且里面大半是过期的。
 需要追某个具体事实时再定点搜索。
