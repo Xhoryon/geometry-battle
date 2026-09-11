@@ -43,6 +43,11 @@ const SUITES = [
   'operator-e2e',
   'runtime-manifest',
   'competitor-kit',
+  // Web UI（V1.1 Local Web UI）—— 投影层纯函数 + 真 HTTP/WS 端到端。
+  // 浏览器演练（Playwright）不在这里：它需要构建前端与真实浏览器，
+  // 由 `npm run e2e` 单独跑。
+  'web-projection',
+  'web-server',
 ];
 
 const requested = process.argv.slice(2).filter((a) => !a.startsWith('-'));

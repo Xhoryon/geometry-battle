@@ -1,0 +1,675 @@
+/*
+ * 几何斗殴 —— 本地比赛界面
+ *
+ * 视觉来自这个项目的世界：**坐标纸**。竞技场就是一张真正的坐标系，
+ * 所以网格、轴、刻度数字是结构而不是装饰。
+ *
+ * 纪律：
+ *   - 不用渐变、不用圆角阴影 —— 现场要的是一台仪器，不是一个网页；
+ *   - 彩色只给「有语义的东西」：A 队、B 队、命中闪、报错；
+ *   - 所有数值一律等宽 + tabular 数字 —— 跨回合的耗时要能纵向对齐。
+ */
+
+:root {
+  /* 纸张与网格（坐标纸反相） */
+  --paper: #0a1017;
+  --paper-2: #0e1621;
+  --panel: #0c141d;
+  --grid: rgba(110, 150, 200, 0.085);
+  --grid-bold: rgba(110, 150, 200, 0.16);
+  --axis: rgba(120, 165, 215, 0.3);
+  --rule: rgba(120, 160, 205, 0.18);
+
+  /* 文字 */
+  --text: #dce6f2;
+  --muted: #8298ae;
+  --dim: #4d6076;
+
+  /* 语义色 */
+  --a: #38e0d0;
+  --b: #ffab3d;
+  --impact: #f2f6ff;
+  --danger: #ff5470;
+  --ok: #5fd18a;
+
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --sans: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.muted {
+  color: var(--muted);
+}
+.dim {
+  color: var(--dim);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--a);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   通用零件
+   ========================================================================== */
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.hairline {
+  border-bottom: 1px solid var(--rule);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+}
+.tag--live {
+  color: var(--ok);
+  border-color: color-mix(in oklab, var(--ok) 45%, transparent);
+}
+.tag--down {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 45%, transparent);
+}
+
+.team-dot {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  flex: none;
+}
+.team-dot--a {
+  background: var(--a);
+}
+.team-dot--b {
+  background: var(--b);
+}
+
+/* 动作按钮：这是裁判台的主要交互，必须一眼看出「能做/不能做」 */
+.act {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.act:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--a) 9%, transparent);
+  border-color: color-mix(in oklab, var(--a) 50%, transparent);
+}
+.act:disabled {
+  cursor: not-allowed;
+  color: var(--dim);
+  border-color: color-mix(in oklab, var(--rule) 60%, transparent);
+}
+.act__key {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  padding-top: 3px;
+  flex: none;
+  min-width: 22px;
+}
+.act:not(:disabled) .act__key {
+  color: var(--a);
+}
+.act__body {
+  min-width: 0;
+}
+.act__label {
+  display: block;
+}
+.act__hint {
+  display: block;
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 2px;
+}
+.act:not(:disabled) .act__hint {
+  color: var(--muted);
+}
+
+.field {
+  display: block;
+  margin-bottom: 10px;
+}
+.field > span {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.field input,
+.field select {
+  width: 100%;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  padding: 6px 8px;
+}
+
+.errors {
+  border: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  list-style: none;
+  font-size: 12px;
+  color: color-mix(in oklab, var(--danger) 75%, var(--text));
+  max-height: 30vh;
+  overflow: auto;
+}
+.errors li + li {
+  margin-top: 4px;
+}
+
+details.adv {
+  border: 1px solid var(--rule);
+  padding: 0;
+}
+details.adv > summary {
+  cursor: pointer;
+  padding: 8px 11px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+details.adv[open] > summary {
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+}
+details.adv .adv__body {
+  padding: 12px 11px;
+}
+
+/* ==========================================================================
+   观众大屏 —— 满幅竞技场 + 上下两条导轨
+   ========================================================================== */
+
+.screen {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  background: var(--paper);
+}
+
+.screen__rail {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 12px 26px;
+  border-bottom: 1px solid var(--rule);
+}
+.screen__rail--bottom {
+  border-bottom: none;
+  border-top: 1px solid var(--rule);
+  justify-content: space-between;
+}
+
+.round-mark {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.round-mark__label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.round-mark__value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.alive {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.alive__count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 600;
+}
+.alive--a .alive__count {
+  color: var(--a);
+}
+.alive--b .alive__count {
+  color: var(--b);
+}
+.alive__label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.screen__stage {
+  position: relative;
+  min-height: 0;
+}
+.screen__stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.verdict {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 18px 26px;
+  background: linear-gradient(to top, color-mix(in oklab, var(--paper) 94%, transparent), transparent);
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.verdict__winner {
+  font-family: var(--mono);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.verdict__winner--a {
+  color: var(--a);
+}
+.verdict__winner--b {
+  color: var(--b);
+}
+.verdict__reason {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 计算状态：两条细条，把「谁在算 / 算了多久」压成一行 */
+.compute {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+.compute__side {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 200px;
+}
+.compute__name {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  width: 52px;
+}
+.compute__bar {
+  position: relative;
+  height: 3px;
+  flex: 1;
+  background: var(--rule);
+  overflow: hidden;
+}
+.compute__bar > i {
+  position: absolute;
+  inset: 0 100% 0 0;
+  display: block;
+  transition: right 200ms linear;
+}
+.compute__side--a .compute__bar > i {
+  background: var(--a);
+}
+.compute__side--b .compute__bar > i {
+  background: var(--b);
+}
+/* 计算中：条铺满并呼吸。不假装知道进度 —— 沙箱里没有进度可读。 */
+.compute__bar > i.is-running {
+  right: 0;
+  opacity: 0.32;
+  animation: compute-pulse 1.1s ease-in-out infinite;
+}
+@keyframes compute-pulse {
+  50% {
+    opacity: 0.85;
+  }
+}
+.compute__time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 74px;
+  text-align: right;
+}
+.compute__state {
+  font-size: 11px;
+  color: var(--dim);
+  min-width: 62px;
+}
+.compute__headline {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* 大屏底部一行：状态说明。绝不出现哈希 / 路径 / JSON。 */
+.screen__note {
+  font-size: 12px;
+  color: var(--dim);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   裁判台
+   ========================================================================== */
+
+.judge {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  grid-template-rows: auto 1fr;
+}
+.judge__bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.judge__side {
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 14px 14px 28px;
+}
+.judge__main {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.panel {
+  margin-bottom: 20px;
+}
+.panel__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.panel__title h2 {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin: 0;
+  font-weight: 600;
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--rule);
+}
+.slot__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.slot__status {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.slot__status--ready {
+  color: var(--ok);
+}
+.slot__status--bad {
+  color: var(--danger);
+}
+.slot__detail {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: grid;
+  gap: 6px;
+}
+
+.stage-wrap {
+  position: relative;
+  min-height: 0;
+  background: var(--paper);
+}
+.stage-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.lastround {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  align-items: baseline;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+  background: var(--panel);
+}
+.lastround__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lastround__label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.lastround__value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.audit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.audit-list li {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px solid color-mix(in oklab, var(--rule) 45%, transparent);
+}
+
+/* ==========================================================================
+   回放
+   ========================================================================== */
+
+.replay {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  grid-template-rows: auto 1fr;
+}
+.replay__bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.replay__side {
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 12px;
+}
+.replay__main {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+}
+.replay__stage {
+  position: relative;
+  min-height: 0;
+}
+.replay__stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.replay__controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--rule);
+  background: var(--panel);
+}
+.replay__controls input[type='range'] {
+  flex: 1;
+  accent-color: var(--a);
+}
+
+.frame-btn {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom-color: var(--rule);
+  padding: 6px 8px;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.frame-btn:hover {
+  background: color-mix(in oklab, var(--a) 8%, transparent);
+}
+.frame-btn[aria-current='true'] {
+  border-color: color-mix(in oklab, var(--a) 55%, transparent);
+  color: var(--text);
+}
+
+.btn {
+  background: transparent;
+  border: 1px solid var(--rule);
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.btn:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--a) 55%, transparent);
+}
+.btn:disabled {
+  color: var(--dim);
+  cursor: not-allowed;
+}
+.btn--a {
+  color: var(--a);
+  border-color: color-mix(in oklab, var(--a) 45%, transparent);
+}
+
+.empty {
+  padding: 40px 20px;
+  color: var(--dim);
+  text-align: center;
+}
+
+.link {
+  color: var(--a);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in oklab, var(--a) 40%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

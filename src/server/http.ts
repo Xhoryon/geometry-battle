@@ -1,0 +1,289 @@
+/**
+ * REST 路由 + 静态资源。
+ *
+ * 分工：REST 只承载**用户操作**（命令）与只读查询；实时状态一律走 WS。
+ *
+ * 错误处理原则：
+ *   - **预期内的失败**（阶段不对、算法没装、校验没过）一律 HTTP 200 +
+ *     `{ ok:false, errors:[人话] }` —— 那是比赛的一部分，不是服务器故障；
+ *   - 只有协议层错误（Host/Origin/Content-Type/路径越权/JSON 解析）才用 4xx；
+ *   - 未预期异常回 500，且**不回堆栈**。
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import type { IncomingMessage, ServerResponse } from 'http';
+import { MatchSession } from './session';
+import { listReplays, loadReplay } from './replays';
+import { checkCommandRequest } from './security';
+import { downsampleTrajectory } from '../ui/TrajectoryAnimator';
+import { Replay } from '../core/Logs';
+import {
+  COMMAND_PATHS,
+  CommandResult,
+  TRAJECTORY_MAX_POINTS,
+  WireDifficulty,
+} from './protocol';
+
+const MAX_BODY_BYTES = 64 * 1024;
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json; charset=utf-8',
+};
+
+export interface HttpDeps {
+  session: MatchSession;
+  artifactRoot: string;
+  /** 前端构建产物目录（`web/dist`）；不存在时给出可操作的提示 */
+  distDir: string;
+}
+
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  const text = JSON.stringify(body);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    // 本地应用：禁缓存，免得改了前端还要手动清
+    'Cache-Control': 'no-store',
+  });
+  res.end(text);
+}
+
+function sendText(res: ServerResponse, status: number, text: string): void {
+  res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(text) });
+  res.end(text);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const b = chunk as Buffer;
+    total += b.length;
+    if (total > MAX_BODY_BYTES) throw new Error('请求体过大');
+    chunks.push(b);
+  }
+  if (chunks.length === 0) return {};
+  const text = Buffer.concat(chunks).toString('utf8').trim();
+  if (!text) return {};
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('请求体必须是 JSON 对象');
+  return parsed as Record<string, unknown>;
+}
+
+function asTeam(v: unknown): 'A' | 'B' | null {
+  return v === 'A' || v === 'B' ? v : null;
+}
+
+function asDifficulty(v: unknown): WireDifficulty | undefined {
+  return v === 'easy' || v === 'medium' || v === 'hard' ? v : undefined;
+}
+
+function asOptionalInt(v: unknown): number | undefined {
+  if (v === undefined || v === null || v === '') return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
+}
+
+/** 回放体积控制：轨迹是全分辨率的，发出去前降到协议上限 */
+function downsampleReplay(replay: Replay): Replay {
+  return {
+    ...replay,
+    frames: replay.frames.map((f) => ({
+      ...f,
+      trajectoryA: downsampleTrajectory(f.trajectoryA, TRAJECTORY_MAX_POINTS),
+      trajectoryB: downsampleTrajectory(f.trajectoryB, TRAJECTORY_MAX_POINTS),
+    })),
+  };
+}
+
+function serveStatic(deps: HttpDeps, pathname: string, res: ServerResponse): boolean {
+  const root = path.resolve(deps.distDir);
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const resolved = path.resolve(root, `.${requested}`);
+
+  // 路径穿越防御：解析后必须仍在 dist 内
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    sendJson(res, 403, { ok: false, errors: ['路径不被允许'] });
+    return true;
+  }
+
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isFile()) {
+    const ext = path.extname(resolved).toLowerCase();
+    res.writeHead(200, {
+      'Content-Type': MIME[ext] ?? 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
+    fs.createReadStream(resolved).pipe(res);
+    return true;
+  }
+
+  // SPA fallback：/judge、/spectator、/replay/:id 都由前端路由接管
+  const index = path.join(root, 'index.html');
+  if (fs.existsSync(index)) {
+    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-store' });
+    fs.createReadStream(index).pipe(res);
+    return true;
+  }
+
+  sendText(
+    res,
+    503,
+    '前端尚未构建。请先运行 `npm run build:web`（或开发时用 `npm run app:dev`）。\n'
+  );
+  return true;
+}
+
+export function createRequestHandler(deps: HttpDeps) {
+  return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const port = ((): number => {
+      const a = req.socket.localPort;
+      return typeof a === 'number' ? a : 0;
+    })();
+
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    // **不整段 decodeURIComponent**：那会把 `%2F` 变成真实的路径分隔符，
+    // 让「路由匹配」和「路径分段」被同一段输入操纵。id 一律在取用时单独解码，
+    // 且解码结果只用于**查表**（见 replays.ts），不用于拼路径。
+    const pathname = url.pathname;
+    const method = (req.method ?? 'GET').toUpperCase();
+
+    // 非 /api 的请求交给静态资源（SPA）。
+    // GET 的校验内容就是 Host + Origin —— 静态资源不受 Content-Type 约束。
+    if (!pathname.startsWith('/api/')) {
+      const hostCheck = checkCommandRequest(req, port);
+      if (!hostCheck.ok) {
+        sendJson(res, hostCheck.status, { ok: false, errors: [hostCheck.message] });
+        return;
+      }
+      if (method !== 'GET' && method !== 'HEAD') {
+        sendJson(res, 405, { ok: false, errors: ['只支持 GET'] });
+        return;
+      }
+      serveStatic(deps, pathname, res);
+      return;
+    }
+
+    const sec = checkCommandRequest(req, port);
+    if (!sec.ok) {
+      sendJson(res, sec.status, { ok: false, errors: [sec.message] });
+      return;
+    }
+
+    try {
+      // ---- 只读 ----
+      if (method === 'GET' && pathname === '/api/health') {
+        sendJson(res, 200, { ok: true, version: 1, matchId: deps.session.getBoard('judge').matchId });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/judge/state') {
+        sendJson(res, 200, { ok: true, board: deps.session.getBoard('judge') });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/replays') {
+        sendJson(res, 200, { ok: true, replays: listReplays(deps.artifactRoot) });
+        return;
+      }
+      if (method === 'GET' && pathname.startsWith('/api/replays/')) {
+        const id = decodeURIComponent(pathname.slice('/api/replays/'.length));
+        const r = loadReplay(deps.artifactRoot, id);
+        if (!r.ok) {
+          sendJson(res, r.status, { ok: false, errors: [r.message] });
+          return;
+        }
+        sendJson(res, 200, { ok: true, replay: downsampleReplay(r.replay), match: r.match });
+        return;
+      }
+      if (method === 'GET' && pathname.startsWith('/api/trajectory/')) {
+        const id = decodeURIComponent(pathname.slice('/api/trajectory/'.length));
+        const traj = deps.session.getTrajectory(id);
+        if (!traj) {
+          sendJson(res, 404, { ok: false, errors: ['没有这条轨迹'] });
+          return;
+        }
+        sendJson(res, 200, { ok: true, trajectory: traj });
+        return;
+      }
+
+      // ---- 命令（全部 POST） ----
+      if (method === 'POST') {
+        const body = await readJsonBody(req);
+        const result = await dispatchCommand(deps.session, pathname, body);
+        if (result === null) {
+          sendJson(res, 404, { ok: false, errors: ['未知接口'] });
+          return;
+        }
+        sendJson(res, 200, result);
+        return;
+      }
+
+      // 未命中任何路由的 GET 是「未知接口」（404），不是「方法不对」——
+      // 注意 `new URL()` 会把 `/api/replays/..` 规范化成 `/api/`，
+      // 所以带 `..` 的探测到这里会落到这条分支，而不是去碰文件系统。
+      if (method === 'GET' || method === 'HEAD') {
+        sendJson(res, 404, { ok: false, errors: ['未知接口'] });
+        return;
+      }
+
+      sendJson(res, 405, { ok: false, errors: [`${method} 不被支持`] });
+    } catch (e) {
+      // 协议层错误（JSON 解析、体积）与真正的服务器异常在这里汇合；
+      // **绝不回堆栈** —— 回堆栈对使用者没有价值，对探测者有。
+      const msg = (e as Error).message;
+      const status = msg.includes('JSON') || msg.includes('过大') ? 400 : 500;
+      sendJson(res, status, { ok: false, errors: [status === 400 ? msg : '服务器内部错误'] });
+    }
+  };
+}
+
+async function dispatchCommand(
+  session: MatchSession,
+  pathname: string,
+  body: Record<string, unknown>
+): Promise<CommandResult | null> {
+  switch (pathname) {
+    case COMMAND_PATHS.newMatch:
+    case COMMAND_PATHS.reset:
+      return session.newMatch({
+        seed: asOptionalInt(body.seed),
+        pointCount: asOptionalInt(body.pointCount),
+        difficulty: asDifficulty(body.difficulty),
+      });
+    case COMMAND_PATHS.install: {
+      const team = asTeam(body.team);
+      const sourceDir = typeof body.sourceDir === 'string' ? body.sourceDir : '';
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      if (!sourceDir) return { ok: false, errors: ['缺少 sourceDir（算法目录绝对路径）'] };
+      return session.install(team, sourceDir);
+    }
+    case COMMAND_PATHS.useSlot: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      return session.useSlot(team);
+    }
+    case COMMAND_PATHS.preflight:
+      return session.preflight();
+    case COMMAND_PATHS.start:
+      return session.startMatch();
+    case COMMAND_PATHS.reveal:
+      return session.reveal();
+    case COMMAND_PATHS.startRound:
+      return session.startRound();
+    case COMMAND_PATHS.compute:
+      return session.compute();
+    case COMMAND_PATHS.runToEnd:
+      return session.runToEnd();
+    default:
+      return null;
+  }
+}
