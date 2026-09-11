@@ -42,6 +42,11 @@ export interface StartOptions {
   seed?: number;
   pointCount?: number;
   difficulty?: WireDifficulty;
+  /**
+   * 锦标赛模式（V1.2 §二），默认**开**：出厂 starter / 测试算法不算就绪，
+   * 正式 UI 不提供任何内置算法选项。`--no-tournament` 只用于开发自测。
+   */
+  tournamentMode?: boolean;
 }
 
 export interface RunningServer {
@@ -68,6 +73,7 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
     ...(opts.seed !== undefined ? { seed: opts.seed } : {}),
     ...(opts.pointCount !== undefined ? { pointCount: opts.pointCount } : {}),
     ...(opts.difficulty !== undefined ? { difficulty: opts.difficulty } : {}),
+    ...(opts.tournamentMode !== undefined ? { tournamentMode: opts.tournamentMode } : {}),
   });
 
   const handler = createRequestHandler({ session, artifactRoot, distDir });
@@ -138,6 +144,9 @@ function parseArgs(argv: string[]): CliOptions {
       case '--difficulty': o.difficulty = next() as WireDifficulty; break;
       case '--no-open': o.open = false; break;
       case '--dev': o.dev = true; break;
+      // 开发自测用：关掉锦标赛模式（出厂 starter 才可能被视为就绪）。
+      // 正式赛事**不要**加这个开关 —— 那会让一场正规比赛跑在模板算法上。
+      case '--no-tournament': o.tournamentMode = false; break;
       default:
         if (arg.startsWith('--')) throw new Error(`未知选项: ${arg}`);
     }
@@ -151,8 +160,12 @@ async function main(): Promise<void> {
 
   console.log('\n几何斗殴 —— 本地比赛服务');
   console.log(`  裁判台   ${running.url}/judge`);
+  console.log(`  参赛者   ${running.url}/team/a   ${running.url}/team/b`);
   console.log(`  观众大屏 ${running.url}/spectator`);
   console.log(`  回放     ${running.url}/replay/<matchId>`);
+  console.log(
+    `  模式     ${opts.tournamentMode === false ? '开发（--no-tournament）' : '锦标赛 —— 必须上传真实算法包'}`
+  );
   console.log(`  算法槽位 ${opts.slotRoot ?? RUNTIME_SLOT_ROOT}`);
   console.log(`           （canonical 只读副本：${CANONICAL_SLOT_ROOT}）`);
   console.log(`  产物目录 ${opts.artifactRoot ?? path.join(process.cwd(), 'artifacts')}`);

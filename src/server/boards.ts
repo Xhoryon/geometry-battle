@@ -13,11 +13,13 @@
  * 不能去碰文件系统（`slotStates()` 会哈希算法包）。
  */
 
-import { MatchEngine, MatchSnapshot } from '../core/Match';
+import * as path from 'path';
+import { MatchEngine, MatchSnapshot, PLATFORM_ROOT } from '../core/Match';
 import { COMPUTE_TIMEOUT_MS, FIELD, STALEMATE_NO_PROGRESS_LIMIT } from '../core/Rules';
 import { Obstacle } from '../obstacle/Obstacle';
 import { GeneratedMap } from '../map/MapGenerator';
 import { SlotState, TeamSlot } from '../submission/Slot';
+import { inspectPackage } from '../submission/Package';
 import { explainError } from '../ui/JudgeConsole';
 import { RuntimeCheck, describeRuntime } from '../submission/Runtime';
 import type { MatchPhase } from '../core/Match';
@@ -31,6 +33,7 @@ import type {
   SettingsView,
   SlotView,
   SpectatorBoard,
+  TeamBoard,
   WireDifficulty,
   WireEndReason,
   WireObstacle,
@@ -251,6 +254,35 @@ function slotView(state: SlotState): SlotView {
   };
 }
 
+/**
+ * 「出厂 fixture」的包哈希集合 —— `starter/` 与仓库里的 `algorithms/team-*`。
+ *
+ * 锦标赛模式用它把「内置/测试算法」挡在门外（V1.2 §二）：
+ * 槽位里放着的若是出厂 starter，就**不算 READY**，队伍必须真的上传自己的包。
+ * 哈希是包内容的函数，因此改名/改路径都绕不过去。
+ */
+let factoryHashCache: Set<string> | null = null;
+function factoryHashes(): Set<string> {
+  if (factoryHashCache) return factoryHashCache;
+  const out = new Set<string>();
+  const roots = [path.join(PLATFORM_ROOT, 'starter'), path.join(PLATFORM_ROOT, 'algorithms', 'team-a'), path.join(PLATFORM_ROOT, 'algorithms', 'team-b')];
+  for (const r of roots) {
+    try {
+      const insp = inspectPackage(r);
+      if (insp.hash) out.add(insp.hash);
+    } catch {
+      /* 目录不存在就跳过 */
+    }
+  }
+  factoryHashCache = out;
+  return out;
+}
+
+/** 这个包哈希是不是出厂 fixture（=`starter` 或其副本） */
+export function isFactoryPackage(hash: string | null): boolean {
+  return hash !== null && factoryHashes().has(hash);
+}
+
 function auditView(engine: MatchEngine): AuditView {
   const log = engine.getArtifacts().auditLog;
   const counts = new Map<string, number>();
@@ -272,7 +304,8 @@ function auditView(engine: MatchEngine): AuditView {
  * `beginRound()` 必然抛错，留下一条粘住的红色错误）。
  *
  * 判据逐条抄自 `beginRound()` 自己用的条件（`MatchEngine.beginRound()`：
- * 只允许 `phase === 'PUBLIC' || 'REVEAL'`）—— 后台循环的第一句就是它。
+ * 只允许 `phase === 'READY' | 'PUBLIC' | 'REVEAL'`）—— 后台循环的第一句就是它。
+ * V1.2 之后开赛前的正常阶段是 `READY`（Emitter 已锁定），必须一并接受。
  *
  * 返回 `null` 表示可以推进；否则返回一句**人话**说明为什么不能。
  */
@@ -280,7 +313,7 @@ export function runToEndBlocker(engine: MatchEngine): string | null {
   const snap = engine.getSnapshot();
   if (engine.endReason() !== 'NONE') return '比赛已经结束';
   if (!snap.map) return '比赛尚未开始 —— 先执行「开始比赛」';
-  if (snap.phase !== 'PUBLIC' && snap.phase !== 'REVEAL') {
+  if (snap.phase !== 'READY' && snap.phase !== 'PUBLIC' && snap.phase !== 'REVEAL') {
     return `当前阶段 ${snap.phase} 不能连续推进 —— 请先「结算本轮」`;
   }
   return null;
@@ -296,6 +329,8 @@ export interface JudgeBoardContext {
   trajectoryHandle: { id: string; round: number } | null;
   busy: boolean;
   lastError: string | null;
+  /** 锦标赛模式（V1.2 §二）：内置 / 测试算法不算就绪 */
+  tournamentMode?: boolean;
 }
 
 /**
@@ -310,6 +345,8 @@ export interface JudgeBoardContext {
  *   - `compute`   ← `computeRound()`：phase === 'COUNTDOWN'
  *   - `runToEnd`  ← 有地图且比赛未终止
  *   - `useSlot`   ← `upload()`：A 需 SETUP、B 需 UPLOAD_A，且槽位 READY
+ *                    （锦标赛模式下还要**不是出厂模板包**，见 `isFactoryPackage`）
+ *   - `prepare`   ← 上面三条的组合：封装双方 → Preflight → 建赛
  *   - `install` / `newMatch` ← 不做前置判断，直接交给引擎（它的拒绝消息本身就是答案）
  *
  * 这里**不许**出现「用阶段名去猜另一个状态」的代理量 —— 那正是 V1.1 裁判台
@@ -318,10 +355,22 @@ export interface JudgeBoardContext {
  * 即便 `enabled` 因 board 过期而失真，引擎仍会在执行时拒绝并给出人话错误；
  * `enabled` 只是提示，**权威永远是引擎**。
  */
+export interface ActionOptions {
+  /**
+   * 锦标赛模式（V1.2 §二）：内置 / 测试算法一律不算就绪。
+   *
+   * 正式 UI 不得暴露 `solver-fast` / `solver-hybrid` / `solver-optimizer`，
+   * 也不得让「出厂 starter 还躺在槽位里」被当成可开赛状态 ——
+   * 那等于让一场正规比赛跑起来的是模板代码。
+   */
+  tournamentMode?: boolean;
+}
+
 export function buildActions(
   engine: MatchEngine,
   slots: { A: SlotState; B: SlotState },
-  busy = false
+  busy = false,
+  opts: ActionOptions = {}
 ): ActionView[] {
   const snap = engine.getSnapshot();
   const phase = snap.phase;
@@ -329,7 +378,14 @@ export function buildActions(
   const preflightPassed = engine.isPreflightPassed();
   const hasMap = Boolean(snap.map);
   const terminal = engine.endReason() !== 'NONE';
-  const ready = (t: TeamSlot): boolean => slots[t].status === 'READY';
+  const tournament = Boolean(opts.tournamentMode);
+  /** 就绪 = 槽位可用 **且**（非锦标赛模式 或 装的是真实上传的包） */
+  const ready = (t: TeamSlot): boolean =>
+    slots[t].status === 'READY' && (!tournament || !isFactoryPackage(slots[t].hash));
+  const factoryHint = (t: TeamSlot): string =>
+    tournament && isFactoryPackage(slots[t].hash)
+      ? '锦标赛模式：槽位里是出厂模板算法，必须上传并安装真实算法包'
+      : '';
 
   /** 使用槽位：A 需 SETUP、B 需 UPLOAD_A —— 抄自 `upload()` 自己的阶段检查 */
   const useSlot = (team: TeamSlot): ActionView => {
@@ -339,7 +395,7 @@ export function buildActions(
       label: `使用槽位算法（Team ${team}）`,
       enabled: phaseOk && ready(team) && !busy,
       hint: !ready(team)
-        ? `槽位 ${team} 尚不可用（${slots[team].status}）`
+        ? factoryHint(team) || `槽位 ${team} 尚不可用（${slots[team].status}）`
         : !phaseOk
           ? `当前阶段 ${phase} 不允许载入 Team ${team}`
           : '把槽位里的算法密封进本场比赛',
@@ -349,7 +405,23 @@ export function buildActions(
   /** 忙时一律不可点：命令是串行的，点了也只会被拒 */
   const gate = (ok: boolean): boolean => ok && !busy;
 
+  const bothReady = ready('A') && ready('B');
+  const canPrepare = phase === 'SETUP' || phase === 'UPLOAD_A' || phase === 'UPLOAD_B';
+
   return [
+    {
+      // 裁判向导的 **ALGORITHM READY** 主步：一次做完
+      // 「封装双方算法 → Preflight → 建赛」。三条底层动作仍然逐条列在下面
+      // （Advanced Controls 用），但普通裁判只需要这一个。
+      key: 'prepare',
+      label: '开始比赛筹备（封装双方算法 → 校验 → 建赛）',
+      enabled: gate(canPrepare && bothReady && !hasMap),
+      hint: !bothReady
+        ? `需要双方算法都已就绪${tournament ? '（锦标赛模式：必须上传真实算法包）' : ''}`
+        : !canPrepare
+          ? `当前阶段 ${phase} 不能筹备`
+          : '封装密封副本 → 沙箱 Preflight → 生成地图（随后进入 Emitter 选择）',
+    },
     useSlot('A'),
     useSlot('B'),
     {
@@ -421,7 +493,7 @@ export function judgeBoard(engine: MatchEngine, ctx: JudgeBoardContext): JudgeBo
     },
     audit: auditView(engine),
     artifactDir: ctx.artifactDir,
-    actions: buildActions(engine, ctx.slots, ctx.busy),
+    actions: buildActions(engine, ctx.slots, ctx.busy, { tournamentMode: ctx.tournamentMode }),
   };
 }
 
@@ -431,3 +503,106 @@ export function toDifficulty(v: unknown, fallback: WireDifficulty = 'medium'): W
 }
 
 export { STALEMATE_NO_PROGRESS_LIMIT };
+
+// ============================================================================
+// 参赛者板（V1.2 §一）
+// ============================================================================
+
+export interface TeamBoardContext {
+  /** 本队槽位状态（只传本队的） */
+  slot: SlotState;
+  /** 当前生效的运行期槽位根 */
+  slotRoot: string;
+  /** 本队包内的文件清单（由 session 读一次后传入，避免 board 每次 tick 都哈希一遍） */
+  files: { path: string; bytes: number }[];
+  busy: boolean;
+  lastError: string | null;
+  tournamentMode: boolean;
+}
+
+/**
+ * 参赛者板。
+ *
+ * **两条白名单纪律**（与观众板同源，但这里按队别裁剪）：
+ *   1. 只投影**本队**的槽位；对手的包名、哈希、目录、源码一个字段都没有；
+ *   2. 双方锁定之前，**对方的 Emitter 选择恒为 null** —— 只暴露 `locked` 这一个布尔。
+ *
+ * `actions[].enabled` 的判据逐条抄自引擎自己的前置条件
+ * （`selectEmitter()` 要求 `phase === 'EMITTER_SELECT'` 且本方未锁定；
+ * `lockEmitter()` 另外要求本方**已经选过**），不做任何影子判断。
+ */
+export function teamBoard(
+  engine: MatchEngine,
+  team: TeamSlot,
+  ctx: TeamBoardContext
+): TeamBoard {
+  const snap = engine.getSnapshot();
+  const sel = snap.emitterSelection;
+  const mine = sel[team];
+  const theirs = sel[team === 'A' ? 'B' : 'A'];
+  const tournament = ctx.tournamentMode;
+
+  const isFactory = isFactoryPackage(ctx.slot.hash);
+  const packageReady =
+    ctx.slot.status === 'READY' && (!tournament || !isFactory);
+
+  const phase = snap.phase;
+  const canSelect = phase === 'EMITTER_SELECT' && !mine.locked && !ctx.busy;
+  const canLock = phase === 'EMITTER_SELECT' && !mine.locked && mine.selected !== null && !ctx.busy;
+
+  const actions: ActionView[] = [
+    {
+      key: 'select-emitter',
+      label: '选择本场 Emitter',
+      enabled: canSelect,
+      hint: mine.locked
+        ? '已锁定，整场不可更换'
+        : phase !== 'EMITTER_SELECT'
+          ? `当前阶段 ${phase} 不能选择 Emitter`
+          : '从自己的初始点里选一个作为本场的发射锚点',
+    },
+    {
+      key: 'lock-emitter',
+      label: '锁定 Emitter',
+      enabled: canLock,
+      hint: mine.locked
+        ? '已锁定'
+        : mine.selected === null
+          ? '请先选择 Emitter'
+          : '锁定后整场不可更换；双方都锁定后锚点公开',
+    },
+  ];
+
+  return {
+    team,
+    matchId: engine.matchId,
+    round: snap.round,
+    phase,
+    slot: slotView(ctx.slot),
+    packageReady,
+    candidates: engine.emitterCandidates(team).map((p) => ({
+      id: p.id,
+      x: p.position.x,
+      y: p.position.y,
+      alive: p.alive,
+    })),
+    own: { selected: mine.selected?.id ?? null, locked: mine.locked },
+    // 对方的选择在双方锁定之前**不投影**（不是前端隐藏，是根本不发）
+    opponent: {
+      locked: theirs.locked,
+      selected: sel.revealed ? (theirs.selected?.id ?? null) : null,
+    },
+    revealed: sel.revealed,
+    emitters: snap.emitters
+      ? {
+          A: { id: snap.emitters.A.id, x: snap.emitters.A.position.x, y: snap.emitters.A.position.y },
+          B: { id: snap.emitters.B.id, x: snap.emitters.B.position.x, y: snap.emitters.B.position.y },
+        }
+      : null,
+    actions,
+    files: ctx.files,
+    busy: ctx.busy,
+    lastError: ctx.lastError,
+    tournamentMode: tournament,
+  };
+}

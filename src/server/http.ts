@@ -22,11 +22,21 @@ import { Replay } from '../core/Logs';
 import {
   COMMAND_PATHS,
   CommandResult,
+  TEAM_COMMAND_PATHS,
   TRAJECTORY_MAX_POINTS,
   WireDifficulty,
 } from './protocol';
+import { MAX_UPLOAD_BYTES, UploadedFile } from './upload';
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * 上传端点的体积上限。
+ *
+ * 「装下 8MB 的包 + base64 的 33% 开销 + JSON 包装」还留有余量。
+ * 其它端点仍然受 64KB 限制 —— 不因为多了一个上传口就把全局闸门放松。
+ */
+const MAX_UPLOAD_BODY_BYTES = MAX_UPLOAD_BYTES + 2 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -65,13 +75,16 @@ function sendText(res: ServerResponse, status: number, text: string): void {
   res.end(text);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(
+  req: IncomingMessage,
+  limit = MAX_BODY_BYTES
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
     const b = chunk as Buffer;
     total += b.length;
-    if (total > MAX_BODY_BYTES) throw new Error('请求体过大');
+    if (total > limit) throw new Error('请求体过大');
     chunks.push(b);
   }
   if (chunks.length === 0) return {};
@@ -84,6 +97,13 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
 
 function asTeam(v: unknown): 'A' | 'B' | null {
   return v === 'A' || v === 'B' ? v : null;
+}
+
+/** 查询串里的队别（大小写不敏感：`?team=a` 与 `?team=A` 都收） */
+function asTeamQuery(v: string | null): 'A' | 'B' | null {
+  if (typeof v !== 'string') return null;
+  const u = v.trim().toUpperCase();
+  return u === 'A' || u === 'B' ? (u as 'A' | 'B') : null;
 }
 
 function asDifficulty(v: unknown): WireDifficulty | undefined {
@@ -288,6 +308,31 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
         sendJson(res, 200, { ok: true, replay: downsampleReplay(r.replay), match: r.match });
         return;
       }
+      // ---- 参赛者端只读（V1.2）----
+      if (method === 'GET' && pathname === '/api/team/state') {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        sendJson(res, 200, { ok: true, board: deps.session.getBoard(team === 'A' ? 'team-a' : 'team-b') });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/team/source') {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        const rel = url.searchParams.get('path') ?? '';
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        const r = deps.session.readOwnSource(team, rel);
+        if (!r.ok) {
+          sendJson(res, 400, { ok: false, errors: r.errors });
+          return;
+        }
+        sendJson(res, 200, { ok: true, path: rel, text: r.text });
+        return;
+      }
       if (method === 'GET' && pathname.startsWith('/api/trajectory/')) {
         const id = decodeURIComponent(pathname.slice('/api/trajectory/'.length));
         const traj = deps.session.getTrajectory(id);
@@ -301,7 +346,9 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
 
       // ---- 命令（全部 POST） ----
       if (method === 'POST') {
-        const body = await readJsonBody(req);
+        // 只有上传端点放宽体积上限；其余一律 64KB
+        const limit = pathname === TEAM_COMMAND_PATHS.upload ? MAX_UPLOAD_BODY_BYTES : undefined;
+        const body = await readJsonBody(req, limit);
         const result = await dispatchCommand(deps.session, pathname, body);
         if (result === null) {
           sendJson(res, 404, { ok: false, errors: ['未知接口'] });
@@ -366,7 +413,43 @@ async function dispatchCommand(
       return session.compute();
     case COMMAND_PATHS.runToEnd:
       return session.runToEnd();
+    case COMMAND_PATHS.prepare:
+      return session.prepareMatch();
+
+    // ---- 参赛者端命令（V1.2）----
+    case TEAM_COMMAND_PATHS.upload: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      const files = asUploadedFiles(body.files);
+      if (!files) return { ok: false, errors: ['files 必须是 [{path, contentBase64}]'] };
+      return session.uploadPackage(team, files);
+    }
+    case TEAM_COMMAND_PATHS.selectEmitter: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      const pointId = typeof body.pointId === 'string' ? body.pointId : '';
+      if (!pointId) return { ok: false, errors: ['缺少 pointId'] };
+      return session.selectEmitter(team, pointId);
+    }
+    case TEAM_COMMAND_PATHS.lockEmitter: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      return session.lockEmitter(team);
+    }
     default:
       return null;
   }
+}
+
+/** 把请求体里的 files 字段收敛成受控形状；形状不对就返回 null（不猜） */
+function asUploadedFiles(v: unknown): UploadedFile[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: UploadedFile[] = [];
+  for (const item of v) {
+    if (!item || typeof item !== 'object') return null;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.path !== 'string' || typeof rec.contentBase64 !== 'string') return null;
+    out.push({ path: rec.path, contentBase64: rec.contentBase64 });
+  }
+  return out;
 }

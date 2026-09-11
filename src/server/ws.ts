@@ -84,8 +84,10 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
 
     // 连接建立：hello + 当前 board + 当前轨迹（若有）—— 重连即恢复现场
     send({ type: 'hello', topic, seq: ++seq });
-    send({ type: 'board', topic, seq: ++seq, board: session.getBoard(topic) });
-    const handle = session.getBoard(topic).trajectoryHandle;
+    const board = session.getBoard(topic);
+    send({ type: 'board', topic, seq: ++seq, board });
+    // 参赛者板没有轨迹句柄（它不看比赛画面），只有观众/裁判会拿到
+    const handle = 'trajectoryHandle' in board ? board.trajectoryHandle : null;
     if (handle) {
       const traj = session.getTrajectory(handle.id);
       if (traj) send({ type: 'trajectory', topic, trajectory: traj });

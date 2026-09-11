@@ -256,8 +256,15 @@ export interface TrajectoryPayload {
 // WS 消息
 // ============================================================================
 
-export const WS_TOPICS = ['judge', 'spectator'] as const;
+export const WS_TOPICS = ['judge', 'spectator', 'team-a', 'team-b'] as const;
 export type Topic = (typeof WS_TOPICS)[number];
+
+/** topic → 它代表的队伍（只有 team-* 有值） */
+export function teamOfTopic(topic: Topic): WireTeam | null {
+  if (topic === 'team-a') return 'A';
+  if (topic === 'team-b') return 'B';
+  return null;
+}
 
 export function isTopic(v: unknown): v is Topic {
   return typeof v === 'string' && (WS_TOPICS as readonly string[]).includes(v);
@@ -265,7 +272,7 @@ export function isTopic(v: unknown): v is Topic {
 
 export type ServerMessage =
   | { type: 'hello'; topic: Topic; seq: number }
-  | { type: 'board'; topic: Topic; seq: number; board: SpectatorBoard | JudgeBoard }
+  | { type: 'board'; topic: Topic; seq: number; board: SpectatorBoard | JudgeBoard | TeamBoard }
   | { type: 'trajectory'; topic: Topic; trajectory: TrajectoryPayload }
   | { type: 'pong' };
 
@@ -281,6 +288,56 @@ export interface CommandResult {
   detail?: Record<string, unknown>;
 }
 
+/** 参赛者端的一个候选点（本队自己的初始点） */
+export interface CandidateView {
+  id: string;
+  x: number;
+  y: number;
+  alive: boolean;
+}
+
+/**
+ * **参赛者板** —— 按队别裁剪的白名单投影。
+ *
+ * 三条硬规则：
+ *   1. 只含**本队**的槽位与源码；对方的东西一个字段都不给；
+ *   2. **双方锁定之前不暴露对方的 Emitter 选择** —— `opponent.selected` 恒为 null，
+ *      只给出 `opponent.locked` 这一个布尔；
+ *   3. `actions[].enabled` 的判据**逐条来自引擎自己的前置条件**，
+ *      前端不得再写一套（`buildActions` 是唯一来源）。
+ */
+export interface TeamBoard {
+  team: WireTeam;
+  matchId: string;
+  round: number;
+  phase: WirePhase;
+  /** 本队算法槽位 */
+  slot: SlotView;
+  /** 本队算法是否已就绪（上传 + Preflight 通过） */
+  packageReady: boolean;
+  /** 本队可选的 Emitter 候选点（自己的初始点） */
+  candidates: CandidateView[];
+  /** 本队自己的选择 */
+  own: { selected: string | null; locked: boolean };
+  /** 对方：锁定前只知道「锁没锁」 */
+  opponent: { locked: boolean; selected: string | null };
+  /** 双方是否都已锁定（此后锚点对所有人公开） */
+  revealed: boolean;
+  /** 双方锁定后公开的锚点坐标；未公开时为 null */
+  emitters: {
+    A: { id: string; x: number; y: number };
+    B: { id: string; x: number; y: number };
+  } | null;
+  /** 本队可执行的动作（服务端权威判据） */
+  actions: ActionView[];
+  /** 本队包内的文件清单（只读浏览用；不含内容） */
+  files: { path: string; bytes: number }[];
+  busy: boolean;
+  lastError: string | null;
+  /** 锦标赛模式：禁用一切内置/测试算法，必须使用真实上传的包 */
+  tournamentMode: boolean;
+}
+
 export const COMMAND_PATHS = {
   newMatch: '/api/judge/new-match',
   reset: '/api/judge/reset',
@@ -292,7 +349,17 @@ export const COMMAND_PATHS = {
   startRound: '/api/judge/start-round',
   compute: '/api/judge/compute',
   runToEnd: '/api/judge/run-to-end',
+  prepare: '/api/judge/prepare',
 } as const;
+
+/** 参赛者端命令（队别由请求体给出，服务端会校验它只能操作自己） */
+export const TEAM_COMMAND_PATHS = {
+  upload: '/api/team/upload',
+  selectEmitter: '/api/team/select-emitter',
+  lockEmitter: '/api/team/lock-emitter',
+} as const;
+
+export type TeamCommandPath = (typeof TEAM_COMMAND_PATHS)[keyof typeof TEAM_COMMAND_PATHS];
 
 export type CommandPath = (typeof COMMAND_PATHS)[keyof typeof COMMAND_PATHS];
 

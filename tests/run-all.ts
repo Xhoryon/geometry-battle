@@ -42,6 +42,7 @@ const SUITES = [
   'arena-view',
   'judge-console',
   'operator-e2e',
+  'server-team',
   'runtime-manifest',
   'competitor-kit',
   // Web UI（V1.1 Local Web UI）—— 投影层纯函数 + 真 HTTP/WS 端到端。
