@@ -19,6 +19,9 @@ const PHASE_LABEL: Record<string, string> = {
   UPLOAD_A: '已载入 Team A',
   UPLOAD_B: '已载入 Team B',
   PREFLIGHT: '校验中',
+  // V1.2 §一：START 之后、双方锁定之前。漏掉这一格，大屏会直接把原始枚举
+  // （`EMITTER_SELECT`）印在现场，观众看到的是一个英文常量。
+  EMITTER_SELECT: '双方选择发射锚点',
   READY: '就绪',
   PUBLIC: '本轮已冻结 — 等待揭晓',
   REVEAL: '已揭晓 — 等待 START',
@@ -81,6 +84,22 @@ export function SpectatorPage(): JSX.Element {
             <span className="round-mark__label">First solver</span>
             <span className="round-mark__value" style={{ color: first === 'A' ? 'var(--a)' : first === 'B' ? 'var(--b)' : 'var(--muted)' }}>
               {first === 'tie' ? '同时' : `TEAM ${first}`}
+            </span>
+          </div>
+        ) : null}
+
+        {/*
+          本场双方的开火点（V1.2 §一）。
+          「双方都锁定」之前，引擎根本不下发这两个坐标（`emitters: null`），
+          所以这里不是「前端记得别显示」——是收不到。
+        */}
+        {board.arena.emitters ? (
+          <div className="round-mark" data-testid="spectator-emitters">
+            <span className="round-mark__label">本场发射锚点</span>
+            <span className="round-mark__value num">
+              <span className="team-dot team-dot--a" /> {board.arena.emitters.A.id}
+              {'　'}
+              <span className="team-dot team-dot--b" /> {board.arena.emitters.B.id}
             </span>
           </div>
         ) : null}

@@ -21,6 +21,7 @@ import { snapshotDigest, spectatorBoard } from '../src/server/boards';
 import {
   obstacleToDrawable,
   projectPoint,
+  projectRadius,
   projectX,
   projectY,
   ratioAt,
@@ -206,7 +207,7 @@ test('四种障碍物都能投影成可绘制的屏幕几何', () => {
 
   const circle = obstacleToDrawable({ type: 'circle', center: [0, 0], radius: 3 }, FIELD, size);
   assertEqual(circle.kind, 'circle', '圆 → circle');
-  assert((circle.r ?? 0) > 0, '圆的半径必须为正');
+  assert((circle.rx ?? 0) > 0 && (circle.ry ?? 0) > 0, '圆的两个半径都必须为正');
 
   const seg = obstacleToDrawable({ type: 'segment', x1: -4, y1: 0, x2: 4, y2: 0 }, FIELD, size);
   assertEqual(seg.kind, 'segment', '线段 → segment');
@@ -214,6 +215,46 @@ test('四种障碍物都能投影成可绘制的屏幕几何', () => {
   const poly = obstacleToDrawable({ type: 'polygon', vertices: [[0, 0], [2, 0], [2, 2]] }, FIELD, size);
   assertEqual(poly.kind, 'polygon', '多边形 → polygon');
   assertEqual(poly.points?.length, 3, '多边形顶点数必须保留');
+});
+
+test('圆的屏幕几何 = 数学圆在投影下的像（非等比绘图区同样成立）', () => {
+  // 引擎判定的是一张数学平面上的**真圆**（`Judge.ts` 用欧氏距离），
+  // 而绘图区几乎不可能正好等比缩放 —— 于是屏幕上该画成椭圆。
+  //
+  // 旧实现只按 x 轴缩放半径，在宽屏下把圆画得**偏高**：轨迹看起来在碰到
+  // 障碍物之前就停了，两个其实有间距的障碍物看起来在重叠。这正是现场
+  // 报上来的「障碍物视觉重叠」。
+  const circle = { type: 'circle' as const, center: [-6, 3] as [number, number], radius: 4.6 };
+  // 400x240 的宽高比恰好是场地 40:24（1.667）—— 那是旧实现唯一看不出问题的尺寸，
+  // 所以清单里必须**同时**有非等比的尺寸，否则这条回归是空转的。
+  const sizes = [
+    { w: 400, h: 240 },
+    { w: 1200, h: 300 },
+    { w: 320, h: 640 },
+    { w: 900, h: 900 },
+  ];
+
+  for (const size of sizes) {
+    const d = obstacleToDrawable(circle, FIELD, size);
+    const rx = d.rx ?? 0;
+    const ry = d.ry ?? 0;
+    const tag = `${size.w}x${size.h}`;
+    assert(rx > 0 && ry > 0, `${tag}: 两个半径都必须为正`);
+
+    // 两个半径各用**自己**那条轴的尺度（与 projectX/projectY 分母一致）
+    assertClose(rx, projectRadius(circle.radius, FIELD.xMax - FIELD.xMin, size.w), 1e-9, `${tag}: rx 必须用 x 轴尺度`);
+    assertClose(ry, projectRadius(circle.radius, FIELD.yMax - FIELD.yMin, size.h), 1e-9, `${tag}: ry 必须用 y 轴尺度`);
+
+    // 数学圆上任意一点投影后，必须正好落在画出的椭圆上
+    for (const deg of [0, 30, 90, 145, 210, 300]) {
+      const th = (deg * Math.PI) / 180;
+      const px = projectX(circle.center[0] + circle.radius * Math.cos(th), FIELD, size.w);
+      const py = projectY(circle.center[1] + circle.radius * Math.sin(th), FIELD, size.h);
+      const nx = (px - d.cx!) / rx;
+      const ny = (py - d.cy!) / ry;
+      assertClose(nx * nx + ny * ny, 1, 1e-9, `${tag}: ${deg}° 处的投影点必须落在画出的椭圆上`);
+    }
+  }
 });
 
 // ============================================================================
