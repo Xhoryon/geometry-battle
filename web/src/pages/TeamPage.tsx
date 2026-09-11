@@ -145,6 +145,20 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
   const roleClass = team === 'A' ? 'panel--a' : 'panel--b';
   const label = `参赛者 ${team}`;
 
+  /**
+   * 「上传 → 校验 → 选锚点 → 锁定」四步。
+   *
+   * 每一步的**完成判据只来自服务端**：槽位装没装、能不能参赛、自己选没选、锁没锁。
+   * 页面不另算一套进度 —— 那是影子规则。`phase` 只用来解释「为什么现在点不动」。
+   */
+  const steps = [
+    { key: 'upload', label: '上传算法包', done: Boolean(board?.slot.installed) },
+    { key: 'verify', label: '赛前校验', done: Boolean(board?.packageReady) },
+    { key: 'select', label: '选择锚点', done: selectedId !== null },
+    { key: 'lock', label: '锁定', done: locked },
+  ];
+  const nowStep = steps.findIndex((s) => !s.done);
+
   return (
     <div className="team">
       <header className="team__rail">
@@ -184,6 +198,24 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
       </header>
 
       <main className="team__main">
+        {/*
+          四步进度条 —— 参赛者一眼看到「我走到哪、下一步做什么」。
+          这一步之前只有散落在三块面板里的状态，没人知道顺序。
+        */}
+        <ol className="steps" data-testid="team-steps">
+          {steps.map((s, i) => (
+            <li
+              key={s.key}
+              className="steps__item"
+              data-step={s.key}
+              data-state={s.done ? 'done' : i === nowStep ? 'now' : 'todo'}
+            >
+              <span className="steps__no">{i + 1}</span>
+              <span className="steps__label">{s.label}</span>
+            </li>
+          ))}
+        </ol>
+
         {/* ---- 1. 算法包 ---- */}
         <section className={`panel ${roleClass}`} data-testid="team-package">
           <div className="panel__title">
@@ -200,8 +232,14 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               - 文件 / ZIP：普通多选；单个 `.zip` 会在浏览器里展开（服务端零依赖，不接 zip）。
             三条路最终都只是「路径 + 字节」，走同一条安装流水线。
           */}
-          <div className="field">
-            <span>上传文件夹</span>
+          {/*
+            两种来源各给一个入口。原生 `<input type=file>` 的按钮部件在
+            Chrome 里几乎无法彻底换皮（`::file-selector-button` 的背景常常
+            被忽略），所以这里用**包裹 label + 视觉隐藏的原生 input**：
+            真正接到浏览器文件选择器的仍然是那个 input，只是不参与布局。
+            这样按钮的样子与文案都由页面说了算。
+          */}
+          <label className={`upload${busy ? ' upload--busy' : ''}`}>
             <input
               ref={fileRef}
               type="file"
@@ -212,9 +250,13 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               {...({ webkitdirectory: '' } as any)}
               onChange={(e) => void onUpload(e.target.files)}
             />
-          </div>
-          <div className="field">
-            <span>上传文件 / ZIP</span>
+            <span className="upload__btn" aria-hidden="true">
+              选择文件夹
+            </span>
+            <span className="upload__hint">整个算法目录（包根目录里要有 solver.py）</span>
+          </label>
+
+          <label className={`upload${busy ? ' upload--busy' : ''}`}>
             <input
               ref={fileInputRef}
               type="file"
@@ -223,11 +265,15 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               disabled={busy}
               onChange={(e) => void onUpload(e.target.files)}
             />
-          </div>
+            <span className="upload__btn" aria-hidden="true">
+              选择文件 / ZIP
+            </span>
+            <span className="upload__hint">单个 solver.py、多个文件，或一个 .zip</span>
+          </label>
           <p className="muted">
             单个 <code>solver.py</code>、一整个算法目录、或者一个 <code>.zip</code> 都可以。
-            上传会经过 staging → validate → sandbox preflight → seal → replace，
-            与正式比赛**同一套校验**，浏览器绕不过去。
+            上传走的是与正式比赛<strong>同一套校验</strong>
+            （staging → validate → sandbox preflight → seal → replace），浏览器绕不过去。
           </p>
 
           <div className="slot">
@@ -314,19 +360,11 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
 
           {board && board.candidates.length > 0 ? (
             <>
-              <div className="actions">
-                <button
-                  className={`btn ${team === 'A' ? 'btn--a' : ''}`}
-                  data-testid="team-lock"
-                  data-action={lockAction?.key}
-                  disabled={!lockAction?.enabled || busy}
-                  title={lockAction?.hint ?? ''}
-                  onClick={() => void run(TEAM_PATHS.lockEmitter, { team }, 'Emitter 已锁定')}
-                >
-                  锁定 Emitter
-                </button>
-                <span className="muted">{lockAction?.hint}</span>
-              </div>
+              {/* 先选、后锁 —— 顺序就是操作顺序。此前锁定按钮排在候选列表**上面**，
+                  等于让人先看到一个还点不动的按钮。 */}
+              <p className="step-caption" data-testid="team-select-caption">
+                <span className="steps__no">3</span> 从下面这些点里挑一个作为本场锚点
+              </p>
 
               <ul className="audit-list" data-testid="team-candidates">
                 {board.candidates.map((c) => {
@@ -352,6 +390,25 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
                   );
                 })}
               </ul>
+
+              <p className="step-caption">
+                <span className="steps__no">4</span> 选定之后锁定 —— 锁定后整场不可更换
+              </p>
+              <div className="actions">
+                {/* 本页此刻唯一该做的事 —— 用主操作样式，别和次要控件长一个样。
+                    禁用时它会退回普通 .btn 的样子，「还不能点」一眼可见。 */}
+                <button
+                  className="btn btn--primary"
+                  data-testid="team-lock"
+                  data-action={lockAction?.key}
+                  disabled={!lockAction?.enabled || busy}
+                  title={lockAction?.hint ?? ''}
+                  onClick={() => void run(TEAM_PATHS.lockEmitter, { team }, 'Emitter 已锁定')}
+                >
+                  锁定 Emitter
+                </button>
+                <span className="muted">{lockAction?.hint}</span>
+              </div>
             </>
           ) : (
             <p className="muted">

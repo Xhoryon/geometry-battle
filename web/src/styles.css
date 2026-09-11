@@ -88,9 +88,20 @@ body {
   color: var(--dim);
 }
 
+/*
+ * 按钮的 UA 默认外观必须重置。
+ *
+ * 这个界面里每个按钮类（`.btn` / `.act` / `.cand` / `.frame-btn`）都**自带**
+ * 背景与边框。不重置的话，`<button class="link">`（两页文件清单里那个）
+ * 会拖一条浅色的 UA 背景 —— 看起来像「这一行被选中了」。
+ */
 button {
   font: inherit;
   color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
 }
 
 :focus-visible {
@@ -224,6 +235,63 @@ button {
   padding: 6px 8px;
 }
 
+/*
+ * 上传入口。
+ *
+ * 用包裹 label + **视觉隐藏**的原生 input，而不是去给 `::file-selector-button`
+ * 换皮 —— 那个部件在 Chrome 里对 background 时灵时不灵，结果就是参赛者看到
+ * 浏览器默认的「选择文件 未选择任何文件」，整页立刻像开发者工具。
+ * 真正接到文件选择器的仍然是原生 input（也能被自动化测试 setInputFiles 驱动），
+ * 只是它不参与布局。
+ */
+.upload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  cursor: pointer;
+}
+.upload:hover {
+  border-color: color-mix(in oklab, var(--role) 50%, transparent);
+}
+/* 键盘用户 Tab 到这里时，焦点落在隐藏的 input 上 —— 把反馈画在外壳上 */
+.upload:focus-within {
+  border-color: var(--a);
+}
+.upload--busy {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.upload input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.upload__btn {
+  flex: none;
+  padding: 6px 14px;
+  border: 1px solid color-mix(in oklab, var(--role) 50%, transparent);
+  background: color-mix(in oklab, var(--role) 18%, var(--paper-2));
+  font-size: var(--fs-sm);
+}
+.upload__hint {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .errors {
   border: 1px solid color-mix(in oklab, var(--danger) 45%, transparent);
   background: color-mix(in oklab, var(--danger) 10%, transparent);
@@ -330,6 +398,27 @@ details.adv .adv__body {
 .screen__stage {
   position: relative;
   min-height: 0;
+}
+
+/* ---- 大屏阶段横幅 ----
+   叠在竞技场顶部居中：观众席上最远的那个人也读得到「现在在干什么」。
+   只占一行、半透明衬底，不挡竞技场主体。 */
+.screen__banner {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 22px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  pointer-events: none;
+}
+.screen__phase {
+  font-size: clamp(16px, 1.9vw, 26px);
+  letter-spacing: 0.06em;
+  color: var(--text);
+  white-space: nowrap;
 }
 .screen__stage canvas {
   display: block;
@@ -459,7 +548,38 @@ details.adv .adv__body {
   height: 100%;
   display: grid;
   grid-template-columns: 340px 1fr;
-  grid-template-rows: auto 1fr;
+  /* 表头 / 双方状态条 / 主体 */
+  grid-template-rows: auto auto 1fr;
+}
+
+/* ---- 裁判台的双方状态条 ----
+   常驻整宽：「跑的是谁、就绪没、锚点锁没锁」是开赛前必须确认的三件事，
+   不能埋在侧栏里等人滚动。 */
+.judge__teams {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in oklab, var(--panel) 70%, var(--paper));
+}
+.teamcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  min-width: 0;
+}
+.teamcard__name {
+  font-weight: 600;
+  color: var(--text);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .judge__bar {
   grid-column: 1 / -1;
@@ -709,6 +829,31 @@ details.adv .adv__body {
   border-color: color-mix(in oklab, var(--a) 45%, transparent);
 }
 
+/*
+ * 主操作按钮。
+ * 参赛者页在同一时刻只有**一个**该做的事（选点，然后锁定）。它必须长得
+ * 和次要控件不一样 —— 否则「下一步做什么」得靠读文字才知道。
+ * 禁用时退回普通 .btn 的样子，让「还不能点」一眼可见。
+ */
+/* 贴合内容而不是被 .actions 的网格拉成整条横幅 —— 那看起来像状态带，不像按钮 */
+.btn--primary {
+  justify-self: start;
+  min-width: 260px;
+  padding: 11px 18px;
+  font-size: var(--fs-body);
+  letter-spacing: 0.02em;
+}
+.btn--primary:not(:disabled) {
+  color: var(--paper);
+  background: var(--role);
+  border-color: var(--role);
+  font-weight: 600;
+}
+.btn--primary:not(:disabled):hover {
+  background: color-mix(in oklab, var(--role) 80%, white);
+  border-color: color-mix(in oklab, var(--role) 80%, white);
+}
+
 .empty {
   padding: 40px 20px;
   color: var(--dim);
@@ -823,6 +968,62 @@ details.adv .adv__body {
   overflow-y: auto;
 }
 
+/* ---- 参赛者四步进度条 ----
+   sticky：面板纵向滚动时它始终留在顶上 ——「我走到哪、下一步做什么」
+   不该因为往下滚了就消失。 */
+.steps {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 0 8px;
+  list-style: none;
+  /* 实底：sticky 时下面的内容会从它背后滚过去，必须挡住 */
+  background: var(--paper);
+}
+.steps__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid var(--rule);
+  color: var(--dim);
+  font-size: 12px;
+}
+.steps__item[data-state='done'] {
+  color: var(--ok);
+  border-color: color-mix(in oklab, var(--ok) 42%, transparent);
+}
+.steps__item[data-state='now'] {
+  color: var(--text);
+  background: color-mix(in oklab, var(--role) 12%, transparent);
+  border-color: color-mix(in oklab, var(--role) 60%, transparent);
+}
+.steps__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border: 1px solid currentColor;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+}
+/* 面板内的小标题，把「这一步在做什么」写出来（纯说明，不是可用性判据） */
+.step-caption {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 /* 画布在哪个容器里都要铺满 —— 舞台总是最后一层背景，别再包一层定位 */
 .team canvas {
   display: block;
@@ -845,7 +1046,10 @@ details.adv .adv__body {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  /* 贴合内容，别被网格列拉成整宽的一条 —— 坐标按钮铺满 1440px 只是显得空 */
+  justify-self: start;
+  width: auto;
+  min-width: 150px;
   text-align: left;
   padding: 7px 9px;
   background: transparent;

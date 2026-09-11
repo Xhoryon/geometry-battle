@@ -342,6 +342,41 @@ export function JudgePage(): JSX.Element {
         </span>
       </header>
 
+      {/*
+        双方状态条 —— 常驻整宽。
+        「跑的是谁、就绪没、锚点锁没锁」这三件事此前散在侧栏的「算法槽位」面板里，
+        裁判要滚动才看得到。它们恰恰是**开赛前必须确认**的东西，所以提到最上面。
+        所有字段都是服务端投影的直通拷贝，页面不推断任何状态。
+      */}
+      <div className="judge__teams" data-testid="judge-teams">
+        {(['A', 'B'] as const).map((t) => {
+          const s = board.slots[t];
+          const lock = emitterSelectionOf(board)?.[t] ?? null;
+          const ready = s.status === 'READY';
+          const pre = s.preflightOk === null ? '未经本平台安装' : s.preflightOk ? 'Preflight ✓' : 'Preflight ✕';
+          return (
+            <div className="teamcard" key={t} data-team={t} data-testid={`judge-team-${t}`}>
+              <span className={`team-dot team-dot--${t.toLowerCase()}`} />
+              <span className="teamcard__name" title="算法包自报的名字">
+                {s.name ?? '（未命名）'}
+              </span>
+              <span className={`tag ${ready ? 'tag--live' : 'tag--down'}`} title={pre}>
+                {ready ? '算法就绪' : '未就绪'}
+              </span>
+              <span
+                className={`tag ${lock?.locked ? 'tag--live' : ''}`}
+                data-testid={`judge-team-${t}-emitter`}
+              >
+                {lock?.locked ? `锚点 ${lock.selected?.id ?? '已锁定'}` : '锚点未锁定'}
+              </span>
+              <span className="num dim">
+                {board.packages[t] ? `本场密封 ${board.packages[t]!.hash.slice(0, 10)}…` : '本场未密封'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
       <aside className="judge__side">
         {errors.length > 0 ? (
           <ul className="errors" role="alert">
@@ -485,9 +520,12 @@ export function JudgePage(): JSX.Element {
             <span className="slot__detail">
               投递点 <code>{board.slotRoot}</code>
             </span>
-            <span className="slot__detail dim">
-              仓库里的 <code>algorithms/</code> 只是出厂 fixture —— 改它**不会**改变比赛用的算法
-            </span>
+            {/*
+              这里曾有一行「仓库里的 algorithms/ 只是出厂 fixture —— 改它**不会**改变
+              比赛用的算法」。两个问题：Markdown 的星号被当成普通文本原样渲染出来，
+              而且它是**文档**，不是操作信息 —— 上面那行投递点路径已经把「跑的是哪份」
+              说清楚了，这句解释留在 README 里更合适。
+            */}
           </div>
           {(['A', 'B'] as const).map((t) => {
             const s = board.slots[t];

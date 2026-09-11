@@ -44,6 +44,18 @@ export function SpectatorPage(): JSX.Element {
   }
 
   const first = board.lastRound?.firstSolver;
+
+  /**
+   * 大屏横幅上的一句话。
+   *
+   * 阶段名来自引擎，这里只把它翻成**观众看得懂**的说法 —— 引擎的 `READY`
+   * 在开赛前是「等待开赛」、在第一轮之后是「等待下一轮」，直接印「就绪」
+   * 对一个刚走进场馆的人毫无信息量。判据只用引擎已经给的字段，不另算。
+   */
+  const statusText =
+    board.phase === 'READY' && board.round > 0
+      ? '本轮已结算 · 等待下一轮'
+      : (PHASE_LABEL[board.phase] ?? board.phase);
   const note = ((): string => {
     if (board.verdict) {
       return board.verdict.winner === 'draw'
@@ -112,6 +124,15 @@ export function SpectatorPage(): JSX.Element {
       </header>
 
       <main className="screen__stage">
+        {/*
+          阶段横幅 —— 大屏的第一职责：**走进来的人一眼就知道现在是什么状态**。
+          此前阶段只出现在 rail 的小字里，现场隔几米根本看不清。
+          这里显示的仍然是引擎的原始阶段（经同一张中文表翻译），不是前端猜的。
+        */}
+        <div className="screen__banner" data-testid="spectator-status">
+          <span className="screen__phase">{statusText}</span>
+        </div>
+
         <ArenaCanvas arena={board.arena} trajectory={trajectory} killed={board.lastRound?.killed ?? []} />
         {board.verdict ? (
           <div className="verdict" data-testid="spectator-verdict">
