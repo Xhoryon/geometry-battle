@@ -420,8 +420,11 @@ export function JudgePage(): JSX.Element {
           </ul>
         ) : null}
 
+        {/* 后台任务（目前只有「连续跑完余下回合」）失败时留下的原因。
+            单独给一个 testid：它与上面那条「本机命令失败」是两回事 ——
+            后台任务失败会把比赛**停在原地**，演练必须能精确断言「没有留下它」。 */}
         {board.lastError ? (
-          <ul className="errors" role="alert">
+          <ul className="errors" role="alert" data-testid="judge-last-error">
             <li>{board.lastError}</li>
           </ul>
         ) : null}

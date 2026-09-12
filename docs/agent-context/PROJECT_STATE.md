@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.3 RC 修复波：竞态稳定化 + 本地化收口，见 §1.1）。
+> 最后更新：2026-09-12（V1.3 RC 修复波见 §1.1；复评后的 `run-to-end` 阶段契约修复见 §1.2）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -21,6 +21,7 @@
 | V1.2 发布基线 | `94a0788` —— 打了 `v1.2.0-competition` 的那一个提交，V1.3 从它分出，**未再改动** |
 | V1.3 本地化基线 | `b0f2751` —— 独立终审的被审候选，**未 amend、未改写**（终审结论：CONDITIONAL PASS） |
 | V1.3 RC 修复基线 | `f294c0e` —— 竞态稳定化提交；紧随其后的本地化收口提交见 §1.1 |
+| V1.3 复评修复 | `1c889e1` 之上的**两笔** —— `fix(server): continue run-to-end from the current match phase` 与其后的 `test: … realistic wait budget`，见 §1.2 |
 | 工作树 | **干净** —— V1.3 本地化与 RC 修复均已提交（含本文件自身的更新） |
 | 版本标签 | **三个** release tag（`v1.0.0-competition` / `v1.1.0-competition` / `v1.2.0-competition`）**均未移动**；V1.3 **尚未打 tag**（按要求） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
@@ -56,11 +57,84 @@
 | `npm run e2e` | 18 次完整运行中 **17 次全绿**；其中出现过 **1 次 2 failed（未复现）**，见下 |
 | 浏览器双语核对 | 裁判步骤条 / 难度 / 本轮错误 / 大屏系统文案 / 回放帧标号与摘要 |
 
-> **未解释的一次 e2e 失败（必须如实记录）**：本波第一批三次连跑中的第 2 次报
-> `tournament.spec.ts:267` 与 `:425` 两个用例失败（后者依赖前者装好的槽位，属级联）。
-> 该次运行的完整日志被记录命令里的 `tail -4` 截断，**失败断言未能取到**。
-> 其后 17 次完整 e2e 全绿、受影响套件 30 次重复全绿，**未能复现**。
-> 结论：**这一条尚未查清**，不是「已验证稳定」——重新评审时应优先复跑并保留完整日志。
+> **那次未解释的 e2e 失败**：本波第一批三次连跑中的第 2 次报 `tournament.spec.ts:267`
+> 与 `:425` 两个用例失败（后者依赖前者装好的槽位，属级联）。该次运行的完整日志被
+> `tail -4` 截断，失败断言未能取到。
+>
+> **2026-09-12 晚的独立复评已专门复跑并留全量日志**：`tournament.spec --repeat-each=30`
+> → 60/60；另加 **50 次连续完整 `npm run e2e`**（每次 8 用例、约 30 秒）全绿 ——
+> tournament.spec 累计 **110 次连续干净执行**，**未能复现**，也未找到幸存的失败机制。
+> 按历史频率（1/18）估算，110 次全绿的概率约 0.2%。**不再列为未决项。**
+
+---
+
+## 1.2 `run-to-end` 的阶段契约（V1.3 复评 P1 修复）
+
+**问题**：`runToEndBlocker()`（`boards.ts`，与裁判板「连续跑完余下回合」按钮的
+`enabled` **共用同一判据**）把 **READY / PUBLIC / REVEAL** 三个阶段都判为「可以连续推进」，
+而 `MatchSession.runToEnd()` 的循环原本**无条件**重放 `beginRound(); revealRound();`
+—— 那套次序只在 READY 起点成立。从 REVEAL 起点进入时：
+
+```text
+beginRound()      REVEAL → PUBLIC（把本轮已经生成好的揭盲打回「等待揭盲」）
+revealRound()     见 pendingReveal 已存在 → 提前返回，不推回 REVEAL
+judgeStartRound() phase !== 'REVEAL' → { ok: false }
+循环 return       比赛永久停在 PUBLIC / 0 回合
+```
+
+此后 reveal / start-round / run-to-end 全部退化为空操作（同一条提前返回分支），
+**唯一出路是换场重开** —— 而换场会作废双方已经锁定的 Emitter。界面上触发它的
+就是裁判的正常两步：「揭晓本轮」→「连续跑完余下回合」。
+
+**归因**：`94a0788`（V1.2 发布基线）里是同一段代码，**不是 V1.3 引入的**；
+`b0f2751..1c889e1` 完全没碰 `session.ts` / `core/Match.ts`。此前零覆盖 ——
+既有 e2e 与 `server-team` 一律在 **READY** 阶段点 run-to-end。
+
+**允许的阶段集合**：`runToEndBlocker()` 放行 ⟺ `endReason === 'NONE'` ∧ 有地图 ∧
+`phase ∈ { READY, PUBLIC, REVEAL }`。其中 **PUBLIC 没有任何 HTTP 命令会停在那一格**
+（它是 `reveal` 命令内部的中间态），保留它是防御性的；REVEAL 则是裁判真正的落点。
+
+**修复**（竞争规则、哈希、Emitter 语义、计时预算、算法输入、载荷一律未动）：
+
+| 落点 | 改动 |
+|---|---|
+| `session.ts` | 新增 `runToEndPreparation(phase)`：把「每个允许阶段还差哪一步」写成一张显式的表（READY → 冻结本轮输入 + 揭盲；PUBLIC → 只揭盲；REVEAL → 都不做，直接 START）。循环据此从**当前阶段**接着走，绝不重放已发生的阶段；遇到表外阶段如实报错退出，**不空转** |
+| `core/Match.ts` `beginRound()` | 本轮**已经揭晓**时不得把阶段回退到 PUBLIC。判据只认「同一轮的 reveal 是否已生成」，因此 `READY → PUBLIC` 的正常推进不受影响，已冻结的输入字节与哈希也一个都不碰 |
+| `core/Match.ts` `revealRound()` | 缓存分支命中时把阶段**留在 REVEAL**（幂等返回既有哈希，同时兑现自己的后置条件）。这条顺带关掉同一根因的第二条 UI 路径：`reveal` 动作在 REVEAL 阶段同样是 enabled 的，重复点「揭晓」曾经同样会把比赛打回 PUBLIC |
+
+**验证**：
+
+| 命令 | 结果 |
+|---|---|
+| `npx ts-node tests/run-to-end-phases.ts` | **5/5** —— READY / PUBLIC / REVEAL 各跑一场真比赛到终局；REVEAL 那条另断言整场采样中不出现 `PUBLIC + round 0` 卡死签名，且结算用的就是裁判**已经揭晓过**的那份 `roundStateHash`（证明现状被保留、未被重放） |
+| `npm run typecheck` / `typecheck:web` | 0 错误 |
+| `npm test` | **39/39 套件**（318 个用例；本波新增 `run-to-end-phases` 5 条） |
+| `npm run e2e` | **9 passed**（新增裁判侧 E2E：揭晓本轮后直接 run-to-end → 终局；它在旧实现上会红） |
+
+**旧实现对照**（全程在隔离副本 `/tmp/v13fix-old` 里做，主工作树未参与）：
+
+| 腿 | 内容 | 结果 |
+|---|---|---|
+| A | 修复后的实现 + 新套件 | 5/5 绿（基线） |
+| B | 只把 `runToEndPreparation('REVEAL')` 改回「重放 begin+reveal」 | 红 —— 契约用例指名报出 `期望 {beginRound:false,revealRound:false}，实际 {true,true}` |
+| C | 只把引擎两处阶段回退还原 | 红 —— 幂等用例报 `beginRound() 不得让已揭晓的本轮回退到 PUBLIC` |
+| D | `session.ts` + `Match.ts` 全部还原到 `1c889e1`，跑**新浏览器 E2E** | **红** —— 板上留下「当前阶段 PUBLIC 不能 START ROUND（需已 REVEAL）」，永不终局 |
+
+> A/B/C 一起说明**两条修复各自都被独立钉住**（只回退任一条都会有测试变红）；
+> D 说明新 E2E 对旧实现**有判别力**，不是一条只会永远变绿的摆设。
+
+> **新套件的等待预算是测试参数，不是竞赛阈值**：`waitForMatchEnd` 给 5 分钟、E2E 的
+> 「终局 or 后台错误」竞争窗口给 300 秒（对照：演练里 run-to-end 的预算本就是 600 秒）。
+> 起因是初次给了 90 秒，而负载高时 arc-sweep vs parabola-arc 会因「本轮双方都超时 →
+> 无击杀」一路打到硬上限、每轮还要现起两个沙箱，实测有一次跑到 **round 21 仍在正常推进**
+> （采样序列单调递增，不是卡死），90 秒不够。僵持上限（20）、硬回合上限（60）、
+> 500ms 计算预算、释放/计时语义**一个字都没动**。
+
+> **`timing-fairness` 是环境敏感用例，与本次改动无关**：本波完整 `npm test` 中它红过一次
+> （`aFasterRate=0.812`，阈值 0.4–0.6；当时 load 3.28，`XprotectService` 占 45%）。
+> 隔离副本里同机对照：**旧实现 `1c889e1` → 0.407（贴着下界通过）**，修复后实现 → 0.483（通过）
+> —— 同一份代码在同一条用例上既红又绿，判据本身在 0.4 边界附近不稳定。该用例测的是
+> 沙箱运行器（`runDuel`）的释放顺序，本波未触碰该路径。**未放宽阈值。**
 
 ---
 
@@ -360,7 +434,7 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 38 套件（含 timing-fairness，约 10 分钟）
+npm test                                       # 全量 39 套件（含 timing-fairness，约 10 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
@@ -370,11 +444,12 @@ npm run e2e                                    # Playwright 浏览器演练（�
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 38/38 套件通过，exit 0
-                                      （i18n 10 条，含 README 围栏/锚点自洽、
+npm test                            → 39/39 套件通过，318 个用例（另有 timing-fairness
+                                      的环境敏感性记录，见 §1.2 末）
+                                      （i18n 13 条，含 README 围栏/锚点自洽、
                                         两表占位符一致、td() 必须透传插值参数）
-npm run e2e                         → 8 passed（双语 5 + 中文赛事 2 + ZIP 1）
-                                      （完整赛事演练 + ZIP 上传演练，各含连续两场真实对局）
+npm run e2e                         → 9 passed（双语 5 + 中文赛事 3 + ZIP 1）
+                                      （完整赛事演练 + 揭晓后连续推进 + ZIP 上传演练）
 ```
 
 > 上述全量是在 **`BTLEServer` 占满一个核、load average 一度到 14.5** 的情况下跑完的，

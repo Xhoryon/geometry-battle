@@ -786,7 +786,20 @@ export class MatchEngine {
     // PUBLIC = 「本轮 public_state 已冻结，等待揭盲」。V1.2 之后开赛前的阶段是
     // READY（Emitter 已锁定），因此这里必须显式推进到 PUBLIC —— 否则「能不能揭盲」
     // 这类判断就失去了一个可依赖的阶段名。
-    this.phase = 'PUBLIC';
+    //
+    // **例外：本轮已经揭晓过时不得回退。** `beginRound()` 是「开始本轮」，不是
+    // 「回到本轮开头」；REVEAL 是它允许的入口阶段之一（`revealRound()` 在
+    // `pendingPublic` 缺失时会补做一次 `beginRound()`，见其注释），而同一个阶段
+    // 也可能被上层重复经过 —— `session.reveal()` 与 `runToEnd()` 都会先调它。
+    // 从 REVEAL 重放一次会把「本轮已揭盲」打回「等待揭盲」，随后
+    // `revealRound()` 见 `pendingReveal` 已存在而提前返回、**不会**再把阶段推回
+    // REVEAL，比赛就永久停在 PUBLIC：`judgeStartRound()` 以「需已 REVEAL」拒绝，
+    // 而唯一的出路是换场重开（V1.3 窄口径复评 P1）。
+    // 判据只认「同一轮的 reveal 是否已经生成」，因此不改变 READY → PUBLIC 的
+    // 正常推进，也不触碰任何已冻结的输入字节与哈希。
+    const alreadyRevealed =
+      this.pendingRound === round && Boolean(this.pendingReveal && this.pendingHashes);
+    this.phase = alreadyRevealed ? 'REVEAL' : 'PUBLIC';
     return { round, publicStateHash: this.pendingPublic.sha256 };
   }
 
@@ -799,6 +812,16 @@ export class MatchEngine {
    */
   revealRound(): { revealStateHash: string; roundStateHash: string } {
     if (this.pendingReveal && this.pendingHashes) {
+      // 本轮已经揭晓过 —— 幂等返回既有哈希，并且**把阶段停在 REVEAL**。
+      //
+      // 缓存命中时若不认阶段，调用方就会「拿到了哈希，却停在一个不是 REVEAL 的
+      // 阶段」：`judgeStartRound()` 随后以「需已 REVEAL」拒绝，比赛卡死
+      // （V1.3 窄口径复评 P1）。被调用到的场合只有 READY / PUBLIC / REVEAL
+      // （`session.reveal()` 之后、`judgeStartRound()` 的补齐路径、
+      // `runToEnd()` 的每一轮），这三种阶段下 REVEAL 都是正确的落点 ——
+      // 揭晓一旦发生就不该被撤销；COUNTDOWN 及之后根本到不了这里
+      // （`beginRound()` 会先抛，而 `pendingReveal` 在结算时已被清空）。
+      this.phase = 'REVEAL';
       return {
         revealStateHash: this.pendingHashes.revealStateHash,
         roundStateHash: this.pendingHashes.roundStateHash,

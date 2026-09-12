@@ -43,6 +43,9 @@ const SUITES = [
   'judge-console',
   'operator-e2e',
   'server-team',
+  // 「连续跑完余下回合」的阶段契约（V1.3 窄口径复评 P1）：runToEndBlocker 允许的
+  // 每个阶段都必须真的能推进到终局，且已揭晓的本轮不得被重放或打回 PUBLIC。
+  'run-to-end-phases',
   'runtime-manifest',
   'competitor-kit',
   'demo-repro',

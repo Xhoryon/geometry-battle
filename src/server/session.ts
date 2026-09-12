@@ -37,6 +37,7 @@ import {
   Topic,
   TrajectoryPayload,
   WireDifficulty,
+  WirePhase,
   teamOfTopic,
 } from './protocol';
 
@@ -65,6 +66,52 @@ export interface SessionOptions {
 }
 
 const BUSY: CommandResult = { ok: false, errors: ['上一条命令尚未完成，请稍候'] };
+
+/**
+ * `runToEnd()` 每一轮在 START 之前**还需要补做哪些准备动作** —— 由**当前阶段**决定。
+ *
+ * ## 为什么需要这张表
+ *
+ * `runToEndBlocker()`（`boards.ts`，与裁判板按钮的 `enabled` 共用同一判据）把
+ * **READY / PUBLIC / REVEAL** 三个阶段都判为「可以连续推进」。但这三个阶段各自
+ * 「还差哪一步」并不一样，而无条件重放 `beginRound(); revealRound();` 只在
+ * **READY** 起点成立：
+ *
+ *   - 从 **REVEAL** 起点重放：`beginRound()` 会把本轮已经揭盲的阶段打回 PUBLIC，
+ *     紧接着 `revealRound()` 见 `pendingReveal` 已存在而提前返回（不再推回 REVEAL），
+ *     于是 `judgeStartRound()` 以「需已 REVEAL」失败、循环退出 ——
+ *     比赛永久停在 PUBLIC / 0 回合，且此后 reveal / start-round / run-to-end 全部
+ *     无法推进，只能换场重开（**V1.3 窄口径复评 P1**）。
+ *   - 从 **PUBLIC** 起点重放：`beginRound()` 会把本轮已冻结的 `public_state`
+ *     连同 `pendingRound` 一起留在原地再算一遍「新一轮」——即便侥幸不炸，
+ *     也是在**重放已经发生过的阶段**。
+ *
+ * 因此规则只有一条：**从当前阶段接着走，绝不重放已发生的阶段。**
+ *
+ *   READY  —— 新一轮的起点：冻结本轮输入（public_state）→ 揭盲
+ *   PUBLIC —— 本轮输入已冻结，只差揭盲
+ *   REVEAL —— 本轮已经揭晓过：直接 START，一步都不许回头
+ *
+ * 返回 `null` 表示这个阶段不在 `runToEndBlocker()` 允许的集合里（入口判据保证
+ * 调用方到不了这里；真到了说明有别的路径改动了阶段，循环会如实报错退出而不是空转）。
+ *
+ * 这张表与 `runToEndBlocker()` 的允许集合必须**逐一对应**，由
+ * `tests/run-to-end-phases.ts` 逐阶段钉死。
+ */
+export function runToEndPreparation(
+  phase: WirePhase
+): { beginRound: boolean; revealRound: boolean } | null {
+  switch (phase) {
+    case 'READY':
+      return { beginRound: true, revealRound: true };
+    case 'PUBLIC':
+      return { beginRound: false, revealRound: true };
+    case 'REVEAL':
+      return { beginRound: false, revealRound: false };
+    default:
+      return null;
+  }
+}
 
 export class MatchSession {
   private setup: MatchSetupUI;
@@ -586,8 +633,20 @@ export class MatchSession {
     const task = (async (): Promise<void> => {
       try {
         while (this.engine.endReason() === 'NONE') {
-          this.engine.beginRound();
-          this.engine.revealRound();
+          // 从**当前阶段**接着走，不重放已经发生过的阶段 —— 入口判据允许
+          // READY / PUBLIC / REVEAL 三个阶段，而它们各自还差哪一步并不一样。
+          // 逐阶段契约与踩过的坑见 `runToEndPreparation()` 的注释。
+          const phase = this.engine.getSnapshot().phase;
+          const prep = runToEndPreparation(phase);
+          if (!prep) {
+            // 入口判据保证到不了这里。真到了就如实退出，**绝不空转** ——
+            // 空转等于「后台任务报 ok:true 却什么都没做」，那正是这类问题里
+            // 最难查的一种。
+            this.lastError = `连续推进遇到无法接续的阶段 ${phase}`;
+            return;
+          }
+          if (prep.beginRound) this.engine.beginRound();
+          if (prep.revealRound) this.engine.revealRound();
           const started = this.engine.judgeStartRound();
           if (!started.ok) {
             this.lastError = started.error ?? 'START 失败';
