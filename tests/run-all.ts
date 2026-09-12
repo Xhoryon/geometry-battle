@@ -50,6 +50,7 @@ const SUITES = [
   // 浏览器演练（Playwright）不在这里：它需要构建前端与真实浏览器，
   // 由 `npm run e2e` 单独跑。
   'web-projection',
+  'web-zip',
   'web-server',
 ];
 
