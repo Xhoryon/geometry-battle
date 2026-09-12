@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.2 最终产品波：界面走查 + ZIP 端到端 + 协议防漂移）。
+> 最后更新：2026-09-12（V1.2 最终覆盖补丁：DEFLATE ZIP + 收口为 RC 候选）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -96,7 +96,7 @@
 | 能力 | 落点 | 验证 |
 |---|---|---|
 | 参赛者页 `/team/a` `/team/b` | `web/src/pages/TeamPage.tsx`、`App.tsx:80-81` | e2e、`server-team` |
-| 浏览器上传算法包（目录 / 文件 / ZIP） | `TeamPage.tsx`、`web/src/api/client.ts`、`web/src/api/zip.ts` | `server-team`、e2e |
+| 浏览器上传算法包（目录 / 文件 / ZIP） | `TeamPage.tsx`、`web/src/api/client.ts`、`web/src/api/zip.ts` | `server-team`、e2e、`web-zip` |
 | 参赛者只读浏览自己的源码 | `GET /api/team/source`、`client.ts#fetchTeamSource` | `server-team` |
 | **主办方查看上传的算法源码** | `GET /api/judge/source`、`SlotView.fileList`、`JudgePage` 源码面板 | `server-team` |
 | 每队自选并锁定 Fixed Emitter | `Match.ts`、`/api/team/select-emitter`、`lock-emitter` | `fixed-emitter`、`server-team`、e2e |
@@ -122,6 +122,10 @@
 > ZIP 上传演练）。它此前**从未跑完过** —— V1.2 重写 spec 时 `clickAction`
 > 直接点收进 `Advanced` 折叠区的按钮，隐藏元素永远等不到可见性。
 > 详见 development_log 阶段 12.6。
+>
+> ZIP 的**两条解析分支都有覆盖**：`stored(0)` 在 `zip-upload` 里由测试现打，
+> `deflate(8)` 用已提交的 `tests/fixtures/uploads/valid-deflate.zip`；
+> 后者还有一条**不需要浏览器**的回归（`tests/web-zip`）守着 fixture 的真伪。
 
 ### 锦标赛模式（默认开）
 
@@ -243,7 +247,7 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 35 套件（含 timing-fairness，约 10 分钟）
+npm test                                       # 全量 36 套件（含 timing-fairness，约 10 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
@@ -253,7 +257,7 @@ npm run e2e                                    # Playwright 浏览器演练（�
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 35/35 套件通过，exit 0
+npm test                            → 36/36 套件通过，exit 0
 npm run e2e                         → 3 passed，连续跑了两次
                                       （完整赛事演练 + ZIP 上传演练，各含连续两场真实对局）
 ```
