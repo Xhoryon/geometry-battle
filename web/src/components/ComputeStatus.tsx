@@ -6,6 +6,8 @@
  * 而不是「它比对手慢 0.1s」。
  */
 
+import { useI18n } from '../i18n/useI18n';
+import type { TranslationKey } from '../i18n/translations';
 import type { ComputeCell } from '../../../src/server/protocol';
 import type { JSX } from 'react';
 
@@ -15,11 +17,17 @@ export interface ComputeStatusProps {
   headline?: string;
 }
 
-const STATE_LABEL: Record<ComputeCell['state'], string> = {
-  idle: '未运行',
-  running: '计算中…',
-  done: '已完成',
-  error: '异常',
+/**
+ * 状态 → 翻译键。
+ *
+ * 这里存的是**键**而不是句子：文案在 `i18n/translations.ts` 里，
+ * 否则「加一种语言要改的地方」就会散到各个组件里。
+ */
+const STATE_KEY: Record<ComputeCell['state'], TranslationKey> = {
+  idle: 'compute.idle',
+  running: 'compute.running',
+  done: 'compute.done',
+  error: 'compute.error',
 };
 
 function Side({
@@ -31,6 +39,7 @@ function Side({
   cell: ComputeCell;
   budgetMs: number;
 }): JSX.Element {
+  const { t } = useI18n();
   const running = cell.state === 'running';
   const ratio = cell.timeMs !== null && budgetMs > 0 ? Math.min(1, cell.timeMs / budgetMs) : 0;
   const overBudget = cell.timeMs !== null && cell.timeMs >= budgetMs;
@@ -51,7 +60,7 @@ function Side({
         {cell.timeMs === null ? '' : ` / ${(budgetMs / 1000).toFixed(2)}s`}
       </span>
       <span className="compute__state" style={overBudget || cell.state === 'error' ? { color: 'var(--danger)' } : undefined}>
-        {STATE_LABEL[cell.state]}
+        {t(STATE_KEY[cell.state])}
       </span>
     </div>
   );

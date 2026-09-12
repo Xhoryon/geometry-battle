@@ -27,29 +27,25 @@ import {
 } from '../api/client';
 import type { ActionView, TeamBoard } from '../../../src/server/protocol';
 import { AccessNotice } from '../components/AccessNotice';
-
-const PHASE_LABEL: Record<string, string> = {
-  SETUP: '准备',
-  UPLOAD_A: '载入算法（A）',
-  UPLOAD_B: '载入算法（B）',
-  PREFLIGHT: '校验算法',
-  EMITTER_SELECT: '选择发射锚点',
-  READY: '就绪',
-  PUBLIC: '公开信息',
-  REVEAL: '揭晓障碍',
-  COUNTDOWN: '倒计时',
-  COMPUTING: '计算中',
-  ROUND_RESULT: '回合结算',
-  MATCH_END: '比赛结束',
-};
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { PHASE_KEYS } from '../i18n/translations';
+import { useI18n } from '../i18n/useI18n';
+import type { TranslationKey } from '../i18n/translations';
 
 function actionOf(board: TeamBoard | null, key: string): ActionView | null {
   return board?.actions.find((a) => a.key === key) ?? null;
 }
 
 export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
+  const { t, td } = useI18n();
   const topic = team === 'A' ? 'team-a' : 'team-b';
   const { board, connected, access } = useBoard<TeamBoard>(topic);
+
+  // 服务端给稳定键、客户端翻译（与 JudgePage 的 actionHint 同一套）。
+  // `a.hint` 是服务端的**中文原文**，只在认不出键时兜底 —— 直接渲染它
+  // 会让英文界面里冒出一整句中文，正是 i18n 回归里点名的「混合语言」事故。
+  const actionHint = (a: ActionView | null): string =>
+    a ? td(a.hintKey, a.hintParams, a.hint) : '';
 
   // ---- 本地交互状态（服务端没有的：文件选择、正在跑的请求、源码预览）----
   const [busyLocal, setBusyLocal] = useState(false);
@@ -72,10 +68,10 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
     setErrors([]);
     setNotes([]);
     const r = await command(path, body);
-    if (!r.ok) setErrors(r.errors.length ? r.errors : ['命令失败']);
+    if (!r.ok) setErrors(r.errors.length ? r.errors : [t('team.err.commandFailed')]);
     else setNotes([okNote]);
     setBusyLocal(false);
-  }, []);
+  }, [t]);
 
   const onUpload = useCallback(
     async (list: FileList | null) => {
@@ -90,12 +86,13 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
         return;
       }
       const r = await command(TEAM_PATHS.upload, { team, files });
-      if (!r.ok) setErrors(r.errors.length ? r.errors : ['上传失败']);
+      if (!r.ok) setErrors(r.errors.length ? r.errors : [t('team.err.uploadFailed')]);
       else {
+        const hash = typeof r.detail?.hash === 'string' ? String(r.detail.hash).slice(0, 12) : null;
         setNotes([
-          `已安装 ${files.length} 个文件${
-            typeof r.detail?.hash === 'string' ? `，包哈希 ${String(r.detail.hash).slice(0, 12)}…` : ''
-          }`,
+          hash
+            ? t('team.note.installedWithHash', { n: files.length, hash })
+            : t('team.note.installed', { n: files.length }),
         ]);
         setPreview(null);
       }
@@ -103,7 +100,7 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
       if (fileRef.current) fileRef.current.value = '';
       if (fileInputRef.current) fileInputRef.current.value = '';
     },
-    [team]
+    [team, t]
   );
 
   const onOpenSource = useCallback(
@@ -144,7 +141,6 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
   }, [board?.matchId]);
 
   const roleClass = team === 'A' ? 'panel--a' : 'panel--b';
-  const label = `参赛者 ${team}`;
 
   /**
    * 「上传 → 校验 → 选锚点 → 锁定」四步。
@@ -152,35 +148,36 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
    * 每一步的**完成判据只来自服务端**：槽位装没装、能不能参赛、自己选没选、锁没锁。
    * 页面不另算一套进度 —— 那是影子规则。`phase` 只用来解释「为什么现在点不动」。
    */
-  const steps = [
-    { key: 'upload', label: '上传算法包', done: Boolean(board?.slot.installed) },
-    { key: 'verify', label: '赛前校验', done: Boolean(board?.packageReady) },
-    { key: 'select', label: '选择锚点', done: selectedId !== null },
-    { key: 'lock', label: '锁定', done: locked },
+  const steps: { key: string; label: TranslationKey; done: boolean }[] = [
+    { key: 'upload', label: 'team.steps.upload', done: Boolean(board?.slot.installed) },
+    { key: 'verify', label: 'team.steps.verify', done: Boolean(board?.packageReady) },
+    { key: 'select', label: 'team.steps.select', done: selectedId !== null },
+    { key: 'lock', label: 'team.steps.lock', done: locked },
   ];
   const nowStep = steps.findIndex((s) => !s.done);
 
   return (
     <div className="team">
       <header className="team__rail">
-        <p className="eyebrow">{label}</p>
+        <p className="eyebrow">{t('team.title', { team })}</p>
         <p className="num">
           <span className={`swatch swatch--${team.toLowerCase()}`} /> {board?.matchId ?? '——'}
         </p>
         <p data-testid="team-phase">
-          阶段：{PHASE_LABEL[board?.phase ?? ''] ?? board?.phase ?? '连接中'}
+          {board
+            ? t('team.phase', { label: t(PHASE_KEYS[board.phase]) })
+            : t('common.connectingShort')}
         </p>
         <p className="muted" data-testid="conn">
-          {connected ? '已连接' : '连接中…'}
+          {connected ? t('common.connected') : t('common.connectingShort')}
         </p>
-        {board?.tournamentMode === false && (
-          <p className="muted">开发模式（锦标赛校验已关闭）</p>
-        )}
+        {board?.tournamentMode === false && <p className="muted">{t('team.devMode')}</p>}
         <p>
           <a className="link" href="/spectator" target="_blank" rel="noreferrer">
-            观众大屏 ↗
+            {t('nav.spectatorArrow')}
           </a>
         </p>
+        <LanguageSwitch />
 
         {/* 令牌问题**先于**其它错误显示：它是「这一页根本不该由你打开」，
             而不是某一次操作失败 —— 后者在令牌不对时根本发不出去。 */}
@@ -216,7 +213,7 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               data-state={s.done ? 'done' : i === nowStep ? 'now' : 'todo'}
             >
               <span className="steps__no">{i + 1}</span>
-              <span className="steps__label">{s.label}</span>
+              <span className="steps__label">{t(s.label)}</span>
             </li>
           ))}
         </ol>
@@ -224,9 +221,9 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
         {/* ---- 1. 算法包 ---- */}
         <section className={`panel ${roleClass}`} data-testid="team-package">
           <div className="panel__title">
-            <h2>算法包</h2>
+            <h2>{t('team.package.title')}</h2>
             <span className={`tag ${board?.packageReady ? 'tag--live' : ''}`}>
-              {board?.packageReady ? '已就绪' : '未就绪'}
+              {board?.packageReady ? t('team.package.ready') : t('team.package.notReady')}
             </span>
           </div>
 
@@ -256,9 +253,9 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               onChange={(e) => void onUpload(e.target.files)}
             />
             <span className="upload__btn" aria-hidden="true">
-              选择文件夹
+              {t('team.upload.folder')}
             </span>
-            <span className="upload__hint">整个算法目录（包根目录里要有 solver.py）</span>
+            <span className="upload__hint">{t('team.upload.folderHint')}</span>
           </label>
 
           <label className={`upload${busy ? ' upload--busy' : ''}`}>
@@ -271,18 +268,15 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               onChange={(e) => void onUpload(e.target.files)}
             />
             <span className="upload__btn" aria-hidden="true">
-              选择文件 / ZIP
+              {t('team.upload.files')}
             </span>
-            <span className="upload__hint">单个 solver.py、多个文件，或一个 .zip</span>
+            <span className="upload__hint">{t('team.upload.filesHint')}</span>
           </label>
-          <p className="muted">
-            单个 <code>solver.py</code>、一整个算法目录、或者一个 <code>.zip</code> 都可以。
-            上传走的是与正式比赛<strong>同一套校验</strong>
-            （staging → validate → sandbox preflight → seal → replace），浏览器绕不过去。
-          </p>
+          <p className="muted">{t('team.upload.accepts')}</p>
+          <p className="muted">{t('team.upload.pipeline')}</p>
 
           <div className="slot">
-            <span className="slot__name">{board?.slot.name ?? '（未命名）'}</span>
+            <span className="slot__name">{board?.slot.name ?? t('common.unnamed')}</span>
             {/* 类名必须与 styles.css 里的**真实**定义一致：
                 此前写成 slot--ready/slot--bad（不存在），标签一直是没样式的裸文本。 */}
             <span
@@ -302,8 +296,8 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
           ) : null}
 
           <div className="panel__title">
-            <h2>文件清单</h2>
-            <span className="muted num">{board?.files.length ?? 0} 个</span>
+            <h2>{t('team.files.title')}</h2>
+            <span className="muted num">{t('team.files.count', { n: board?.files.length ?? 0 })}</span>
           </div>
           {board && board.files.length > 0 ? (
             <ul className="audit-list">
@@ -322,25 +316,25 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
               ))}
             </ul>
           ) : (
-            <p className="muted">（还没有文件）</p>
+            <p className="muted">{t('team.files.empty')}</p>
           )}
 
           {preview && (
             <div data-testid="team-source">
               <div className="panel__title">
                 <h2>{preview.path}</h2>
-                <span className="muted">只读</span>
+                <span className="muted">{t('common.readonly')}</span>
               </div>
               {preview.binary ? (
                 <p className="muted" data-testid="team-source-binary">
-                  二进制文件 —— 不提供预览
+                  {t('team.source.binary')}
                 </p>
               ) : (
                 <>
                   <pre className="source-view">{preview.text}</pre>
                   {preview.truncated ? (
                     <p className="muted" data-testid="team-source-truncated">
-                      内容已截断（仅显示开头部分）
+                      {t('team.source.truncated')}
                     </p>
                   ) : null}
                 </>
@@ -352,23 +346,24 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
         {/* ---- 2. Emitter 选择 ---- */}
         <section className={`panel ${roleClass}`} data-testid="team-emitter">
           <div className="panel__title">
-            <h2>本场 Fixed Emitter</h2>
+            <h2>{t('team.emitter.title')}</h2>
             <span className={`tag ${locked ? 'tag--live' : ''}`}>
-              {locked ? '已锁定' : selectedId ? '已选择（未锁定）' : '未选择'}
+              {locked
+                ? t('team.emitter.locked')
+                : selectedId
+                  ? t('team.emitter.selected')
+                  : t('team.emitter.none')}
             </span>
           </div>
 
-          <p className="muted">
-            从自己的初始点里选一个作为本场的发射锚点。它整场不可更换、不可击杀、也不是战斗点；
-            其余的点才是 Combat Points。双方都锁定之后，两个锚点才会公开。
-          </p>
+          <p className="muted">{t('team.emitter.desc')}</p>
 
           {board && board.candidates.length > 0 ? (
             <>
               {/* 先选、后锁 —— 顺序就是操作顺序。此前锁定按钮排在候选列表**上面**，
                   等于让人先看到一个还点不动的按钮。 */}
               <p className="step-caption" data-testid="team-select-caption">
-                <span className="steps__no">3</span> 从下面这些点里挑一个作为本场锚点
+                <span className="steps__no">3</span> {t('team.emitter.pickCaption')}
               </p>
 
               <ul className="audit-list" data-testid="team-candidates">
@@ -383,21 +378,28 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
                         data-testid="team-candidate"
                         data-candidate={c.id}
                         disabled={!selectAction?.enabled || busy}
-                        title={selectAction?.hint ?? ''}
+                        title={actionHint(selectAction)}
                         onClick={() =>
-                          void run(TEAM_PATHS.selectEmitter, { team, pointId: c.id }, `已选择 ${c.id}`)
+                          void run(
+                            TEAM_PATHS.selectEmitter,
+                            { team, pointId: c.id },
+                            t('team.note.selected', { id: c.id })
+                          )
                         }
                       >
-                        ({c.x.toFixed(1)}, {c.y.toFixed(1)}){isSel ? '  ← 已选择' : ''}
+                        ({c.x.toFixed(1)}, {c.y.toFixed(1)})
+                        {isSel ? `  ${t('team.candidate.selectedMark')}` : ''}
                       </button>
-                      <span className="num muted">{c.alive ? '存活' : '阵亡'}</span>
+                      <span className="num muted">
+                        {c.alive ? t('team.candidate.alive') : t('team.candidate.dead')}
+                      </span>
                     </li>
                   );
                 })}
               </ul>
 
               <p className="step-caption">
-                <span className="steps__no">4</span> 选定之后锁定 —— 锁定后整场不可更换
+                <span className="steps__no">4</span> {t('team.emitter.lockCaption')}
               </p>
               <div className="actions">
                 {/* 本页此刻唯一该做的事 —— 用主操作样式，别和次要控件长一个样。
@@ -407,23 +409,27 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
                   data-testid="team-lock"
                   data-action={lockAction?.key}
                   disabled={!lockAction?.enabled || busy}
-                  title={lockAction?.hint ?? ''}
-                  onClick={() => void run(TEAM_PATHS.lockEmitter, { team }, 'Emitter 已锁定')}
+                  title={actionHint(lockAction)}
+                  onClick={() =>
+                    void run(TEAM_PATHS.lockEmitter, { team }, t('team.note.locked'))
+                  }
                 >
-                  锁定 Emitter
+                  {t('team.emitter.lockButton')}
                 </button>
-                <span className="muted">{lockAction?.hint}</span>
+                <span className="muted" data-testid="team-lock-hint">
+                  {actionHint(lockAction)}
+                </span>
               </div>
             </>
           ) : (
-            <p className="muted">
-              比赛开始之后才能选择 —— 裁判在「筹备」一步生成地图，随后进入本阶段。
-            </p>
+            <p className="muted">{t('team.emitter.waiting')}</p>
           )}
 
           <div className="panel__title">
-            <h2>双方锚点</h2>
-            <span className="muted">{board?.revealed ? '已公开' : '未公开'}</span>
+            <h2>{t('team.emitter.revealedTitle')}</h2>
+            <span className="muted">
+              {board?.revealed ? t('team.emitter.public') : t('team.emitter.hidden')}
+            </span>
           </div>
           {board?.revealed && board.emitters ? (
             <p className="num" data-testid="team-emitters">
@@ -433,7 +439,11 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
             </p>
           ) : (
             <p className="muted" data-testid="team-emitters-hidden">
-              双方都锁定之后才会公开。对方现在{board?.opponent.locked ? '已锁定' : '尚未锁定'}。
+              {t('team.emitter.hiddenBody', {
+                state: board?.opponent.locked
+                  ? t('team.emitter.opponentLocked')
+                  : t('team.emitter.opponentUnlocked'),
+              })}
             </p>
           )}
         </section>
@@ -442,8 +452,8 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
         {board && board.candidates.length > 0 && (
           <section className={`panel ${roleClass}`}>
             <div className="panel__title">
-              <h2>场面</h2>
-              <span className="muted">只读</span>
+              <h2>{t('team.arena.title')}</h2>
+              <span className="muted">{t('common.readonly')}</span>
             </div>
             {/*
               可交互：点直接点选（§五）。命中与状态都只是**展示** ——
@@ -470,11 +480,15 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
                 lockedIds={locked && selectedId ? [selectedId] : []}
                 onSelectPoint={(id) => {
                   if (!selectAction?.enabled || busy) return;
-                  void run(TEAM_PATHS.selectEmitter, { team, pointId: id }, `已选择 ${id}`);
+                  void run(
+                    TEAM_PATHS.selectEmitter,
+                    { team, pointId: id },
+                    t('team.note.selected', { id })
+                  );
                 }}
               />
             </div>
-            <p className="muted">点击场上的点即可选为 Emitter（也可以在上面列表里点）。</p>
+            <p className="muted">{t('team.arena.hint')}</p>
           </section>
         )}
       </main>

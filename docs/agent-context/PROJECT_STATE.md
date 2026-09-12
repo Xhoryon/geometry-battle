@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.2 最终覆盖补丁：DEFLATE ZIP + 收口为 RC 候选）。
+> 最后更新：2026-09-12（V1.3 本地化：中英双语界面 + 双语 README）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -15,12 +15,12 @@
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feature/v1.2-interactive-tournament`（V1.2 命名分支） |
+| 分支 | `feature/v1.3-localization`（V1.3 命名分支，从 `v1.2.0-competition` 的提交分出） |
 | HEAD | 见 `git log -1` —— 本文件自己也会产生提交，写死 SHA 就永远差一个 |
 | V1.2 平台工作 | **13 个提交，位于 `b439e10` 之下**（`7b11a4f`…`9b44610`） |
-| V1.2 平台稳定基线 | `b439e10` —— 注意它是 `feature/v1.1-ui-protocol` 的**尖端**，压在平台波**之上**的收尾提交，**不是分叉点**；**未再改动** |
-| 工作树 | **干净**（`git status --porcelain` 为空） |
-| 版本标签 | 两个 release tag **未移动**；**尚未打 V1.2 tag**（按要求） |
+| V1.2 发布基线 | `94a0788` —— 打了 `v1.2.0-competition` 的那一个提交，V1.3 从它分出，**未再改动** |
+| 工作树 | **干净** —— V1.3 本地化已提交（含本文件自身的更新） |
+| 版本标签 | **三个** release tag（`v1.0.0` / `v1.1.0` / `v1.2.0-competition`）**均未移动**；V1.3 **尚未打 tag**（按要求） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
 | 公开仓库 | <https://github.com/Xhoryon/geometry-battle> —— **独立脱敏导出历史**，与本地研发仓库 SHA 不互见 |
 
@@ -109,6 +109,23 @@
 | 障碍物按真几何绘制（椭圆） | `web/src/arena/projection.ts`、`ArenaCanvas.tsx` | `web-projection` |
 | 参考解 v2 | `demo/reference-solver-v2/` | preflight、`server-team`、`demo-repro` |
 
+### 本地化（V1.3）
+
+| 能力 | 落点 | 验证 |
+|---|---|---|
+| 集中式 i18n 层（**无散落的 `locale === 'zh' ? … : …`**） | `web/src/i18n/`：`types.ts` / `translations.ts` / `I18nContext.tsx` / `useI18n.ts` | `i18n`、`e2e/i18n.spec` |
+| 支持 `zh-CN` / `en-US`，每语言 **250** 条文案 | `translations.ts`（中文表是唯一事实来源，英文表键不全**编译不过**） | `i18n` |
+| 一个共享语言开关（**不是五个独立选择器**） | `web/src/components/LanguageSwitch.tsx`，五条路由头部共用 | `e2e/i18n.spec` |
+| 解析顺序：已保存 → 浏览器语言 → 兜底；`localStorage` 键 `geometry-battle.locale` | `I18nContext.tsx#resolveInitialLocale` | `i18n`、`e2e/i18n.spec` |
+| 选择跨刷新、跨路由保持；`<html lang>` 与 `document.title` 同步 | `I18nProvider`（挂在路由**之上**）；`index.html` 只放兜底初值 | `e2e/i18n.spec` |
+| 裁判动作文案由**服务端给稳定 key**，客户端翻译 | `ActionView.labelKey` / `labelParams` / `hintKey` / `hintParams`（`protocol.ts` + `boards.ts`） | `i18n`（扫 `boards.ts` 源码比对两表） |
+| **`td()` 必须把插值参数透传下去** | `JudgePage#actionLabel/actionHint`、`TeamPage#actionHint` | `i18n`（扫 `web/src` 禁止 `td(…, undefined, …)`）、`e2e/i18n.spec` |
+| README 全篇双语（配对章节）；围栏配对正确、文内锚点全部指得到标题 | `README.md` | `i18n`（围栏/锚点自洽） |
+
+**语言是纯展示的**：它不进入 `MatchEngine`、比赛状态、`public_state` / `reveal_state`、
+WebSocket 载荷、回放产物、任何哈希，也不进入参赛算法的输入。因此**服务端文案不按语言渲染**
+（那会让同一个 board 因客户端而异）—— 服务端给 **key**，客户端翻译。
+
 ### 界面（本波 UX 走查）
 
 | 能力 | 落点 | 验证 |
@@ -119,8 +136,8 @@
 | 观众大屏阶段横幅（说人话，不只印引擎阶段名） | `SpectatorPage.tsx` 的 `screen__banner` | 浏览器截图核对 |
 | 按钮 UA 默认外观全局重置 | `styles.css` | 截图（修掉文件清单的浅色底） |
 
-> **浏览器验收演练 `npm run e2e` 现在是通的**（3 passed：完整赛事演练 +
-> ZIP 上传演练）。它此前**从未跑完过** —— V1.2 重写 spec 时 `clickAction`
+> **浏览器验收演练 `npm run e2e` 现在是通的**（8 passed：双语界面 5 + 中文完整赛事 2 +
+> ZIP 上传 1）。它此前**从未跑完过** —— V1.2 重写 spec 时 `clickAction`
 > 直接点收进 `Advanced` 折叠区的按钮，隐藏元素永远等不到可见性。
 > 详见 development_log 阶段 12.6。
 >
@@ -279,6 +296,11 @@ V1.2 把锚点改成逐场选定之后，preflight 的 decoy 世界一度仍在�
 
 ### 5.3 尚未覆盖的验收面
 
+- **服务端 / 引擎自产的自由文案不随语言变化。** 它们是平台权威诊断（锦标赛拒绝、
+  安装流水线错误、引擎错误原文），仍是中文，并以原样透传到界面。结构化字段 ——
+  阶段枚举、动作 key、错误码（`NOT_THROUGH_SHOOTER` 等）—— 与语言无关，一律不变。
+  要真正双语化它们，得让语言跨进比赛载荷，或把每条消息都改成 code + 参数，
+  那是另一波的事。
 - `npm run e2e` 需要系统装有 Google Chrome（配置里 `channel: 'chrome'`）。
 - 终端操作台（`src/operator/`）没有锦标赛模式 —— 它是操作员显式指定
   `--a/--b` 的入口，不存在「自动落回模板」的情形，因此**刻意未加**。
@@ -297,7 +319,7 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 37 套件（含 timing-fairness，约 10 分钟）
+npm test                                       # 全量 38 套件（含 timing-fairness，约 10 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
@@ -307,10 +329,15 @@ npm run e2e                                    # Playwright 浏览器演练（�
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 37/37 套件通过，exit 0
-npm run e2e                         → 3 passed，连续跑了两次
+npm test                            → 38/38 套件通过，exit 0
+                                      （i18n 10 条，含 README 围栏/锚点自洽、
+                                        两表占位符一致、td() 必须透传插值参数）
+npm run e2e                         → 8 passed（双语 5 + 中文赛事 2 + ZIP 1）
                                       （完整赛事演练 + ZIP 上传演练，各含连续两场真实对局）
 ```
+
+> 上述全量是在 **`BTLEServer` 占满一个核、load average 一度到 14.5** 的情况下跑完的，
+> 仍然零假红 —— 但这是运气好，不是你下次可以照抄的前提：见下面第二条警告。
 
 > ⚠ **不要在门禁运行期间改源码。** 每个套件是独立的 `ts-node` 进程，
 > 中途落盘会让后启动的套件读到半改状态，产出「看似失败、单跑却通过」的假红。

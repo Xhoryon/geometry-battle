@@ -215,6 +215,34 @@ export interface ActionView {
   label: string;
   enabled: boolean;
   hint: string;
+  /**
+   * 文案的**稳定翻译键**（V1.3），与 `label` / `hint` 一一对应。
+   *
+   * 为什么由服务端给键、而不是客户端按 `key` 自己推：
+   * `hint` 编码的是**引擎自己的判据**（为什么这个按钮现在不能点）。
+   * 客户端若为了翻译去重新推导它，就等于在浏览器里再写一套规则 ——
+   * 那正是 V1.1 裁判台翻车的原因。
+   *
+   * 为什么不在服务端直接按语言渲染：客户端的语言是**纯展示**的，
+   * 不得进入比赛载荷；而 board 会在 WS 上广播，按语言渲染意味着
+   * 同一个 board 因客户端而异 —— 那是另一套架构。
+   *
+   * 客户端认不出 `labelKey` / `hintKey` 时**回退到 `label` / `hint` 原文**，
+   * 因此这两个字段是纯附加的：老客户端、以及任何未翻译的键都照常工作。
+   */
+  labelKey: string;
+  /**
+   * `labelKey` 的插值参数。
+   *
+   * 与 `hintParams` 分开是必要的：`label` 与 `hint` 的键**不是同一个键**，
+   * 占位符也各不相同（`action.useSlot.label` 用 `{team}`，而它的 hint 用
+   * `{team}`/`{status}`/`{phase}` 三种）。共用一个参数袋子会让
+   * 「label 渲染出 {status}」这种串台无从发现。
+   */
+  labelParams?: Record<string, string | number>;
+  hintKey: string;
+  /** `hintKey` 的插值参数（阶段名、队别、槽位状态等） */
+  hintParams?: Record<string, string | number>;
 }
 
 /** **裁判板** —— 在观众板之上追加诊断。裁判看见诊断是刻意的。 */

@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { bytesToBase64, unzipToFiles } from './zip';
+import { t } from '../i18n/useI18n';
 import { JUDGE_READ_PATHS, WS_INVALID_TOKEN, teamOfTopic } from '../../../src/server/protocol';
 import type {
   CommandResult,
@@ -289,12 +290,12 @@ export async function command(path: string, body: unknown = {}): Promise<Command
     });
     const json = (await res.json()) as CommandResult;
     if (!res.ok && !json.errors) {
-      return { ok: false, errors: [`请求失败（HTTP ${res.status}）`] };
+      return { ok: false, errors: [t('err.httpFailed', { status: res.status })] };
     }
     return json;
   } catch (e) {
     // 服务没起来 / 连接断了 —— 说人话，不吐异常对象
-    return { ok: false, errors: [`无法连接到本地服务：${(e as Error).message}`] };
+    return { ok: false, errors: [t('err.unreachable', { message: (e as Error).message })] };
   }
 }
 
@@ -373,7 +374,7 @@ async function fetchSource(base: string, team: TeamSide, relPath: string): Promi
     });
     return (await res.json()) as SourcePreview;
   } catch (e) {
-    return { ok: false, errors: [`无法连接到本地服务：${(e as Error).message}`] };
+    return { ok: false, errors: [t('err.unreachable', { message: (e as Error).message })] };
   }
 }
 
@@ -429,7 +430,7 @@ export async function filesToUploadPayload(list: FileList): Promise<{
   errors: string[];
 }> {
   const picked = Array.from(list);
-  if (picked.length === 0) return { files: [], errors: ['没有选择任何文件'] };
+  if (picked.length === 0) return { files: [], errors: [t('err.noFilesPicked')] };
 
   const collected: { path: string; contentBase64: string }[] = [];
   const errors: string[] = [];
@@ -442,7 +443,7 @@ export async function filesToUploadPayload(list: FileList): Promise<{
       try {
         collected.push(...(await unzipToFiles(await f.arrayBuffer())));
       } catch (e) {
-        errors.push(`${f.name} 解压失败：${(e as Error).message}`);
+        errors.push(t('err.unzipFailed', { name: f.name, message: (e as Error).message }));
       }
       continue;
     }

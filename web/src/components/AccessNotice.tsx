@@ -11,26 +11,19 @@
  * 不是前端猜的。
  */
 
+import { useI18n } from '../i18n/useI18n';
+import type { TranslationKey } from '../i18n/translations';
 import type { JSX } from 'react';
 import type { AccessState } from '../api/client';
 
-const TEXT: Record<Exclude<AccessState, 'ok'>, { title: string; body: string }> = {
-  missing: {
-    title: '这一页缺少访问令牌',
-    body:
-      '请用裁判台「参赛者入口」里给的那条链接打开本页 —— 地址末尾的 #t=… 就是本场令牌，' +
-      '不要手工删掉它。',
-  },
-  unauthorized: {
-    title: '本场令牌已失效',
-    body:
-      '每一场都会重新签发令牌，所以旧链接在下一场就无效了。' +
-      '请向裁判索取本场的新链接（裁判台「参赛者入口」里可以一键复制）。',
-  },
-  unreachable: {
-    title: '连不上本地服务',
-    body: '比赛服务可能已经退出，或端口变了。请确认服务仍在运行。',
-  },
+/** 三种失败各自的标题/正文翻译键（文案在 i18n 表里，不在这里） */
+const TEXT_KEY: Record<
+  Exclude<AccessState, 'ok'>,
+  { title: TranslationKey; body: TranslationKey }
+> = {
+  missing: { title: 'access.missing.title', body: 'access.missing.body' },
+  unauthorized: { title: 'access.unauthorized.title', body: 'access.unauthorized.body' },
+  unreachable: { title: 'access.unreachable.title', body: 'access.unreachable.body' },
 };
 
 export function AccessNotice({
@@ -40,12 +33,13 @@ export function AccessNotice({
   access: AccessState;
   testId?: string;
 }): JSX.Element | null {
+  const { t } = useI18n();
   if (access === 'ok') return null;
-  const t = TEXT[access];
+  const key = TEXT_KEY[access];
   return (
     <div className="errors" data-testid={testId} data-access={access}>
-      <p>⚠ {t.title}</p>
-      <p>{t.body}</p>
+      <p>⚠ {t(key.title)}</p>
+      <p>{t(key.body)}</p>
     </div>
   );
 }

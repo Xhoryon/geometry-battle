@@ -19,6 +19,8 @@ import { JudgePage } from './pages/JudgePage';
 import { SpectatorPage } from './pages/SpectatorPage';
 import { ReplayPage } from './pages/ReplayPage';
 import { TeamPage } from './pages/TeamPage';
+import { LanguageSwitch } from './components/LanguageSwitch';
+import { useI18n } from './i18n/useI18n';
 import type { JSX } from 'react';
 
 function usePathname(): string {
@@ -32,26 +34,30 @@ function usePathname(): string {
 }
 
 function NotFound({ path }: { path: string }): JSX.Element {
+  const { t } = useI18n();
   return (
     <div className="empty" style={{ paddingTop: '18vh' }}>
       <p className="num muted">{path}</p>
-      <p>没有这个页面。</p>
+      <p>{t('app.notFound')}</p>
       <p style={{ marginTop: 18 }}>
         <a className="link" href="/judge">
-          裁判台
+          {t('nav.judge')}
         </a>
         {'　'}
         <a className="link" href="/team/a">
-          参赛者 A
+          {t('nav.teamA')}
         </a>
         {'　'}
         <a className="link" href="/team/b">
-          参赛者 B
+          {t('nav.teamB')}
         </a>
         {'　'}
         <a className="link" href="/spectator">
-          观众大屏
+          {t('nav.spectator')}
         </a>
+      </p>
+      <p style={{ marginTop: 18 }}>
+        <LanguageSwitch />
       </p>
     </div>
   );

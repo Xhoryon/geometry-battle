@@ -128,6 +128,26 @@ async function expectTeamLinksOnJudge(page: Page): Promise<void> {
   }
 }
 
+/**
+ * 把浏览器语言钉成中文。
+ *
+ * 这两条演练断言的是**中文界面**的行为，而 Playwright 的默认 locale 是 `en-US` ——
+ * 不钉的话它们会去断言英文文案。规格要求「既有中文流程必须继续可用」，
+ * 所以这里显式选择中文；**英文全流程**由 `web/e2e/i18n.spec.ts` 单独覆盖。
+ *
+ * 用 `addInitScript` 而不是在页面里点开关：它在该 context 的**每个**页面
+ * 加载之前执行，因此 `page.context().newPage()` 新建的参赛者页同样带得上。
+ */
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem('geometry-battle.locale', 'zh-CN');
+    } catch {
+      /* 私密模式下写不进去，那就退回浏览器语言 */
+    }
+  });
+});
+
 test.beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-e2e-'));
   server = spawn(
@@ -349,10 +369,20 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   for (const bad of FORBIDDEN_RULE_WORDS) {
     expect(screenText, `大屏不得出现旧规则字样 ${bad}`).not.toContain(bad);
   }
-  expect(await page.locator('button').count(), '大屏不得有按钮').toBe(0);
+  // 大屏是**只读**的：不得出现任何**命令**控件。
+  //
+  // V1.3 起这里多了一个例外：语言开关（`data-locale` 标记了它的两个选项）。
+  // 它不是命令、不改变比赛、也不下达任何动作 —— 而大屏必须能切语言。
+  // 所以断言写成「没有任何命令按钮」+「除语言开关外没有其它按钮」，
+  // 比原来那句 `button count === 0` 更精确地表达了这条不变量。
+  expect(await page.locator('[data-action]').count(), '大屏不得出现裁判动作按钮').toBe(0);
+  expect(
+    await page.locator('button:not([data-locale])').count(),
+    '大屏除语言开关外不得有按钮'
+  ).toBe(0);
   // 双方锁定后，大屏必须能看到锚点
   expect(screenText).toContain(idA);
-  clock.mark('观众大屏（无诊断 / 无按钮 / 锚点已公开）');
+  clock.mark('观众大屏（无诊断 / 无命令控件 / 锚点已公开）');
 
   // ---- 10. 回放 ----
   await page.goto(`${baseURL}/replay/${encodeURIComponent(matchId)}`);
