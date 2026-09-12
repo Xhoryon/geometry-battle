@@ -16,7 +16,7 @@ import * as path from 'path';
 import { MatchEngine } from '../src/core/Match';
 import { FIELD } from '../src/core/Rules';
 import { downsampleTrajectory } from '../src/ui/TrajectoryAnimator';
-import { TRAJECTORY_MAX_POINTS, isTopic } from '../src/server/protocol';
+import { TRAJECTORY_MAX_POINTS, isTopic, teamOfTopic } from '../src/server/protocol';
 import { snapshotDigest, spectatorBoard } from '../src/server/boards';
 import {
   obstacleToDrawable,
@@ -314,12 +314,27 @@ test('稀疏轨迹降采样不做任何改动', () => {
 // 6. topic 校验
 // ============================================================================
 
-test('WS topic 只接受 judge / spectator', () => {
-  assert(isTopic('judge'), 'judge 合法');
-  assert(isTopic('spectator'), 'spectator 合法');
+test('WS topic 只接受 judge / spectator / team-a / team-b', () => {
+  // 标题此前写作「只接受 judge / spectator」——**与代码不符**：`WS_TOPICS` 一共四个值，
+  // 而 team-a / team-b 一直没有断言覆盖。V1.2 加入参赛者端之后它们是真实在用的 topic
+  // （`TeamPage.tsx` 的 `useBoard('team-a' | 'team-b')`），所以这里补齐。
+  for (const t of ['judge', 'spectator', 'team-a', 'team-b'] as const) {
+    assert(isTopic(t), `${t} 合法`);
+  }
   assert(!isTopic('admin'), 'admin 非法');
+  assert(!isTopic('team-c'), 'team-c 非法');
+  assert(!isTopic('team-a '), '带空格的 topic 非法（不做 trim）');
   assert(!isTopic(''), '空串非法');
   assert(!isTopic(null), 'null 非法');
+});
+
+test('teamOfTopic 只认参赛者 topic，并给出对应队别', () => {
+  assertEqual(teamOfTopic('team-a'), 'A', 'team-a → A');
+  assertEqual(teamOfTopic('team-b'), 'B', 'team-b → B');
+  // judge / spectator 不是任何一队 —— 这是 access 能力位的关键前提：
+  // 它们不能因为 topic 解析而意外落到某一队的投影上。
+  assertEqual(teamOfTopic('judge'), null, 'judge 不属于任何队');
+  assertEqual(teamOfTopic('spectator'), null, 'spectator 不属于任何队');
 });
 
 void runAll('web-projection');

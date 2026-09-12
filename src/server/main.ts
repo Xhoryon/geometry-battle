@@ -53,6 +53,16 @@ export interface RunningServer {
   port: number;
   url: string;
   session: MatchSession;
+  /**
+   * 裁判令牌（进程生命周期）。
+   *
+   * 组织者的裁判台链接里带着它；测试与演练从这里取。
+   * **参赛者令牌不在这里** —— 它们是 `HMAC(裁判令牌, matchId + 队别)`，
+   * 每场都变，所以调用方必须用 `session.teamTokens()` **现取**，拿到的快照会过期。
+   */
+  judgeToken: string;
+  /** 裁判台的完整入口（含 `#t=` fragment） */
+  judgeUrl: string;
   close(): Promise<void>;
 }
 
@@ -107,10 +117,13 @@ export async function startServer(opts: StartOptions = {}): Promise<RunningServe
     actualPort = await listen(0);
   }
 
+  const url = `http://127.0.0.1:${actualPort}`;
   return {
     port: actualPort,
-    url: `http://127.0.0.1:${actualPort}`,
+    url,
     session,
+    judgeToken: session.judgeToken,
+    judgeUrl: `${url}/judge#t=${session.judgeToken}`,
     close: async () => {
       session.close();
       await hub.close();
@@ -159,8 +172,12 @@ async function main(): Promise<void> {
   const running = await startServer(opts);
 
   console.log('\n几何斗殴 —— 本地比赛服务');
-  console.log(`  裁判台   ${running.url}/judge`);
+  // 裁判台链接带 fragment（`#t=`）—— fragment 不发给服务端，所以令牌不进 request-line、
+  // 不进 Referer、不进任何服务端日志。组织者点它进裁判台，入口就在那里。
+  console.log(`  裁判台   ${running.judgeUrl}`);
+  // 参赛者地址**不带令牌**：每队的链接由裁判台「参赛者入口」给出（每场轮换一次）。
   console.log(`  参赛者   ${running.url}/team/a   ${running.url}/team/b`);
+  console.log(`           （本场访问令牌见裁判台「参赛者入口」—— 每场新签发，不要用旧链接）`);
   console.log(`  观众大屏 ${running.url}/spectator`);
   console.log(`  回放     ${running.url}/replay/<matchId>`);
   console.log(
@@ -181,7 +198,7 @@ async function main(): Promise<void> {
     vite.on('exit', () => void shutdown());
     console.log('  开发模式：前端由 vite 提供（见上方 vite 输出的地址）\n');
   } else if (opts.open) {
-    openBrowser(`${running.url}/judge`);
+    openBrowser(running.judgeUrl);
   }
 
   let closing = false;

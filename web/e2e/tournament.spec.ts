@@ -59,18 +59,30 @@ const FORBIDDEN_RULE_WORDS = ['SHOT CANCELLED', 'Shooter', 'shooter'];
 
 let server: ChildProcess | null = null;
 let baseURL = '';
+/**
+ * 裁判台入口，**含本场令牌的 fragment**（`/judge#t=…`）。
+ *
+ * 从启动 banner 里抓 —— 与组织者点的是同一条链接。没有它就连不上裁判面：
+ * `/api/judge/*` 与 `ws?topic=judge` 都需要令牌（V1.2 Final RC Audit 的 P1 修复）。
+ */
+let judgeURL = '';
+let judgeToken = '';
 let root = '';
 
-function waitForUrl(child: ChildProcess, timeoutMs = 60000): Promise<string> {
+function waitForBoot(child: ChildProcess, timeoutMs = 60000): Promise<void> {
   return new Promise((resolve, reject) => {
     let buf = '';
     const timer = setTimeout(() => reject(new Error(`服务未在 ${timeoutMs}ms 内启动。已收到的输出:\n${buf}`)), timeoutMs);
     const onData = (chunk: Buffer): void => {
       buf += String(chunk);
-      const m = /(http:\/\/127\.0\.0\.1:\d+)/.exec(buf);
-      if (m) {
+      const base = /(http:\/\/127\.0\.0\.1:\d+)/.exec(buf);
+      const judge = /(http:\/\/127\.0\.0\.1:\d+\/judge#t=[A-Za-z0-9_-]+)/.exec(buf);
+      if (base && judge) {
         clearTimeout(timer);
-        resolve(m[1]);
+        baseURL = base[1];
+        judgeURL = judge[1];
+        judgeToken = judgeURL.split('#t=')[1];
+        resolve();
       }
     };
     child.stdout?.on('data', onData);
@@ -80,6 +92,40 @@ function waitForUrl(child: ChildProcess, timeoutMs = 60000): Promise<string> {
       reject(new Error(`服务提前退出（code ${code}）：\n${buf}`));
     });
   });
+}
+
+/**
+ * 某一队**本场**的参赛页链接。
+ *
+ * **每次现取，绝不缓存。** 队伍令牌由 `matchId` 派生，一场一换；本 spec 内部就会
+ * 跨过一次 `new-match`，在文件顶层存一份的话，第二次进参赛页时拿的就是过期令牌。
+ *
+ * 值取自裁判板（服务端权威），并且 `expectTeamLinksOnJudge` 会核对裁判台
+ * 「参赛者入口」面板上显示的就是这些链接 —— 那块 UI 同样要被覆盖到。
+ */
+async function teamURL(team: 'A' | 'B'): Promise<string> {
+  const port = new URL(baseURL).port;
+  const res = await fetch(`http://127.0.0.1:${port}/api/judge/state`, {
+    headers: { 'X-GB-Token': judgeToken },
+  });
+  const json = (await res.json()) as { board: { teamTokens: Record<string, string> } };
+  const t = json.board.teamTokens[team];
+  if (!t) throw new Error(`裁判板没有下发 Team ${team} 的本场令牌`);
+  return `${baseURL}/team/${team.toLowerCase()}#t=${t}`;
+}
+
+/**
+ * 核对裁判台「参赛者入口」面板显示的两条链接 = 本场真实链接。
+ *
+ * 这一步既是回归（面板渲染错就会红），也是**组织者的真实流程**：
+ * 他就是在这一块复制链接发给两队的。
+ *
+ * 调用前页面必须**已经在裁判台**（本函数不导航）。
+ */
+async function expectTeamLinksOnJudge(page: Page): Promise<void> {
+  for (const team of ['A', 'B'] as const) {
+    await expect(page.locator(`[data-testid="team-link-${team}"]`)).toHaveText(await teamURL(team));
+  }
 }
 
 test.beforeAll(async () => {
@@ -101,7 +147,7 @@ test.beforeAll(async () => {
     ],
     { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] }
   );
-  baseURL = await waitForUrl(server);
+  await waitForBoot(server);
 });
 
 test.afterAll(async () => {
@@ -147,7 +193,7 @@ async function openAdvanced(page: Page): Promise<void> {
  * 上传会真跑一次 decoy preflight（要起沙箱），给足时间。
  */
 async function uploadPackage(page: Page, team: 'A' | 'B'): Promise<void> {
-  await page.goto(`${baseURL}/team/${team.toLowerCase()}`);
+  await page.goto(await teamURL(team));
   const dir = TEAM_PKG[team];
   const files = fs
     .readdirSync(dir)
@@ -160,7 +206,7 @@ async function uploadPackage(page: Page, team: 'A' | 'B'): Promise<void> {
 
 /** 在参赛者页选一个候选点并锁定 */
 async function pickAndLock(page: Page, team: 'A' | 'B', index: number): Promise<string> {
-  await page.goto(`${baseURL}/team/${team.toLowerCase()}`);
+  await page.goto(await teamURL(team));
   const cands = page.locator('[data-testid="team-candidate"]');
   await expect(cands.first()).toBeVisible({ timeout: 60000 });
   const target = cands.nth(index);
@@ -209,10 +255,12 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   const clock = new StepClock();
 
   // ---- 1. 裁判台起步：SETUP ----
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
   await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP');
   await expect(page.locator('[data-testid="wizard"]')).toBeVisible();
-  clock.mark('打开裁判台（SETUP）');
+  // 组织者的第一件事就是从这里把两条链接发给两队 —— 所以先核对这块面板
+  await expectTeamLinksOnJudge(page);
+  clock.mark('打开裁判台（SETUP）· 参赛者入口链接已核对');
 
   // ---- 2. 两队**真实上传**（各自独立的浏览器上下文，互不可见）----
   const pageA = await page.context().newPage();
@@ -239,7 +287,7 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
 
   // ---- 4. A 先选并锁定；**B 看不到 A 选了什么** ----
   const idA = await pickAndLock(pageA, 'A', 1);
-  await pageB.goto(`${baseURL}/team/b`);
+  await pageB.goto(await teamURL('B'));
   await expect(pageB.locator('[data-testid="team-phase"]')).toContainText('选择发射锚点');
   // 未公开时 B 端根本收不到坐标 —— 断言服务端没发，而不是断言前端藏起来
   await expect(pageB.locator('[data-testid="team-emitters-hidden"]')).toBeVisible();
@@ -269,7 +317,7 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   clock.mark(`Team B 选定并锁定 Emitter（${idB}），双方锚点公开`);
 
   // ---- 6. 裁判向导：READY → 逐步走一轮 ----
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
   await expect(page.locator('[data-testid="phase"]')).toHaveText('READY', { timeout: 60000 });
   await clickAction(page, 'reveal');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('REVEAL', { timeout: 60000 });
@@ -314,9 +362,15 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   clock.mark('打开回放');
 
   // ---- 11. Reset → 第二场（不重新上传，直接再走一遍）----
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
+  const linkABeforeReset = await teamURL('A');
   await clickAction(page, 'reset');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP', { timeout: 60000 });
+
+  // 换场 ⇒ 队伍令牌随 matchId 轮换：旧链接立即失效，裁判台的两条链接必须跟着更新。
+  // （上一场的人不该继续持有下一场的访问权 —— 这正是每场轮换要买到的东西。）
+  expect(await teamURL('A'), '换场后 Team A 的本场令牌必须变化').not.toBe(linkABeforeReset);
+  await expectTeamLinksOnJudge(page);
   // 槽位里的包还在（出厂 starter 不算就绪，但**上传过的包**算）→ 直接筹备
   await expect(page.locator('[data-action="prepare"]')).toBeEnabled({ timeout: 60000 });
   await clickAction(page, 'prepare');
@@ -324,7 +378,7 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
 
   await pickAndLock(pageA, 'A', 0);
   await pickAndLock(pageB, 'B', 0);
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
   await expect(page.locator('[data-testid="phase"]')).toHaveText('READY', { timeout: 60000 });
   await clickAction(page, 'run-to-end');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('MATCH_END', { timeout: 600000 });
@@ -340,7 +394,7 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
 
 test('参赛者端：坏包被拒，且不碰槽位里已装好的包', async ({ page }) => {
   test.setTimeout(5 * 60 * 1000);
-  await page.goto(`${baseURL}/team/a`);
+  await page.goto(await teamURL('A'));
 
   // 前置：上面那场演练已经给 A 装好了一个包。
   // 因此这里能证明的是**更强**的性质 —— 安装流水线是非破坏性的，
@@ -358,6 +412,29 @@ test('参赛者端：坏包被拒，且不碰槽位里已装好的包', async ({
   await expect(page.locator('[data-testid="team-errors"]')).toBeVisible({ timeout: 60000 });
 
   // 而槽位保持原样：包名照旧、仍然就绪
+  await expect(page.locator('[data-testid="team-package"] .slot__name')).toHaveText(nameBefore);
+  await expect(page.locator('[data-testid="team-package"] .tag')).toHaveText('已就绪');
+
+  // ---- 损坏的 ZIP：浏览器侧解包时就该失败，而且必须**当场看得见** ----
+  //
+  // CRC 校验与解压体积上限的逻辑本身由 `tests/web-zip.ts` 在 `npm test` 里覆盖
+  // （那条不需要 Chrome）。这里要证的是**另一件事**：浏览器里那条失败路径真的
+  // 会变成参赛者看得见的一句人话，而不是静默无事发生。
+  //
+  // 翻掉压缩数据里的一个字节（局部头 30 字节 + 名字 21 字节 = 数据从 51 开始，
+  // 取 100 落在第一个条目的压缩流里）。inflate 会失败、或解出来过不了 CRC ——
+  // 两条路都会汇成同一句「解压失败」，所以断言取这句而不是某条具体原因。
+  const corrupt = path.join(tmp, 'corrupt.zip');
+  const bytes = Buffer.from(
+    fs.readFileSync(path.join(REPO, 'tests', 'fixtures', 'uploads', 'valid-deflate.zip'))
+  );
+  bytes[100] ^= 0xff;
+  fs.writeFileSync(corrupt, bytes);
+  await page.locator('[data-testid="team-upload"]').setInputFiles([corrupt]);
+  await expect(page.locator('[data-testid="team-errors"]')).toContainText('解压失败', {
+    timeout: 60000,
+  });
+  // 坏 ZIP 同样一个字节都不该动到槽位里已装好的包
   await expect(page.locator('[data-testid="team-package"] .slot__name')).toHaveText(nameBefore);
   await expect(page.locator('[data-testid="team-package"] .tag')).toHaveText('已就绪');
 });

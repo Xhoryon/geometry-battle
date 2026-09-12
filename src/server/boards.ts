@@ -386,6 +386,16 @@ export interface JudgeBoardContext {
    * 不在每个 tick 上去碰磁盘。
    */
   slotFiles?: { A: { path: string; bytes: number }[]; B: { path: string; bytes: number }[] };
+  /**
+   * 本场的两个参赛者令牌（V1.2 Final RC Audit 的 P1 修复）。
+   *
+   * 裁判是**唯一**的分发点：面板据此渲染可复制的 `/team/a#t=...` 链接。
+   * 参赛者板是另一个投影函数，里面**没有**这个字段。
+   *
+   * **必填**（不是可选）：省得某个调用方漏传之后，裁判台渲染出一堆空链接
+   * 而没有人发现分发出错。
+   */
+  teamTokens: Record<TeamSlot, string>;
 }
 
 /**
@@ -571,6 +581,8 @@ export function judgeBoard(engine: MatchEngine, ctx: JudgeBoardContext): JudgeBo
       });
       return { A: flat(sel.A), B: flat(sel.B), revealed: sel.revealed };
     })(),
+    // 参赛者入口链接由裁判台渲染（它是唯一的分发点）。参赛者板/观众板都没有这个字段。
+    teamTokens: ctx.teamTokens,
     actions: buildActions(engine, ctx.slots, ctx.busy, { tournamentMode: ctx.tournamentMode }),
   };
 }

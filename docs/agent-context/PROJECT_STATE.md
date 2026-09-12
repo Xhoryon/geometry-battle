@@ -15,9 +15,10 @@
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feature/v1.2-interactive-tournament`（V1.2 命名分支，从稳定基线 `b439e10` 分出） |
-| HEAD | `fbf45af`（见 [V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md) 的提交清单） |
-| V1.2 平台稳定基线 | `b439e10` —— 上一波收口时的干净 HEAD，**未再改动** |
+| 分支 | `feature/v1.2-interactive-tournament`（V1.2 命名分支） |
+| HEAD | 见 `git log -1` —— 本文件自己也会产生提交，写死 SHA 就永远差一个 |
+| V1.2 平台工作 | **13 个提交，位于 `b439e10` 之下**（`7b11a4f`…`9b44610`） |
+| V1.2 平台稳定基线 | `b439e10` —— 注意它是 `feature/v1.1-ui-protocol` 的**尖端**，压在平台波**之上**的收尾提交，**不是分叉点**；**未再改动** |
 | 工作树 | **干净**（`git status --porcelain` 为空） |
 | 版本标签 | 两个 release tag **未移动**；**尚未打 V1.2 tag**（按要求） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
@@ -53,7 +54,7 @@
 |---|---|---|
 | 固定 Emitter | 平台常量 A `(-18,0)` / B `(18,0)` | **每队开赛前从自己的初始点里选一个并锁定** |
 | 何时确定 | 编译期 | `EMITTER_SELECT` 阶段，双方各自 `selectEmitter` → `lockEmitter` |
-| 公开时机 | 第 1 轮起 | **双方都锁定之后**（之前对方在服务端载荷里根本拿不到） |
+| 公开时机 | 第 1 轮起 | **双方都锁定之后**（之前没有对方令牌的调用方在服务端载荷里根本拿不到 —— 见 §4「访问模型」） |
 | 与 `points` 的关系 | 不在 `points` 里 | **被选中的那个点会从 `points` 里移除** |
 | 射击区间 | `[x_e, 20]` / `[-20, x_e]`（x_e 是常量） | 同形，但 `x_e` 逐场不同 |
 
@@ -126,6 +127,49 @@
 > ZIP 的**两条解析分支都有覆盖**：`stored(0)` 在 `zip-upload` 里由测试现打，
 > `deflate(8)` 用已提交的 `tests/fixtures/uploads/valid-deflate.zip`；
 > 后者还有一条**不需要浏览器**的回归（`tests/web-zip`）守着 fixture 的真伪。
+
+### 访问模型（capability token）
+
+**背景**：Final RC Audit 判定的唯一阻断项（P1）。此前 `/api/team/*` 与
+`ws?topic=team-*` 的队别**完全由请求参数决定**（`body.team` / `?team=` / `?topic=`），
+服务端没有任何身份校验 —— 任何能访问 127.0.0.1 的调用方都能读到对方 reveal 前的
+Emitter 选择、代对方改选/锁定锚点、覆盖对方已提交的算法包、读对方源码。
+
+**同一个洞也在裁判面**：`boards.ts` 的裁判板「Emitter 选择在这里给全」，
+而 `/api/judge/state` 与 `ws?topic=judge` 同样没有校验 ⇒ **只给参赛者加令牌关不掉它**，
+打开 `/judge` 就能看到对方的选择。所以两侧一起设了卡。
+
+| 面 | 凭证 | 生命周期 |
+|---|---|---|
+| `/api/judge/*`、`ws?topic=judge` | 裁判令牌 | **进程生命周期**（每场轮换会让组织者自己的裁判页自我锁死） |
+| `/api/team/*`、`ws?topic=team-{a,b}` | **该队**的令牌 | **随 `matchId` 自动轮换** |
+| spectator / replay / trajectory / health / 静态资源 | 无 | —（已是脱敏只读投影，大屏语义要求可匿名访问） |
+
+- 队伍令牌 = `HMAC-SHA256(裁判令牌, \`${matchId}:${team}\`)`（`src/server/tokens.ts`）。
+  `newMatch()` 整体换引擎 ⇒ `matchId` 必变 ⇒ 上一场的令牌**自动失效**。
+  轮换因此不需要任何可变状态，也不存在「忘了清旧令牌」「轮换与在途请求竞争」。
+- 传输：HTTP POST **只认请求头** `X-GB-Token`（令牌不进 request-line）；
+  HTTP GET 允许回退 `?t=`（方便 curl / 测试探测）；WS 只能走 `?t=`
+  （浏览器无法给 WebSocket 设请求头）。
+- **页面 URL 用 fragment `#t=`**：fragment 不发给服务端 ⇒ 不进 request-line、
+  不进 Referer、不进日志。裁判台入口 `${url}/judge#t=…`，由启动 banner 打印并自动打开。
+- **发放**：裁判台侧栏「参赛者入口」面板给出两条可复制链接（`data-testid="team-link-{A,B}"`），
+  **每场更新一次**。组织者把对应那条发给各队。
+- 失败语义：HTTP **401**（鉴权属协议层错误，与 `http.ts` 头部「只有协议层错误才 4xx」一致）；
+  WS 用**应用自定义关闭码 4401**（`protocol.ts` 的 `WS_INVALID_TOKEN`）——
+  浏览器读不到 WS 握手失败的 HTTP 状态，那只会表现成 1006，与「服务没起来」同形，
+  会让前端无上限重连。
+
+**门禁顺序是硬约束**（被既有用例钉死）：Host/Origin/Content-Type（403/415）→
+body 解析（坏 JSON 400）→ **鉴权（401）** → 分派。且门禁必须走**精确路径**，
+不能 `startsWith('/api/judge/')` —— 否则「未知接口回 404」会变成 401。
+
+**裁判台链接不得外传**：裁判板合法地同时显示双方的选择，拿着裁判令牌就等于
+同时拿到两队的权限，也能下达 `reveal` / `start` / `reset` / `install`。
+
+回归：`tests/team-auth.ts`（第 37 个套件）覆盖无令牌 / 错队令牌 / 裁判面无令牌 /
+畸形令牌不 500 / 换场后旧令牌失效 / **WS 未授权时一个字节都不发** /
+以及「公开面仍须匿名可用」的反向对照。
 
 ### 锦标赛模式（默认开）
 

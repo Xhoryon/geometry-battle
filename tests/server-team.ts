@@ -12,6 +12,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { startServer, RunningServer } from '../src/server/main';
 import { PREVIEW_MAX_BYTES, readPackageFile } from '../src/server/upload';
@@ -50,6 +51,39 @@ interface Ctx {
   root: string;
 }
 
+/**
+ * port → server 登记表。
+ *
+ * V1.2 Final RC Audit 之后 `/api/judge/*` 与 `/api/team/*` 都需要令牌。本套件测的是
+ * **参赛者端与锦标赛模式的比赛语义**，不是鉴权，所以下面的 HTTP 小工具按请求路径
+ * **自动带上本场令牌**，既有调用点因此一行都不用改。
+ *
+ * 规则与生产一致，所以自动带令牌不会掩盖真实行为：
+ * `/api/judge/*` → 裁判令牌；`/api/team/*` → **该队**令牌（队别取自 query 或 body）；
+ * 其余（replays 等）→ 不带。
+ *
+ * 鉴权本身（含一切「故意拿错令牌」的反向用例）在 `tests/team-auth.ts`。
+ */
+const SERVERS = new Map<number, RunningServer>();
+
+function serverOf(port: number): RunningServer {
+  const srv = SERVERS.get(port);
+  if (!srv) throw new Error(`端口 ${port} 没有登记服务 —— 起服务必须走 boot()`);
+  return srv;
+}
+
+/** 令牌**现取**：队伍令牌由当前 `matchId` 派生，换场就变，缓存会过期 */
+function tokenFor(port: number, p: string, body?: unknown): string | undefined {
+  if (p.startsWith('/api/judge/')) return serverOf(port).judgeToken;
+  if (p.startsWith('/api/team/')) {
+    const q = /[?&]team=([abAB])/.exec(p);
+    const raw = q ? q[1] : (body as { team?: unknown } | undefined)?.team;
+    if (raw === 'A' || raw === 'a') return serverOf(port).session.teamTokens().A;
+    if (raw === 'B' || raw === 'b') return serverOf(port).session.teamTokens().B;
+  }
+  return undefined;
+}
+
 async function boot(opts: { tournament?: boolean } = {}): Promise<Ctx> {
   const root = tmpDir('server-team');
   const server = await startServer({
@@ -59,18 +93,23 @@ async function boot(opts: { tournament?: boolean } = {}): Promise<Ctx> {
     sandboxRoot: path.join(root, 'sandboxes'),
     tournamentMode: opts.tournament ?? true,
   });
+  SERVERS.set(server.port, server);
   return { server, root };
 }
 
 async function getJson(url: string): Promise<{ status: number; body: any }> {
-  const r = await fetch(url);
+  const u = new URL(url);
+  const token = tokenFor(Number(u.port), u.pathname + u.search);
+  const r = await fetch(u, { headers: token ? { 'X-GB-Token': token } : {} });
   return { status: r.status, body: await r.json().catch(() => null) };
 }
 
 async function postJson(url: string, body: unknown): Promise<{ status: number; body: any }> {
-  const r = await fetch(url, {
+  const u = new URL(url);
+  const token = tokenFor(Number(u.port), u.pathname + u.search, body);
+  const r = await fetch(u, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(token ? { 'X-GB-Token': token } : {}) },
     body: JSON.stringify(body),
   });
   return { status: r.status, body: await r.json().catch(() => null) };
@@ -511,6 +550,39 @@ test('server-team: 源码预览的边界 —— 嵌套 / 绝对路径 / 二进�
   assertEqual(big.truncated, true, '超过上限应标注已截断');
   assert(big.text.length <= PREVIEW_MAX_BYTES, `截断后不应超过上限，实际 ${big.text.length}`);
   assert(big.text.length > 0, '截断后仍应有内容可看');
+});
+
+test('server-team: 畸形文件清单被拒，且错误响应里不得出现宿主路径', async () => {
+  const ctx = await boot();
+  try {
+    // `a` 先被当成文件写下去，再要建一个叫 `a` 的目录 —— `mkdir` 会 EEXIST。
+    // 此前那条 fs 异常被**原样**回给客户端，响应体里带着宿主绝对路径：
+    //   EEXIST: file already exists, mkdir '/var/folders/…/gb-upload-x/a'
+    // （Final RC Audit 的 P2）
+    const r = await postJson(`${ctx.server.url}/api/team/upload`, {
+      team: 'A',
+      files: [
+        { path: 'a', contentBase64: Buffer.from('x').toString('base64') },
+        { path: 'a/b', contentBase64: Buffer.from('y').toString('base64') },
+      ],
+    });
+    assertEqual(r.body.ok, false, '畸形清单必须被拒，不能当成功');
+
+    const text = JSON.stringify(r.body);
+    for (const prefix of ['/var/', '/Users/', '/private/', '/tmp/', os.tmpdir(), ctx.root]) {
+      assert(
+        !text.includes(prefix),
+        `错误响应不得透露宿主路径（出现了 ${JSON.stringify(prefix)}）：${text}`
+      );
+    }
+    // 错误码本身**可以**留下：它不含路径，对使用者有用、对探测者没有价值
+    assert(
+      (r.body.errors as string[]).join(' ').includes('EEXIST'),
+      `应保留不含路径的错误码，实际：${JSON.stringify(r.body.errors)}`
+    );
+  } finally {
+    await ctx.server.close();
+  }
 });
 
 void runAll('server-team');

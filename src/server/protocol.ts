@@ -247,6 +247,15 @@ export interface JudgeBoard extends SpectatorBoard {
     B: { locked: boolean; selected: { id: string; x: number; y: number } | null };
     revealed: boolean;
   };
+  /**
+   * 本场的两个参赛者令牌（V1.2 Final RC Audit 的 P1 修复）。
+   *
+   * 裁判台据此渲染 `/team/a#t=...` 可复制链接 —— 队伍面的唯一入口。
+   * **只在裁判板里**：参赛者板与观众板都没有这个字段。
+   *
+   * 令牌形如 43 字符的 base64url 串；`judge` 令牌本身**不回显**（组织者的 URL 里已有）。
+   */
+  teamTokens: { A: string; B: string };
   actions: ActionView[];
 }
 
@@ -276,6 +285,19 @@ export interface TrajectoryPayload {
 // ============================================================================
 
 export const WS_TOPICS = ['judge', 'spectator', 'team-a', 'team-b'] as const;
+
+/**
+ * 令牌无效时服务端给客户端的 WS 关闭码（V1.2 Final RC Audit 的 P1 修复）。
+ *
+ * 为什么需要它：浏览器**读不到** WS 握手失败时的 HTTP 状态 —— 那只会表现成
+ * `onclose` 的 **1006**，与「服务没起来」完全同形。而前端的重连是无上限退避，
+ * 于是换场之后队伍页会带着过期令牌永久狂刷，现场只看到一句「未连接」。
+ * 用一个应用自定义码把「令牌不对」明确说出来，前端才能停下来给出人话。
+ *
+ * 放在 `protocol.ts`（而不是 `ws.ts`）是因为**前端也要用**，而 `ws.ts` 依赖
+ * node 的 `ws`/`http`，浏览器侧 import 不了。
+ */
+export const WS_INVALID_TOKEN = 4401;
 export type Topic = (typeof WS_TOPICS)[number];
 
 /** topic → 它代表的队伍（只有 team-* 有值） */
@@ -382,7 +404,13 @@ export const JUDGE_READ_PATHS = {
   source: '/api/judge/source',
 } as const;
 
-/** 参赛者端命令（队别由请求体给出，服务端会校验它只能操作自己） */
+/**
+ * 参赛者端命令。
+ *
+ * 队别由请求体给出，但**光有队别不够**：调用方还必须出示那一队的访问令牌
+ * （`X-GB-Token` 请求头），且令牌解析出的队伍必须与 `team` **一致** ——
+ * 否则 401。没有令牌校验时，「队别」只是一句自称（见 `src/server/tokens.ts`）。
+ */
 export const TEAM_COMMAND_PATHS = {
   upload: '/api/team/upload',
   selectEmitter: '/api/team/select-emitter',
@@ -392,6 +420,15 @@ export const TEAM_COMMAND_PATHS = {
 export type TeamCommandPath = (typeof TEAM_COMMAND_PATHS)[keyof typeof TEAM_COMMAND_PATHS];
 
 export type CommandPath = (typeof COMMAND_PATHS)[keyof typeof COMMAND_PATHS];
+
+/**
+ * 一次上传的字节上限（算法包，未压缩的原始内容）。
+ *
+ * 放在这里（而不是 `upload.ts`）是因为**前端也要用**：`web/src/api/zip.ts` 在浏览器里
+ * 解包，必须用同一个预算给自己的解压过程封顶，否则一个 deflate 炸弹能把标签页打死。
+ * `upload.ts` 依赖 node 的 `fs`/`os`，浏览器 import 不了。
+ */
+export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 /** 默认端口；占用时服务端会自动换端口并把实际端口写进 URL */
 export const DEFAULT_PORT = 17800;

@@ -25,6 +25,7 @@ import { TeamSlot } from '../submission/Slot';
 import { inspectPackage } from '../submission/Package';
 import { isBundledAlgorithm, judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest, teamBoard } from './boards';
 import { readPackageFile, writeUploadedPackage } from './upload';
+import { TokenAuthority } from './tokens';
 import {
   CommandResult,
   JudgeBoard,
@@ -88,6 +89,14 @@ export class MatchSession {
   private lastDigest = '';
   /** 宿主 Runtime 探测 —— 要 spawn python，**每场只算一次**，绝不放进 board 投影 */
   private runtime: RuntimeCheck;
+
+  /**
+   * 访问令牌（见 `tokens.ts`）。
+   *
+   * `judge` 令牌随进程存活；队伍令牌由 `judge` 令牌与**当前** `matchId` 派生 ——
+   * 所以这里没有需要维护的令牌状态，换场即失效。
+   */
+  private readonly auth = new TokenAuthority();
 
   constructor(opts: SessionOptions) {
     this.opts = opts;
@@ -300,7 +309,38 @@ export class MatchSession {
       tournamentMode: this.tournamentMode,
       // 裁判板要带文件清单，主办方才能点开某个文件看源码（V1.2 §一）
       slotFiles: { A: this.packageFiles('A'), B: this.packageFiles('B') },
+      // 本场的两个参赛者令牌。**只有裁判板下发** —— 参赛者板是另一个投影函数，
+      // 里面没有这个字段，所以对方拿不到（这正是 V1.2 需求 #7 的传输层保证）。
+      teamTokens: this.teamTokens(),
     };
+  }
+
+  // ========================================================================
+  // 访问令牌（V1.2 Final RC Audit 的 P1 修复）
+  // ========================================================================
+
+  /** 裁判令牌（进程生命周期）。组织者的裁判台链接里带着它 */
+  get judgeToken(): string {
+    return this.auth.judge;
+  }
+
+  /** 令牌签发与核验 —— HTTP / WS 边界共用同一份实现 */
+  get tokens(): TokenAuthority {
+    return this.auth;
+  }
+
+  /** 当前场次的 id。**便宜** —— 不投影任何 board（`/api/health` 靠它） */
+  currentMatchId(): string {
+    return this.engine.matchId;
+  }
+
+  /**
+   * 本场的两个参赛者令牌。
+   *
+   * **每次现算**，不缓存 —— 缓存就会在 `newMatch()` 换引擎之后留下陈旧引用。
+   */
+  teamTokens(): Record<TeamSlot, string> {
+    return this.auth.teamTokens(this.engine.matchId);
   }
 
   getTrajectory(id: string): TrajectoryPayload | null {

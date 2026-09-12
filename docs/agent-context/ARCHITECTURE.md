@@ -109,8 +109,10 @@
   回归在 `tests/timing-fairness.ts`。
 - **START 是硬门禁**：REVEAL 之后算法进程仍被扣住，直到裁判按 START 才放行。
 - **preflight 用 decoy 世界**：种子由 `matchId` 派生，与实际比赛种子无关。
-  ⚠ 但 decoy 世界目前**仍沿用平台常量锚点** —— 见
-  [PROJECT_STATE.md §5.1](PROJECT_STATE.md#51-preflight-不检验锚点处理陷阱已写入选手文档)。
+  decoy 的锚点走 `decoyEmitters(map)`（decoy 地图上双方各自的第一个点），
+  **下发给算法的输入与引擎自检用的是同一对**（`Match.ts:1567`、
+  `LocalPreflight.ts:350`）。此前两者不一致，导致「本地自检通过、官方 Preflight 失败」
+  的假分歧 —— 见 [PROJECT_STATE.md §5.1](PROJECT_STATE.md#51-preflight-不检验锚点处理陷阱已写入选手文档)。
 
 ---
 

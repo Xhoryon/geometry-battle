@@ -20,7 +20,7 @@
 ```bash
 npm run typecheck && npm run typecheck:web      # 秒级，改什么都先跑
 npx ts-node tests/run-all.ts <suite> [suite…]   # 只跑相关套件
-npm test                                        # 全量 35 套件，含 timing-fairness（约 10 分钟）
+npm test                                        # 全量 37 套件，含 timing-fairness（约 10 分钟）
 ```
 
 **全量只在 milestone 跑一次。** 平时按改动范围挑：

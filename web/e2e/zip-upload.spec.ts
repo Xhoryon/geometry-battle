@@ -40,9 +40,12 @@ const DEFLATE_ZIP = path.join(REPO, 'tests', 'fixtures', 'uploads', 'valid-defla
 
 let server: ChildProcess | null = null;
 let baseURL = '';
+/** 裁判台入口，**含本场令牌的 fragment**（与组织者点的是同一条链接） */
+let judgeURL = '';
+let judgeToken = '';
 let root = '';
 
-function waitForUrl(child: ChildProcess, timeoutMs = 60000): Promise<string> {
+function waitForBoot(child: ChildProcess, timeoutMs = 60000): Promise<void> {
   return new Promise((resolve, reject) => {
     let buf = '';
     const timer = setTimeout(
@@ -51,10 +54,14 @@ function waitForUrl(child: ChildProcess, timeoutMs = 60000): Promise<string> {
     );
     const onData = (chunk: Buffer): void => {
       buf += String(chunk);
-      const m = /(http:\/\/127\.0\.0\.1:\d+)/.exec(buf);
-      if (m) {
+      const base = /(http:\/\/127\.0\.0\.1:\d+)/.exec(buf);
+      const judge = /(http:\/\/127\.0\.0\.1:\d+\/judge#t=[A-Za-z0-9_-]+)/.exec(buf);
+      if (base && judge) {
         clearTimeout(timer);
-        resolve(m[1]);
+        baseURL = base[1];
+        judgeURL = judge[1];
+        judgeToken = judgeURL.split('#t=')[1];
+        resolve();
       }
     };
     child.stdout?.on('data', onData);
@@ -64,6 +71,27 @@ function waitForUrl(child: ChildProcess, timeoutMs = 60000): Promise<string> {
       reject(new Error(`服务提前退出（code ${code}）:\n${buf}`));
     });
   });
+}
+
+/**
+ * 读裁判板上**当前**的两个队伍令牌。
+ *
+ * **每次现取**：队伍令牌由 `matchId` 派生，一场一换，缓存会过期。
+ */
+async function judgeBoardJSON(): Promise<{ teamTokens: Record<string, string> }> {
+  const port = new URL(baseURL).port;
+  const res = await fetch(`http://127.0.0.1:${port}/api/judge/state`, {
+    headers: { 'X-GB-Token': judgeToken },
+  });
+  const json = (await res.json()) as { board: { teamTokens: Record<string, string> } };
+  return json.board;
+}
+
+/** 某一队**本场**的参赛页链接（链接里带着该队的令牌） */
+async function teamURL(team: 'A' | 'B'): Promise<string> {
+  const t = (await judgeBoardJSON()).teamTokens[team];
+  if (!t) throw new Error(`裁判板没有下发 Team ${team} 的本场令牌`);
+  return `${baseURL}/team/${team.toLowerCase()}#t=${t}`;
 }
 
 // ============================================================================
@@ -169,7 +197,7 @@ let tmpZipDir = '';
  * 与真人操作完全一致 —— 不直接调 API。
  */
 async function uploadZip(page: Page, team: 'A' | 'B', zipPath: string): Promise<void> {
-  await page.goto(`${baseURL}/team/${team.toLowerCase()}`);
+  await page.goto(await teamURL(team));
   await page.locator('[data-testid="team-upload"]').setInputFiles([zipPath]);
   await expect(page.locator('[data-testid="team-notes"]')).toContainText('已安装', {
     timeout: 120000,
@@ -184,7 +212,11 @@ async function uploadZip(page: Page, team: 'A' | 'B', zipPath: string): Promise<
  * 所以这里读的是**服务端状态**，而不是页面上的文字。
  */
 async function slotHash(team: 'a' | 'b'): Promise<string | null> {
-  const r = await fetch(`http://127.0.0.1:${new URL(baseURL).port}/api/team/state?team=${team}`);
+  const port = new URL(baseURL).port;
+  const token = (await judgeBoardJSON()).teamTokens[team.toUpperCase()];
+  const r = await fetch(`http://127.0.0.1:${port}/api/team/state?team=${team}`, {
+    headers: { 'X-GB-Token': token },
+  });
   const body = (await r.json()) as { board?: { slot?: { hash?: string | null } } };
   return body.board?.slot?.hash ?? null;
 }
@@ -222,7 +254,7 @@ test.beforeAll(async () => {
     ],
     { cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] }
   );
-  baseURL = await waitForUrl(server);
+  await waitForBoot(server);
 });
 
 test.afterAll(() => {
@@ -299,7 +331,7 @@ test('ZIP 上传（stored + DEFLATE）→ 源码审阅 → 筹备 → 锁定 →
   ).toBe(solver.toString('utf-8'));
 
   // ---- 5. 裁判筹备（含真实沙箱 Preflight）----
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
   await expect(page.locator('[data-testid="judge-team-A"]')).toContainText('算法就绪');
   await expect(page.locator('[data-testid="judge-team-B"]')).toContainText('算法就绪');
   await clickAction(page, 'prepare');
@@ -310,7 +342,7 @@ test('ZIP 上传（stored + DEFLATE）→ 源码审阅 → 筹备 → 锁定 →
   // ---- 6. 双方各自选锚点并锁定 ----
   for (const team of ['A', 'B'] as const) {
     const p = await page.context().newPage();
-    await p.goto(`${baseURL}/team/${team.toLowerCase()}`);
+    await p.goto(await teamURL(team));
     const cands = p.locator('[data-testid="team-candidate"]');
     await expect(cands.first()).toBeVisible({ timeout: 60000 });
     await cands.nth(1).click();
@@ -319,7 +351,7 @@ test('ZIP 上传（stored + DEFLATE）→ 源码审阅 → 筹备 → 锁定 →
     await expect(p.locator('[data-testid="team-lock"]')).toBeDisabled({ timeout: 60000 });
     await p.close();
   }
-  await page.goto(`${baseURL}/judge`);
+  await page.goto(judgeURL);
   await expect(page.locator('[data-testid="phase"]')).toHaveText('READY', { timeout: 120000 });
   await expect(page.locator('[data-testid="judge-team-A-emitter"]')).toContainText('锚点');
   await expect(page.locator('[data-testid="judge-team-B-emitter"]')).toContainText('锚点');

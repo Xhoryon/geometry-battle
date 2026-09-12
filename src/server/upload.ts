@@ -16,9 +16,16 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { MAX_UPLOAD_BYTES } from './protocol';
 
-/** 单次上传允许的**编码前**总字节上限（与包上限 8MB 同量级，留出 base64 开销余量） */
-export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+/**
+ * 单次上传允许的**编码前**总字节上限。
+ *
+ * 定义在 `protocol.ts` 而不是这里 —— 前端在浏览器里解包时要用**同一个预算**
+ * 给自己的解压过程封顶（`web/src/api/zip.ts`），而本文件依赖 node 的 fs/os，
+ * 浏览器 import 不了。这里只是转出给服务端内部使用。
+ */
+export { MAX_UPLOAD_BYTES };
 /** 单次上传允许的文件数上限（与包上限一致） */
 export const MAX_UPLOAD_FILES = 256;
 
@@ -110,8 +117,22 @@ export function writeUploadedPackage(files: UploadedFile[]): StagedUpload {
     if (target !== dir && !target.startsWith(dir + path.sep)) {
       return { ok: false, dir, errors: [`路径越界: ${d.rel}`] };
     }
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, d.bytes);
+    try {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, d.bytes);
+    } catch (e) {
+      // **绝不回 `e.message`。** Node 的 fs 异常里带着宿主绝对路径，例如
+      //   EEXIST: file already exists, mkdir '/var/folders/…/gb-upload-x/a'
+      // 而这条消息会原样出现在参赛者页上（畸形清单 `[{path:'a'},{path:'a/b'}]`
+      // 就能触发：先写了一个叫 a 的文件，再要建一个叫 a 的目录）。
+      // 错误码本身（EEXIST / ENOSPC …）不含路径，对使用者有用、对探测者无价值。
+      const code = (e as NodeJS.ErrnoException).code ?? '未知错误';
+      return {
+        ok: false,
+        dir: '',
+        errors: [`上传文件写入失败（${code}）：请检查包内是否有同名的文件与目录`],
+      };
+    }
   }
   return { ok: true, dir, errors: [] };
 }

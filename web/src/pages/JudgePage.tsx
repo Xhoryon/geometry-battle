@@ -21,6 +21,7 @@
 import { useState } from 'react';
 import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { ComputeStatus } from '../components/ComputeStatus';
+import { AccessNotice } from '../components/AccessNotice';
 import { command, fetchJudgeSource, useBoard, useTrajectory } from '../api/client';
 import { COMMAND_PATHS } from '../../../src/server/protocol';
 import type { ActionView, JudgeBoard, WirePhase } from '../../../src/server/protocol';
@@ -228,10 +229,20 @@ function emitterRows(board: JudgeBoard): EmitterRow[] | null {
 // ============================================================================
 
 export function JudgePage(): JSX.Element {
-  const { board, connected } = useBoard<JudgeBoard>('judge');
+  const { board, connected, access } = useBoard<JudgeBoard>('judge');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
   const [errors, setErrors] = useState<string[]>([]);
   const [busyLocal, setBusyLocal] = useState(false);
+  /** 刚刚复制了哪一队的链接（按钮上的反馈） */
+  const [copied, setCopied] = useState<'A' | 'B' | null>(null);
+
+  const copyLink = (team: 'A' | 'B', url: string): void => {
+    setCopied(team);
+    window.setTimeout(() => setCopied(null), 1500);
+    // 剪贴板可能被浏览器策略拒绝（非安全上下文 / 无权限）—— 拒绝不影响链接本身已经
+    // 显示在页面上、可以手工选中复制，所以这里只是尽力而为，不把它变成一条错误。
+    void navigator.clipboard?.writeText(url).catch(() => undefined);
+  };
 
   // ---- Match Setup（下一场生效）----
   const [seed, setSeed] = useState('');
@@ -378,6 +389,8 @@ export function JudgePage(): JSX.Element {
       </div>
 
       <aside className="judge__side">
+        <AccessNotice access={access} testId="judge-access" />
+
         {errors.length > 0 ? (
           <ul className="errors" role="alert">
             {errors.map((e, i) => (
@@ -391,6 +404,59 @@ export function JudgePage(): JSX.Element {
             <li>{board.lastError}</li>
           </ul>
         ) : null}
+
+        {/*
+          ---- 参赛者入口（V1.2 Final RC Audit 的 P1 修复）----
+
+          队伍面的**唯一**入口。每队令牌由服务端按**当前场次**派生，所以换一场
+          这两条链接就更新 —— 旧链接立即失效，这是刻意的（上一场的人不该继续持有）。
+
+          `key` 绑 matchId：换场时组件重建，避免任何残留的「已复制」状态让人误以为
+          复制到的是新链接。
+        */}
+        <section className="panel" data-testid="team-links" key={board.matchId}>
+          <div className="panel__title">
+            <h2>参赛者入口</h2>
+            <span className="num dim">本场链接 · 换场即更新</span>
+          </div>
+          <p className="muted" style={{ margin: '0 0 8px', fontSize: 11 }}>
+            把对应的那条发给各队。链接里带着**本场**的访问令牌：不要投到大屏上，
+            也不要发给另一队 —— 拿着某队的令牌就能替那一队操作。
+          </p>
+          {(['A', 'B'] as const).map((t) => {
+            const url = `${location.origin}/team/${t.toLowerCase()}#t=${board.teamTokens[t]}`;
+            return (
+              <div
+                key={t}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}
+              >
+                <span className={`team-dot team-dot--${t.toLowerCase()}`} />
+                <span className="slot__name">Team {t}</span>
+                <code
+                  className="num"
+                  data-testid={`team-link-${t}`}
+                  style={{
+                    flex: 1,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                  title={url}
+                >
+                  {url}
+                </code>
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid={`team-link-${t}-copy`}
+                  onClick={() => copyLink(t, url)}
+                >
+                  {copied === t ? '已复制' : '复制'}
+                </button>
+              </div>
+            );
+          })}
+        </section>
 
         {/* ---- 向导 ---- */}
         <section className="panel" data-testid="wizard" data-phase={board.phase}>

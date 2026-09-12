@@ -24,6 +24,7 @@ import {
   CANONICAL_SLOT_ROOT,
   RUNTIME_SLOT_ROOT,
   RunningServer,
+  StartOptions,
   seedRuntimeSlots,
   startServer,
 } from '../src/server/main';
@@ -62,6 +63,55 @@ interface RawResponse {
   text: string;
 }
 
+// ---------------------------------------------------------------------------
+// 服务登记表 + 令牌
+//
+// V1.2 Final RC Audit 之后 `/api/judge/*` 与 `/api/team/*` 都需要令牌。本套件测的是
+// **比赛语义**，不是鉴权，所以 HTTP 小工具按请求路径**自动带上本场令牌**，
+// 于是这一百来个既有调用点一行都不用改。
+//
+// 规则与生产完全一致，所以自动带令牌不会掩盖真实行为：
+//   - `/api/judge/*` → 裁判令牌
+//   - `/api/team/*`  → **该队**令牌（队别取自 query 或 body）
+//   - 其余（health / replays / trajectory）→ 不带
+//
+// **`rawRequest` 刻意不带**：下面「伪造 Host 403 / 跨源 403 / 非 JSON 415 / 坏 JSON 400」
+// 四条边界用例直接用它，必须保持**无令牌**才能继续证明「令牌门禁没有抢占协议层错误」。
+//
+// 鉴权本身（含一切「故意拿错令牌」的反向用例）在 `tests/team-auth.ts`。
+// ---------------------------------------------------------------------------
+
+const SERVERS = new Map<number, RunningServer>();
+
+/** 起服务并登记 —— 登记之后小工具才拿得到本场的令牌 */
+async function bootServer(opts: StartOptions): Promise<RunningServer> {
+  const srv = await startServer(opts);
+  SERVERS.set(srv.port, srv);
+  return srv;
+}
+
+function serverOf(port: number): RunningServer {
+  const srv = SERVERS.get(port);
+  if (!srv) throw new Error(`端口 ${port} 没有登记服务 —— 起服务要用 bootServer()`);
+  return srv;
+}
+
+function judgeTokenOf(port: number): string {
+  return serverOf(port).judgeToken;
+}
+
+/** 令牌**现取**：队伍令牌由当前 `matchId` 派生，换场就变，缓存会过期 */
+function tokenFor(port: number, p: string, body?: unknown): string | undefined {
+  if (p.startsWith('/api/judge/')) return serverOf(port).judgeToken;
+  if (p.startsWith('/api/team/')) {
+    const q = /[?&]team=([abAB])/.exec(p);
+    const raw = q ? q[1] : (body as { team?: unknown } | undefined)?.team;
+    if (raw === 'A' || raw === 'a') return serverOf(port).session.teamTokens().A;
+    if (raw === 'B' || raw === 'b') return serverOf(port).session.teamTokens().B;
+  }
+  return undefined;
+}
+
 function rawRequest(
   port: number,
   opts: { method?: string; path?: string; headers?: Record<string, string>; body?: string }
@@ -90,17 +140,26 @@ function rawRequest(
 }
 
 async function post(port: number, p: string, body: unknown = {}): Promise<{ status: number; body: any }> {
+  const token = tokenFor(port, p, body);
   const r = await rawRequest(port, {
     method: 'POST',
     path: p,
-    headers: { Host: `127.0.0.1:${port}`, 'Content-Type': 'application/json' },
+    headers: {
+      Host: `127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-GB-Token': token } : {}),
+    },
     body: JSON.stringify(body),
   });
   return { status: r.status, body: JSON.parse(r.text) };
 }
 
 async function get(port: number, p: string): Promise<{ status: number; body: any }> {
-  const r = await rawRequest(port, { path: p, headers: { Host: `127.0.0.1:${port}` } });
+  const token = tokenFor(port, p);
+  const r = await rawRequest(port, {
+    path: p,
+    headers: { Host: `127.0.0.1:${port}`, ...(token ? { 'X-GB-Token': token } : {}) },
+  });
   return { status: r.status, body: JSON.parse(r.text) };
 }
 
@@ -109,7 +168,11 @@ async function getRaw(
   port: number,
   p: string
 ): Promise<{ status: number; body: unknown; text: string }> {
-  const r = await rawRequest(port, { path: p, headers: { Host: `127.0.0.1:${port}` } });
+  const token = tokenFor(port, p);
+  const r = await rawRequest(port, {
+    path: p,
+    headers: { Host: `127.0.0.1:${port}`, ...(token ? { 'X-GB-Token': token } : {}) },
+  });
   let body: unknown = null;
   try {
     body = JSON.parse(r.text);
@@ -157,7 +220,10 @@ interface Rehearsal {
 let rehearsal: Rehearsal | null = null;
 
 function connect(port: number, topic: 'judge' | 'spectator', sink: ServerMessage[]): WebSocket {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=${topic}`);
+  // 浏览器无法给 WS 设请求头，所以令牌只能走查询串（见 src/server/tokens.ts）。
+  // spectator 不需要令牌 —— 它的语义就是给任何人看。
+  const t = topic === 'judge' ? `&t=${encodeURIComponent(judgeTokenOf(port))}` : '';
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=${topic}${t}`);
   ws.on('message', (raw: Buffer) => {
     try {
       sink.push(JSON.parse(String(raw)) as ServerMessage);
@@ -234,7 +300,7 @@ async function startIsolated(opts: { teamA?: string; teamB?: string } = {}): Pro
 }> {
   const root = tmpDir('webfail');
   const artifactRoot = path.join(root, 'artifacts');
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot,
@@ -330,7 +396,7 @@ async function waitForMatchEnd(port: number): Promise<JudgeBoard> {
 async function runRehearsal(): Promise<Rehearsal> {
   const root = tmpDir('websrv');
   const artifactRoot = path.join(root, 'artifacts');
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot,
@@ -709,7 +775,7 @@ test('静态文件存在但不可读：受控 4xx/5xx，进程必须存活（tag
   fs.writeFileSync(locked, 'console.log("locked")\n');
   fs.chmodSync(locked, 0o000);
 
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot: path.join(root, 'artifacts'),
@@ -883,7 +949,7 @@ test('run-to-end 期间页面刷新（重连）即恢复现场并自行收敛到
   assert((dup.body.errors as string[]).join(' ').includes('尚未完成'), '拒绝理由必须是人话');
 
   // ② 「刷新页面」≈ 新开一条 WS：必须立刻拿到当前现场，而不是空白
-  const live = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=judge`);
+  const live = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=judge&t=${encodeURIComponent(judgeTokenOf(port))}`);
   const first = await new Promise<JudgeBoard>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('重连后 5s 内未收到 board')), 5000);
     live.on('message', (raw: Buffer) => {
@@ -1026,7 +1092,7 @@ test('真的启动一次**默认配置**，槽位根必须是运行期投递点�
   // 槽位根分裂那条事故正是发生在这个盲区里（Final Re-Gate item 9/10）。
   const root = tmpDir('defaultroot');
   const canonBefore = fs.readFileSync(path.join(CANONICAL_SLOT_ROOT, 'team-a', 'solver.py'));
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     // 故意**不传** slotRoot：走生产默认值（runs/slots + 从 canonical 播种）
     artifactRoot: path.join(root, 'artifacts'),

@@ -26,6 +26,7 @@ import {
   useBoard,
 } from '../api/client';
 import type { ActionView, TeamBoard } from '../../../src/server/protocol';
+import { AccessNotice } from '../components/AccessNotice';
 
 const PHASE_LABEL: Record<string, string> = {
   SETUP: '准备',
@@ -48,7 +49,7 @@ function actionOf(board: TeamBoard | null, key: string): ActionView | null {
 
 export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
   const topic = team === 'A' ? 'team-a' : 'team-b';
-  const { board, connected } = useBoard<TeamBoard>(topic);
+  const { board, connected, access } = useBoard<TeamBoard>(topic);
 
   // ---- 本地交互状态（服务端没有的：文件选择、正在跑的请求、源码预览）----
   const [busyLocal, setBusyLocal] = useState(false);
@@ -180,6 +181,10 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
             观众大屏 ↗
           </a>
         </p>
+
+        {/* 令牌问题**先于**其它错误显示：它是「这一页根本不该由你打开」，
+            而不是某一次操作失败 —— 后者在令牌不对时根本发不出去。 */}
+        <AccessNotice access={access} testId="team-access" />
 
         {errors.length > 0 && (
           <div className="errors" data-testid="team-errors">

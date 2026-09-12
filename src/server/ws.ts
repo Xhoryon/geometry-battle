@@ -15,9 +15,31 @@ import type { IncomingMessage, Server } from 'http';
 import type { Duplex } from 'stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import { MatchSession } from './session';
-import { ClientMessage, ServerMessage, Topic, isTopic } from './protocol';
+import {
+  ClientMessage,
+  ServerMessage,
+  Topic,
+  WS_INVALID_TOKEN,
+  isTopic,
+  teamOfTopic,
+} from './protocol';
 import { checkOriginAndHost } from './security';
 import { parseRequestTarget } from './http';
+
+/**
+ * topic 的能力格（见 `tokens.ts` 文件头）：
+ *
+ *   - `spectator`：脱敏只读投影，大屏语义要求**匿名可访问**；
+ *   - `judge`：裁判令牌 —— 裁判板在 reveal 前就带双方锚点身份，绝不能不设卡；
+ *   - `team-a` / `team-b`：**对应那一队**的令牌（不是裁判令牌 —— 不搞矩阵，
+ *     队伍面的唯一入口就是裁判台「参赛者入口」给出的链接）。
+ */
+function isAuthorizedTopic(session: MatchSession, topic: Topic, presented: string | null): boolean {
+  if (topic === 'spectator') return true;
+  if (topic === 'judge') return session.tokens.isJudge(presented);
+  const team = teamOfTopic(topic);
+  return team !== null && session.tokens.teamOf(session.currentMatchId(), presented) === team;
+}
 
 export interface WsHub {
   close(): Promise<void>;
@@ -65,7 +87,19 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
       socket.destroy();
       return;
     }
+    // 令牌只能走查询串：浏览器**无法**给 `WebSocket` 设置请求头。
+    // 这是全链路里令牌唯一必须出现在 request-line 的位置（页面 URL 已改用 fragment）。
+    const authorized = isAuthorizedTopic(session, topic, url.searchParams.get('t'));
+
     wss.handleUpgrade(req, socket, head, (ws) => {
+      if (!authorized) {
+        // ⚠️ **绝不调用 `handleConnection`。**
+        // 它第一行就 `send({type:'hello'})` + `send({type:'board', ...})`，
+        // 所以把鉴权写进它开头，会让裁判板在关闭**之前**完整推给未鉴权连接 ——
+        // 而客户端确实收到了 4401，回归测试照样绿。假绿就藏在这个顺序里。
+        ws.close(WS_INVALID_TOKEN, 'invalid-token');
+        return;
+      }
       // topic 是本次 upgrade 解析出来的，直接带进连接处理 ——
       // 不走 `emit('connection', ...)`（那条签名只有 ws/req，塞不进第三个参数）
       try {
