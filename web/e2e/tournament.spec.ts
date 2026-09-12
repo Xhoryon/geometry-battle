@@ -430,6 +430,17 @@ test('参赛者端：坏包被拒，且不碰槽位里已装好的包', async ({
   // 因此这里能证明的是**更强**的性质 —— 安装流水线是非破坏性的，
   // 被拒的上传一个字节都不会动到槽位里现有的东西。
   // （「空槽位 + 坏包 → 未就绪」那条由 `server-team` 在全新服务上覆盖。）
+
+  // 先等**权威 board** 到达再读 —— 否则下面读到的可能不是槽位里的真实包名。
+  //
+  // `goto()` 在文档 load 时就 resolve，而 board 是随后经 WS 推来的第一条消息；
+  // 这段窗口里 `board` 仍是 null，槽位名渲染的是兜底串。旧写法直接读文本，
+  // 于是偶发地把兜底串当成真实包名 —— 竞态，与语言无关。
+  //
+  // 等的是 `data-board` 这个机器可读的就绪标记（见 TeamPage），不是渲染出来的
+  // 文案、也不是睡眠：文案本身正是被测对象。
+  await expect(page.locator('.team')).toHaveAttribute('data-board', 'ready');
+
   const nameBefore = await page.locator('[data-testid="team-package"] .slot__name').innerText();
   expect(nameBefore, '前置：A 的槽位里应已装好一个包').not.toContain('未命名');
 

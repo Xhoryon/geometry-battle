@@ -157,7 +157,17 @@ export function TeamPage({ team }: { team: 'A' | 'B' }): JSX.Element {
   const nowStep = steps.findIndex((s) => !s.done);
 
   return (
-    <div className="team">
+    /*
+      `data-board` 是**权威 board 是否已到达**的机器可读标记。
+
+      `connected` 只说明 WS 在线；首帧 board 是随后一条消息 —— 这中间有一段窗口，
+      其间 `board` 仍为 null，槽位名等字段渲染的是兜底值（`（未命名）`/`(unnamed)`）。
+      浏览器演练若在这段窗口里读文本，读到的就不是权威值。
+
+      把它做成属性而不是让测试去猜渲染出来的文案：文案本身正是被测对象，
+      拿它当就绪判据会让测试与实现互相印证。
+    */
+    <div className="team" data-board={board ? 'ready' : 'pending'}>
       <header className="team__rail">
         <p className="eyebrow">{t('team.title', { team })}</p>
         <p className="num">
