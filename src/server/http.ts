@@ -405,7 +405,14 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
         const id = decodeURIComponent(pathname.slice('/api/replays/'.length));
         const r = loadReplay(deps.artifactRoot, id);
         if (!r.ok) {
-          sendJson(res, r.status, { ok: false, errors: [r.message] });
+          // `reasonKey` / `reasonParams` 是**纯附加**字段：浏览器认不出键时
+          // 回退到 `errors[0]`（服务端原文），与 board 的错误处理同一套约定。
+          sendJson(res, r.status, {
+            ok: false,
+            errors: [r.message],
+            reasonKey: r.reasonKey,
+            reasonParams: r.reasonParams,
+          });
           return;
         }
         sendJson(res, 200, { ok: true, replay: downsampleReplay(r.replay), match: r.match });

@@ -20,7 +20,7 @@ import { FALLBACK_LOCALE } from './types';
 import type { Locale, Params } from './types';
 // 只用到**类型**：`import type` 会被完全擦除，因此这个模块在运行时
 // 依然零依赖 —— zip.ts 那个 Node 单测正是靠这一点才能直接 import 它。
-import type { WirePhase } from '../../../src/server/protocol';
+import type { WireDifficulty, WirePhase } from '../../../src/server/protocol';
 
 /** 中文表 —— 键的唯一事实来源 */
 const zh = {
@@ -308,17 +308,29 @@ const zh = {
   'replay.rounds': '逐轮',
   'replay.roundsCount': '{n} 回合',
   'replay.others': '其他场次',
-  'replay.frameKills': '击杀 {kills}',
   'replay.play': '播放',
   'replay.pause': '暂停',
   'replay.prev': '上一轮',
   'replay.next': '下一轮',
   'replay.slider': '回合',
   'replay.meta': '{points} 点 · {difficulty} · seed {seed}',
-  'replay.frameSummary': 'first {first} · 攻击 {attacks} · 击杀 {kills}',
+  'replay.frameSummary': '先手 {first} · 攻击 {attacks} · 击杀 {kills}',
+  // 回放里的回合标号。中文用「第 n 轮」，英文保持紧凑的 R+n —— 这两种写法
+  // 各自是本语言的惯例，硬套同一个形状在任何一边都别扭。
+  'replay.roundShort': '第 {n} 轮',
+  'replay.roundsBadge': '{n} 回合',
   'replay.draw': '平局',
   'replay.winner': 'TEAM {team} 获胜',
   'replay.loadFailed': '读取失败（HTTP {status}）',
+  // 回放打不开时的原因。服务端给键（`classifyMatch` 的 `reasonKey`），
+  // 这里取译文；认不出键时客户端回退到服务端原文。
+  'replay.reason.notFound': '没有这场比赛',
+  'replay.reason.incomplete': '这场比赛的产物不完整',
+  'replay.reason.broken': '产物缺失或无法解析',
+  'replay.reason.unfinished': '这场比赛没有正常终结，不能作为回放',
+  'replay.reason.legacyNoEnd': '这场比赛的产物来自旧版本（没有终局原因字段），结果不可信',
+  'replay.reason.legacyContradiction':
+    '终局原因 {endReason} 与胜者 {winner} 自相矛盾（旧版本产物），结果不可信',
 
   // ---------------------------------------------------------------- errors
   // Web 层自己产生的错误（服务端下发的原文不在这里，见 README「已知边界」）
@@ -339,6 +351,45 @@ const zh = {
   'zip.totalTooBig': 'ZIP 解压后总体积超过上限 {bytes} 字节',
   'zip.crcMismatch': 'ZIP 校验和不匹配：{name}（文件已损坏）',
   'zip.empty': 'ZIP 里没有任何文件',
+
+  // ---------------------------------------------------------------- difficulty
+  // 难度是**协议枚举**（`WireDifficulty`）—— `value` 一律保持 easy/medium/hard，
+  // 翻译的只是**给人看的那个词**。
+  'difficulty.easy': '简单',
+  'difficulty.medium': '中等',
+  'difficulty.hard': '困难',
+
+  // ---------------------------------------------------------------- judge stage
+  // 裁判向导那七格步骤条的显示文案。
+  //
+  // 这几格**不是** `WirePhase` —— 它们是向导自己的展示模型（一格可以覆盖好几个
+  // 阶段，例如 ALGORITHM READY 同时对应 UPLOAD_A/B 与 PREFLIGHT）。
+  // `data-stage` 仍写原始标识符，因此「高亮到哪一格」对测试与语言都无关。
+  'judge.stage.setup': '筹备',
+  'judge.stage.algorithmReady': '算法就绪',
+  'judge.stage.emitterLock': '锚点锁定',
+  'judge.stage.ready': '就绪',
+  'judge.stage.startMatch': '开赛',
+  'judge.stage.round': '回合',
+  'judge.stage.matchEnd': '终局',
+
+  // ---------------------------------------------------------------- round errors
+  // 服务端下发的本轮错误（`RoundSummaryView.errorKeys`）。
+  //
+  // 键由服务端给、译文由客户端取 —— 与 `action.*` 同一套做法：错误码到结论的
+  // 映射（`explainError`）是引擎侧的规则，浏览器不得自己再推一套。
+  // 错误码本身（TIMEOUT / INVALID / CRASH）是机器标识，两种语言里都原样保留。
+  'round.error.noAttack': 'Team {team}：本轮没有执行攻击',
+  'round.error.TIMEOUT': 'Team {team}：TIMEOUT —— 未在计算预算内交出 result.json',
+  'round.error.CRASH': 'Team {team}：CRASH —— 算法进程异常退出',
+  'round.error.INVALID': 'Team {team}：INVALID —— 输出不是合法函数',
+  'round.error.OUTPUT_TOO_LARGE': 'Team {team}：INVALID —— 输出超过体积上限',
+  'round.error.MEMORY_LIMIT': 'Team {team}：CRASH —— 超出内存上限',
+  'round.error.READY_TIMEOUT': 'Team {team}：CRASH —— 未能在启动阶段完成握手',
+  'round.error.SPAWN_ERROR': 'Team {team}：CRASH —— 无法启动沙箱进程',
+  'round.error.CANCELLED': 'Team {team}：RUNNER CANCELLED（历史字段）—— 运行器被宿主中止',
+  'round.error.RUNNER_ABORT': 'Team {team}：对手未能完成 READY 握手，本轮中止（本队无过错）',
+  'round.error.unknown': 'Team {team}：异常 {code}',
 
   // ---------------------------------------------------------------- arena
   'arena.label': '竞技场',
@@ -637,7 +688,6 @@ const en: Record<TranslationKey, string> = {
   'replay.rounds': 'Rounds',
   'replay.roundsCount': 'Rounds: {n}',
   'replay.others': 'Other matches',
-  'replay.frameKills': 'kills {kills}',
   'replay.play': 'Play',
   'replay.pause': 'Pause',
   'replay.prev': 'Previous round',
@@ -645,9 +695,19 @@ const en: Record<TranslationKey, string> = {
   'replay.slider': 'Round',
   'replay.meta': 'Points: {points} · {difficulty} · seed {seed}',
   'replay.frameSummary': 'first {first} · attacks {attacks} · kills {kills}',
+  'replay.roundShort': 'R{n}',
+  'replay.roundsBadge': '{n}R',
   'replay.draw': 'Draw',
   'replay.winner': 'TEAM {team} wins',
   'replay.loadFailed': 'Could not load (HTTP {status})',
+  'replay.reason.notFound': 'No such match',
+  'replay.reason.incomplete': 'This match’s artifacts are incomplete',
+  'replay.reason.broken': 'Artifacts are missing or cannot be parsed',
+  'replay.reason.unfinished': 'This match did not finish normally, so it cannot be replayed',
+  'replay.reason.legacyNoEnd':
+    'This artifact comes from an older version (no end-reason field); its result cannot be trusted',
+  'replay.reason.legacyContradiction':
+    'End reason {endReason} contradicts winner {winner} (older artifact); the result cannot be trusted',
 
   'err.httpFailed': 'Request failed (HTTP {status})',
   'err.unreachable': 'Cannot reach the local service: {message}',
@@ -664,6 +724,32 @@ const en: Record<TranslationKey, string> = {
   'zip.totalTooBig': 'ZIP entries total more than the {bytes}-byte limit',
   'zip.crcMismatch': 'ZIP checksum mismatch: {name} (file is corrupt)',
   'zip.empty': 'ZIP contains no files',
+
+  'difficulty.easy': 'Easy',
+  'difficulty.medium': 'Medium',
+  'difficulty.hard': 'Hard',
+
+  'judge.stage.setup': 'Setup',
+  'judge.stage.algorithmReady': 'Algorithm ready',
+  'judge.stage.emitterLock': 'Emitter lock',
+  'judge.stage.ready': 'Ready',
+  'judge.stage.startMatch': 'Start match',
+  'judge.stage.round': 'Round',
+  'judge.stage.matchEnd': 'Match end',
+
+  'round.error.noAttack': 'Team {team}: no attack executed this round',
+  'round.error.TIMEOUT': 'Team {team}: TIMEOUT — no result.json within the compute budget',
+  'round.error.CRASH': 'Team {team}: CRASH — the algorithm process exited abnormally',
+  'round.error.INVALID': 'Team {team}: INVALID — the output is not a legal function',
+  'round.error.OUTPUT_TOO_LARGE': 'Team {team}: INVALID — the output exceeds the size limit',
+  'round.error.MEMORY_LIMIT': 'Team {team}: CRASH — memory limit exceeded',
+  'round.error.READY_TIMEOUT': 'Team {team}: CRASH — the READY handshake did not complete',
+  'round.error.SPAWN_ERROR': 'Team {team}: CRASH — the sandbox process could not be started',
+  'round.error.CANCELLED':
+    'Team {team}: RUNNER CANCELLED (legacy field) — the runner was aborted by the host',
+  'round.error.RUNNER_ABORT':
+    'Team {team}: the opponent did not complete the READY handshake; this round was aborted (no fault of this team)',
+  'round.error.unknown': 'Team {team}: unexpected error {code}',
 
   'arena.label': 'Arena',
   'arena.labelInteractive': 'Arena (click a point to pick it)',
@@ -761,3 +847,67 @@ export const PHASE_KEYS: Record<WirePhase, TranslationKey> = {
   ROUND_RESULT: 'phase.ROUND_RESULT',
   MATCH_END: 'phase.MATCH_END',
 };
+
+/**
+ * 裁判向导步骤条的七格。
+ *
+ * 与 `WirePhase` 的区别是**故意的**：这几格是向导自己的展示模型，
+ * 一格可以覆盖多个阶段（`ALGORITHM READY` 同时对应 UPLOAD_A / UPLOAD_B / PREFLIGHT）。
+ * 把它们写成 `WirePhase` 的别名会让「阶段改了、向导没跟上」编译不过 ——
+ * 而它们本来就不该一一对应。
+ */
+export const WIZARD_STAGES = [
+  'SETUP',
+  'ALGORITHM READY',
+  'EMITTER LOCK',
+  'READY',
+  'START MATCH',
+  'ROUND',
+  'MATCH END',
+] as const;
+
+export type WizardStage = (typeof WIZARD_STAGES)[number];
+
+export const WIZARD_STAGE_KEYS: Record<WizardStage, TranslationKey> = {
+  SETUP: 'judge.stage.setup',
+  'ALGORITHM READY': 'judge.stage.algorithmReady',
+  'EMITTER LOCK': 'judge.stage.emitterLock',
+  READY: 'judge.stage.ready',
+  'START MATCH': 'judge.stage.startMatch',
+  ROUND: 'judge.stage.round',
+  'MATCH END': 'judge.stage.matchEnd',
+};
+
+/** 难度枚举 → 译文键。`value` 仍是 `easy/medium/hard`，只有显示被翻译。 */
+export const DIFFICULTY_KEYS: Record<WireDifficulty, TranslationKey> = {
+  easy: 'difficulty.easy',
+  medium: 'difficulty.medium',
+  hard: 'difficulty.hard',
+};
+
+/**
+ * 难度值 → 当前语言的显示文本。
+ *
+ * 收 `string` 而不是 `WireDifficulty` 是刻意的：**回放读的是历史 match.json**，
+ * 那可能是旧版本写下的、或是将来才加的难度。认不出就原样显示 ——
+ * 既不崩，也不假装它被翻译过。
+ */
+export function difficultyLabel(locale: Locale, value: string): string {
+  const key = (DIFFICULTY_KEYS as Record<string, TranslationKey | undefined>)[value];
+  return key ? translate(locale, key) : value;
+}
+
+/**
+ * 本轮错误的译文键 → 由服务端 `RoundSummaryView.errorKeys` 给出。
+ *
+ * 写成普通字符串而不是 `TranslationKey` 是刻意的：这些键随 board 走，
+ * 不经过 TS 检查，认不出时必须回退到服务端原文（`errors[i]`）。
+ */
+export function localizeRoundErrors(
+  locale: Locale,
+  errors: readonly string[],
+  keys?: readonly string[],
+  params?: readonly (Record<string, string | number> | undefined)[]
+): string[] {
+  return errors.map((raw, i) => translateDynamic(locale, keys?.[i] ?? '', params?.[i], raw));
+}

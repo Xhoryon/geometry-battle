@@ -232,6 +232,46 @@ export function explainError(code: string | null, ran: boolean): string | null {
   }
 }
 
+/**
+ * `explainError` 的**翻译键**版本（V1.3）—— 同一套分支，只是给键不给译文。
+ *
+ * 为什么要有两份：终端裁判台要的是**成文的**人话（它就是我们的规范措辞），
+ * 而 Web 界面要按客户端语言渲染，且语言**不得进入比赛载荷** —— 所以 board
+ * 只能带键，由浏览器取译文（见 `web/src/i18n/translations.ts` 的 `round.error.*`）。
+ *
+ * **两份必须同步**：`tests/i18n.ts` 会遍历这里的每个错误码，断言它的键
+ * 在两种语言里都有译文；新增一个 `case` 而忘了加译文，那条回归会红。
+ *
+ * 返回 `null` 表示这一侧没有需要报告的问题（与 `explainError` 同义）。
+ */
+export function explainErrorKey(code: string | null, ran: boolean): string | null {
+  if (!code && ran) return null;
+  if (!code) return 'round.error.noAttack';
+  switch (code) {
+    case 'TIMEOUT':
+      return 'round.error.TIMEOUT';
+    case 'CRASH':
+      return 'round.error.CRASH';
+    case 'INVALID_DSL':
+    case 'INVALID_OUTPUT':
+      return 'round.error.INVALID';
+    case 'OUTPUT_TOO_LARGE':
+      return 'round.error.OUTPUT_TOO_LARGE';
+    case 'MEMORY_LIMIT':
+      return 'round.error.MEMORY_LIMIT';
+    case 'READY_TIMEOUT':
+      return 'round.error.READY_TIMEOUT';
+    case 'SPAWN_ERROR':
+      return 'round.error.SPAWN_ERROR';
+    case 'CANCELLED':
+      return 'round.error.CANCELLED';
+    case 'RUNNER_ABORT':
+      return 'round.error.RUNNER_ABORT';
+    default:
+      return 'round.error.unknown';
+  }
+}
+
 /** 从引擎快照与槽位状态构造控制台输入（省得入口重复拼装） */
 export function consoleInputFrom(
   engine: MatchEngine,

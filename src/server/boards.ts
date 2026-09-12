@@ -21,7 +21,7 @@ import { Obstacle } from '../obstacle/Obstacle';
 import { GeneratedMap } from '../map/MapGenerator';
 import { SlotState, TeamSlot } from '../submission/Slot';
 import { inspectPackage } from '../submission/Package';
-import { explainError } from '../ui/JudgeConsole';
+import { explainError, explainErrorKey } from '../ui/JudgeConsole';
 import { RuntimeCheck, describeRuntime } from '../submission/Runtime';
 import type { MatchPhase } from '../core/Match';
 import type { MatchLog } from '../core/Logs';
@@ -166,15 +166,27 @@ function buildComputes(snap: MatchSnapshot): { A: ComputeCell; B: ComputeCell } 
 }
 
 /** 本轮人话错误（§27 Error UX）—— 复用终端裁判台的翻译表，不另写一套 */
-function roundErrors(last: MatchLog['rounds'][number]): string[] {
-  const out: string[] = [];
+function roundErrors(last: MatchLog['rounds'][number]): {
+  errors: string[];
+  errorKeys: string[];
+  errorParams: Record<string, string | number>[];
+} {
+  const errors: string[] = [];
+  const errorKeys: string[] = [];
+  const errorParams: Record<string, string | number>[] = [];
   for (const team of ['A', 'B'] as const) {
     const code = team === 'A' ? last.aErrorCode : last.bErrorCode;
     const ran = last.attacksExecuted.includes(team);
     const msg = explainError(code, ran);
-    if (msg) out.push(`Team ${team}: ${msg}`);
+    if (!msg) continue;
+    errors.push(`Team ${team}: ${msg}`);
+    // 键由服务端给、译文由浏览器取（V1.3）。客户端认不出键时回退到上面那条原文，
+    // 所以这三个数组**等长且一一对应**是唯一的约定。
+    const key = explainErrorKey(code, ran) ?? 'round.error.unknown';
+    errorKeys.push(key);
+    errorParams.push(key === 'round.error.unknown' ? { team, code: code ?? '' } : { team });
   }
-  return out;
+  return { errors, errorKeys, errorParams };
 }
 
 /**
@@ -217,7 +229,8 @@ export function spectatorBoard(
           attacksExecuted: [...last.attacksExecuted],
           killed: frameKilled,
           aliveAfter: { A: last.aliveAAfter, B: last.aliveBAfter },
-          errors: roundErrors(last),
+          // `errors` / `errorKeys` / `errorParams` 三者等长且一一对应
+          ...roundErrors(last),
         }
       : null,
     // 只有比赛真正结束才公布判决 —— 中途 `getWinner()` 可能已是 'A'/'B'，

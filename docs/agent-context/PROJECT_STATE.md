@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.3 本地化：中英双语界面 + 双语 README）。
+> 最后更新：2026-09-12（V1.3 RC 修复波：竞态稳定化 + 本地化收口，见 §1.1）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -19,10 +19,48 @@
 | HEAD | 见 `git log -1` —— 本文件自己也会产生提交，写死 SHA 就永远差一个 |
 | V1.2 平台工作 | **13 个提交，位于 `b439e10` 之下**（`7b11a4f`…`9b44610`） |
 | V1.2 发布基线 | `94a0788` —— 打了 `v1.2.0-competition` 的那一个提交，V1.3 从它分出，**未再改动** |
-| 工作树 | **干净** —— V1.3 本地化已提交（含本文件自身的更新） |
-| 版本标签 | **三个** release tag（`v1.0.0` / `v1.1.0` / `v1.2.0-competition`）**均未移动**；V1.3 **尚未打 tag**（按要求） |
+| V1.3 本地化基线 | `b0f2751` —— 独立终审的被审候选，**未 amend、未改写**（终审结论：CONDITIONAL PASS） |
+| V1.3 RC 修复基线 | `f294c0e` —— 竞态稳定化提交；紧随其后的本地化收口提交见 §1.1 |
+| 工作树 | **干净** —— V1.3 本地化与 RC 修复均已提交（含本文件自身的更新） |
+| 版本标签 | **三个** release tag（`v1.0.0-competition` / `v1.1.0-competition` / `v1.2.0-competition`）**均未移动**；V1.3 **尚未打 tag**（按要求） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
 | 公开仓库 | <https://github.com/Xhoryon/geometry-battle> —— **独立脱敏导出历史**，与本地研发仓库 SHA 不互见 |
+
+---
+
+## 1.1 V1.3 RC 修复波（独立终审后）
+
+终审（对 `b0f2751`）给出 **1 个 P1 + 4 个 P2**，本波逐一收口。
+
+| 编号 | 问题 | 落点 | 验证 |
+|---|---|---|---|
+| P1 | `tournament.spec.ts` 在 `goto()` 后**立刻**读 `.slot__name`，board 尚未经 WS 到达时读到兜底串 `（未命名）`——实测 6 次完整 e2e 红 1 次 | `TeamPage` 根部新增 `data-board="ready" \| "pending"`；用例等它变 `ready` 再读 | tournament 演练 `--repeat-each=20` → **40/40** |
+| P2-1 | 裁判七格步骤条是硬编码英文，中文模式下与阶段名同行混排 | `WIZARD_STAGES` / `WIZARD_STAGE_KEYS`（`translations.ts`）；`data-stage` 仍是机器标识。`phase-label` 只印引擎阶段（原先并排印步骤名，`READY` 下成了「就绪 · 就绪」） | `i18n`、双语浏览器核对 |
+| P2-2 | 回放页硬编码 `first` / `R01` / `{rounds}R` | `replay.roundShort` / `replay.roundsBadge`；帧摘要复用 `replay.frameSummary`（中文表的 `first` 一并改成「先手」）。死键 `replay.frameKills` 移除 | `i18n`、双语浏览器核对 |
+| P2-3 | 英文界面里冒出服务端中文（**大屏**与裁判台的本轮错误最显眼） | 服务端给键：`RoundSummaryView.errorKeys` / `errorParams`（`explainErrorKey`）+ `classifyMatch` 的 `reasonKey` / `reasonParams`；客户端 `localizeRoundErrors()` / `td()` 取译文，认不出回退原文 | `i18n`（含源码防漂移扫描）、双语浏览器核对（TIMEOUT 用例） |
+| P2-4 | 难度 `easy/medium/hard` 原样显示 | `DIFFICULTY_KEYS` + `difficultyLabel()`（值不变，只翻显示）。回放读的是历史 `match.json`，认不出的值原样显示而不崩 | `i18n`、双语浏览器核对 |
+
+**仍然保留服务端中文**（终审确认的既有边界，本波**未**扩大范围）：安装流水线 / 包校验错误
+（`Package.ts` / `Manifest.ts` / `Runtime.ts`，带路径与体积参数的自由文本）、`EXPLAIN` 之外的
+引擎自由文本、`/api` 路由层错误。客户端在这些路径上一律回退服务端原文。
+
+**本波实测（2026-09-12）**：
+
+| 命令 | 结果 |
+|---|---|
+| `npm run typecheck` | 0 错误 |
+| `npm run typecheck:web` | 0 错误 |
+| `npm test` | **38/38 套件通过**（共 313 个用例；其中 `i18n` 由 10 条增至 **13** 条） |
+| `npx playwright test … tournament.spec.ts --repeat-each=20` | **40/40 passed** |
+| `npx playwright test … tournament.spec.ts --repeat-each=30` | **60/60 passed** |
+| `npm run e2e` | 18 次完整运行中 **17 次全绿**；其中出现过 **1 次 2 failed（未复现）**，见下 |
+| 浏览器双语核对 | 裁判步骤条 / 难度 / 本轮错误 / 大屏系统文案 / 回放帧标号与摘要 |
+
+> **未解释的一次 e2e 失败（必须如实记录）**：本波第一批三次连跑中的第 2 次报
+> `tournament.spec.ts:267` 与 `:425` 两个用例失败（后者依赖前者装好的槽位，属级联）。
+> 该次运行的完整日志被记录命令里的 `tail -4` 截断，**失败断言未能取到**。
+> 其后 17 次完整 e2e 全绿、受影响套件 30 次重复全绿，**未能复现**。
+> 结论：**这一条尚未查清**，不是「已验证稳定」——重新评审时应优先复跑并保留完整日志。
 
 ---
 
@@ -114,13 +152,16 @@
 | 能力 | 落点 | 验证 |
 |---|---|---|
 | 集中式 i18n 层（**无散落的 `locale === 'zh' ? … : …`**） | `web/src/i18n/`：`types.ts` / `translations.ts` / `I18nContext.tsx` / `useI18n.ts` | `i18n`、`e2e/i18n.spec` |
-| 支持 `zh-CN` / `en-US`，每语言 **250** 条文案 | `translations.ts`（中文表是唯一事实来源，英文表键不全**编译不过**） | `i18n` |
+| 支持 `zh-CN` / `en-US`，每语言 **278** 条文案 | `translations.ts`（中文表是唯一事实来源，英文表键不全**编译不过**） | `i18n` |
 | 一个共享语言开关（**不是五个独立选择器**） | `web/src/components/LanguageSwitch.tsx`，五条路由头部共用 | `e2e/i18n.spec` |
 | 解析顺序：已保存 → 浏览器语言 → 兜底；`localStorage` 键 `geometry-battle.locale` | `I18nContext.tsx#resolveInitialLocale` | `i18n`、`e2e/i18n.spec` |
 | 选择跨刷新、跨路由保持；`<html lang>` 与 `document.title` 同步 | `I18nProvider`（挂在路由**之上**）；`index.html` 只放兜底初值 | `e2e/i18n.spec` |
 | 裁判动作文案由**服务端给稳定 key**，客户端翻译 | `ActionView.labelKey` / `labelParams` / `hintKey` / `hintParams`（`protocol.ts` + `boards.ts`） | `i18n`（扫 `boards.ts` 源码比对两表） |
 | **`td()` 必须把插值参数透传下去** | `JudgePage#actionLabel/actionHint`、`TeamPage#actionHint` | `i18n`（扫 `web/src` 禁止 `td(…, undefined, …)`）、`e2e/i18n.spec` |
 | README 全篇双语（配对章节）；围栏配对正确、文内锚点全部指得到标题 | `README.md` | `i18n`（围栏/锚点自洽） |
+| 本轮错误由**服务端给键**（`explainErrorKey`），客户端按语言渲染 | `RoundSummaryView.errorKeys` / `errorParams`（`protocol.ts` + `boards.ts`）；`localizeRoundErrors()` | `i18n`（源码扫描 + 两份映射同步检查）、浏览器核对 |
+| 回放打不开的原因由服务端给键（`classifyMatch` 的 `reasonKey`） | `replays.ts` + 回放路由透传；`ReplayPage` 用 `td()` | `i18n`（扫 `replays.ts`）、浏览器核对 |
+| 裁判七格步骤条 / 难度枚举的显示文案随语言，**标识符与协议值不变** | `WIZARD_STAGES` + `WIZARD_STAGE_KEYS` + `DIFFICULTY_KEYS` / `difficultyLabel()` | `i18n`、浏览器核对 |
 
 **语言是纯展示的**：它不进入 `MatchEngine`、比赛状态、`public_state` / `reveal_state`、
 WebSocket 载荷、回放产物、任何哈希，也不进入参赛算法的输入。因此**服务端文案不按语言渲染**

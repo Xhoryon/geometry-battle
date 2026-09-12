@@ -24,9 +24,15 @@ import { ComputeStatus } from '../components/ComputeStatus';
 import { AccessNotice } from '../components/AccessNotice';
 import { command, fetchJudgeSource, useBoard, useTrajectory } from '../api/client';
 import { LanguageSwitch } from '../components/LanguageSwitch';
-import { PHASE_KEYS } from '../i18n/translations';
+import {
+  PHASE_KEYS,
+  WIZARD_STAGES,
+  WIZARD_STAGE_KEYS,
+  difficultyLabel,
+  localizeRoundErrors,
+} from '../i18n/translations';
 import { useI18n } from '../i18n/useI18n';
-import type { TranslationKey } from '../i18n/translations';
+import type { TranslationKey, WizardStage } from '../i18n/translations';
 import { COMMAND_PATHS } from '../../../src/server/protocol';
 import type { ActionView, JudgeBoard, WirePhase } from '../../../src/server/protocol';
 import type { JSX } from 'react';
@@ -55,12 +61,17 @@ function actionBody(key: string): Record<string, unknown> {
 // 向导的「展示」模型 —— 只与阶段名有关，与可用性无关
 // ============================================================================
 
-/** 主流程的步骤条（与任务书的 SETUP → … → MATCH END 一一对应） */
-const STAGES = ['SETUP', 'ALGORITHM READY', 'EMITTER LOCK', 'READY', 'START MATCH', 'ROUND', 'MATCH END'] as const;
+/**
+ * 主流程的步骤条（与任务书的 SETUP → … → MATCH END 一一对应）。
+ *
+ * 这些格子的**标识符**是机器标识，不随语言变；显示文案由
+ * `WIZARD_STAGE_KEYS` 按当前语言取（见下方渲染处）。
+ */
+const STAGES: readonly WizardStage[] = WIZARD_STAGES;
 
 interface WizardStep {
   /** 步骤条里高亮哪一格 */
-  stage: (typeof STAGES)[number];
+  stage: WizardStage;
   /** 这一步在做什么（静态说明 —— 不是可用性判据）。存**键**，渲染时再取文案 */
   whatKey: TranslationKey;
   /**
@@ -217,7 +228,7 @@ function emitterRows(board: JudgeBoard): EmitterRow[] | null {
 // ============================================================================
 
 export function JudgePage(): JSX.Element {
-  const { t, td } = useI18n();
+  const { t, td, locale } = useI18n();
   const { board, connected, access } = useBoard<JudgeBoard>('judge');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -471,8 +482,13 @@ export function JudgePage(): JSX.Element {
         <section className="panel" data-testid="wizard" data-phase={board.phase}>
           <div className="panel__title">
             <h2>{t('judge.wizard.title')}</h2>
+            {/*
+              这里只印**引擎的阶段**。步骤条就在紧下面，而且高亮着当前那一格 ——
+              再把向导自己的步骤名并排印一遍，`READY` 下就成了「就绪 · 就绪」。
+              阶段名与步骤标识符重合时那种重复没有信息量，去掉。
+            */}
             <span className="num dim" data-testid="phase-label">
-              {step.stage} · {phaseLabel}
+              {phaseLabel}
             </span>
           </div>
 
@@ -499,7 +515,7 @@ export function JudgePage(): JSX.Element {
                     borderColor: state === 'now' ? 'color-mix(in oklab, var(--a) 55%, transparent)' : 'var(--rule)',
                   }}
                 >
-                  {i + 1} {s}
+                  {i + 1} {t(WIZARD_STAGE_KEYS[s])}
                 </li>
               );
             })}
@@ -598,7 +614,8 @@ export function JudgePage(): JSX.Element {
             <span className="dim num">
               {t('judge.slot.settings', {
                 points: board.settings.pointCount,
-                difficulty: board.settings.difficulty,
+                // 难度是协议枚举（`easy/medium/hard`）—— 值不变，只翻给人看的那个词
+                difficulty: difficultyLabel(locale, board.settings.difficulty),
               })}
             </span>
           </div>
@@ -801,10 +818,18 @@ export function JudgePage(): JSX.Element {
             <label className="field">
               <span>{t('judge.adv.difficulty')}</span>
               <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-                <option value="">{t('judge.adv.keepDifficulty', { value: match.difficulty })}</option>
-                <option value="easy">easy</option>
-                <option value="medium">medium</option>
-                <option value="hard">hard</option>
+                {/*
+                  `value` 是**协议枚举**（提交给服务端的机器值），必须原样；
+                  只有给人看的那个词跟着语言走。
+                */}
+                <option value="">
+                  {t('judge.adv.keepDifficulty', {
+                    value: difficultyLabel(locale, match.difficulty),
+                  })}
+                </option>
+                <option value="easy">{t('difficulty.easy')}</option>
+                <option value="medium">{t('difficulty.medium')}</option>
+                <option value="hard">{t('difficulty.hard')}</option>
               </select>
             </label>
           </div>
@@ -886,7 +911,13 @@ export function JudgePage(): JSX.Element {
           ) : null}
           {board.lastRound?.errors.length ? (
             <span className="lastround__item" style={{ color: 'var(--danger)' }}>
-              {board.lastRound.errors.join('   ')}
+              {/* 服务端给键、这里取译文；认不出键时回退到它给的原文 */}
+              {localizeRoundErrors(
+                locale,
+                board.lastRound.errors,
+                board.lastRound.errorKeys,
+                board.lastRound.errorParams
+              ).join('   ')}
             </span>
           ) : null}
         </div>

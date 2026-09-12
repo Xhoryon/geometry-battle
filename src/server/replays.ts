@@ -85,6 +85,16 @@ export type ReplayCompatibility = 'ok' | 'unfinished' | 'legacy' | 'broken';
 
 export interface ReplayClassification {
   status: ReplayCompatibility;
+  /**
+   * 稳定翻译键（V1.3）—— 由 http 层透传给浏览器，译文在 `web/src/i18n`。
+   *
+   * 与 board 的 `labelKey` / `errorKeys` 同一套做法：**判据留在服务端**，
+   * 浏览器只负责按自己的语言渲染。`status` 本来就是机器标识，这里补的是
+   * 「哪一句」，不是新的语义。`ok` 时为 null。
+   */
+  reasonKey: string | null;
+  /** `reasonKey` 的插值参数（自相矛盾那条要带上两个机器值） */
+  reasonParams?: Record<string, string | number>;
   /** 人话原因；`ok` 时为空串 */
   reason: string;
 }
@@ -101,24 +111,36 @@ export interface ReplayClassification {
  * 回放页会把「平局」和「ELIMINATION」同时打在屏幕上。
  */
 export function classifyMatch(match: MatchLog | null | undefined): ReplayClassification {
-  if (!match || typeof match !== 'object') return { status: 'broken', reason: '产物缺失或无法解析' };
+  if (!match || typeof match !== 'object') {
+    return { status: 'broken', reasonKey: 'replay.reason.broken', reason: '产物缺失或无法解析' };
+  }
 
   const end = match.endReason;
   if (end === undefined || end === null) {
-    return { status: 'legacy', reason: '这场比赛的产物来自旧版本（没有终局原因字段），结果不可信' };
+    return {
+      status: 'legacy',
+      reasonKey: 'replay.reason.legacyNoEnd',
+      reason: '这场比赛的产物来自旧版本（没有终局原因字段），结果不可信',
+    };
   }
   if (!TERMINAL_REASONS.has(end)) {
-    return { status: 'unfinished', reason: '这场比赛没有正常终结，不能作为回放' };
+    return {
+      status: 'unfinished',
+      reasonKey: 'replay.reason.unfinished',
+      reason: '这场比赛没有正常终结，不能作为回放',
+    };
   }
   const winnerOk =
     end === 'ELIMINATION' ? match.winner === 'A' || match.winner === 'B' : match.winner === 'draw';
   if (!winnerOk) {
     return {
       status: 'legacy',
+      reasonKey: 'replay.reason.legacyContradiction',
+      reasonParams: { endReason: end, winner: String(match.winner) },
       reason: `终局原因 ${end} 与胜者 ${String(match.winner)} 自相矛盾（旧版本产物），结果不可信`,
     };
   }
-  return { status: 'ok', reason: '' };
+  return { status: 'ok', reasonKey: null, reason: '' };
 }
 
 export interface ReplayIndexEntry {
@@ -169,7 +191,14 @@ export function listReplays(artifactRoot: string): ReplayIndexEntry[] {
 
 export type LoadReplayResult =
   | { ok: true; replay: Replay; match: MatchLog }
-  | { ok: false; status: number; message: string };
+  | {
+      ok: false;
+      status: number;
+      /** 稳定翻译键（V1.3）—— 浏览器认不出时回退到 `message` 原文 */
+      reasonKey: string;
+      reasonParams?: Record<string, string | number>;
+      message: string;
+    };
 
 /**
  * 加载单场回放。
@@ -180,17 +209,35 @@ export type LoadReplayResult =
  */
 export function loadReplay(artifactRoot: string, matchId: string): LoadReplayResult {
   const dir = resolveMatchDir(artifactRoot, matchId);
-  if (!dir) return { ok: false, status: 404, message: '没有这场比赛' };
+  if (!dir) {
+    return { ok: false, status: 404, reasonKey: 'replay.reason.notFound', message: '没有这场比赛' };
+  }
 
   const match = readJson<MatchLog>(path.join(dir, 'match.json'));
   const replay = readJson<Replay>(path.join(dir, 'replay.json'));
-  if (!match || !replay) return { ok: false, status: 404, message: '这场比赛的产物不完整' };
+  if (!match || !replay) {
+    return {
+      ok: false,
+      status: 404,
+      reasonKey: 'replay.reason.incomplete',
+      message: '这场比赛的产物不完整',
+    };
+  }
 
   // 产物存在但不可信时**明确拒绝**，而不是把一份自相矛盾的结果当正常回放渲染。
   // 状态码与「没有这场比赛」区分开：这不是路径探测，是数据完整性问题 ——
   // 现场必须知道「这场为什么看不了」。（matchId 不可枚举，不构成信息泄漏。）
   const c = classifyMatch(match);
-  if (c.status !== 'ok') return { ok: false, status: 409, message: c.reason };
+  if (c.status !== 'ok') {
+    return {
+      ok: false,
+      status: 409,
+      // `classifyMatch` 给出的键：非 ok 时必然非 null
+      reasonKey: c.reasonKey ?? 'replay.reason.broken',
+      reasonParams: c.reasonParams,
+      message: c.reason,
+    };
+  }
 
   return { ok: true, replay, match };
 }

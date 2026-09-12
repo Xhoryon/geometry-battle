@@ -102,6 +102,21 @@ export interface RoundSummaryView {
   aliveAfter: { A: number; B: number };
   /** 引擎给出的人话错误（§27 Error UX）；无错为空 */
   errors: string[];
+  /**
+   * 与 `errors` **等长且一一对应**的翻译键（V1.3）。
+   *
+   * 为什么由服务端给键：错误码（TIMEOUT / INVALID / CRASH）到人话结论的映射
+   * 是**引擎侧的规则**（见 `src/ui/JudgeConsole.ts` 的 `explainError`）。
+   * 浏览器若为了翻译自己再推一套，就多出一份会漂移的判据 ——
+   * 那与 V1.1 裁判台「拿阶段名猜可用性」是同一类错误。
+   *
+   * 客户端认不出键时回退到 `errors[i]` 原文，因此这是**纯附加**字段：
+   * 旧客户端与任何未翻译的键都照常工作。语言本身**不进**载荷 —— 键是标识，
+   * 不是文案。
+   */
+  errorKeys: string[];
+  /** `errorKeys[i]` 的插值参数（当前是 `{ team }`；未知错误另带 `{ code }`） */
+  errorParams: Record<string, string | number>[];
 }
 
 /**

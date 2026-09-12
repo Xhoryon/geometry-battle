@@ -15,7 +15,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  DIFFICULTY_KEYS,
   PHASE_KEYS,
+  WIZARD_STAGES,
+  WIZARD_STAGE_KEYS,
   getActiveLocale,
   setActiveLocale,
   t,
@@ -24,6 +27,7 @@ import {
   translateDynamic,
   translations,
 } from '../web/src/i18n/translations';
+import { explainError, explainErrorKey } from '../src/ui/JudgeConsole';
 import {
   FALLBACK_LOCALE,
   LOCALES,
@@ -101,6 +105,132 @@ test('i18n: 服务端下发的动作 key 全部有译文（防漂移）', () => 
   const inTable = new Set(Object.keys(table('zh-CN')).filter((k) => k.startsWith('action.')));
   const dead = [...inTable].filter((k) => !emitted.has(k));
   assertEqual(dead, [], '翻译表里的 action.* 键必须都被服务端发出，否则是死键');
+});
+
+test('i18n: 错误码的译文键与 explainError 同步，且两语言齐全', () => {
+  // 盯的是 V1.3 新加的一条耦合：`RoundSummaryView.errorKeys` 由服务端给（见
+  // `boards.ts` 的 `roundErrors`），译文由这两张表取。少一条译文，大屏与裁判台
+  // 就会在这种**英文会话**下回退成服务端的中文原文 —— 那正是「混合语言」事故。
+  //
+  // 这里直接把两份映射并排跑：同一个 `(code, ran)` 必须**同时**有结论或同时没有。
+  // 只查表不查同步的话，新增一个 `case` 却忘了加译文仍然会漏过去。
+  const CODES = [
+    'TIMEOUT',
+    'CRASH',
+    'INVALID_DSL',
+    'INVALID_OUTPUT',
+    'OUTPUT_TOO_LARGE',
+    'MEMORY_LIMIT',
+    'READY_TIMEOUT',
+    'SPAWN_ERROR',
+    'CANCELLED',
+    'RUNNER_ABORT',
+    'SOMETHING_THE_ENGINE_ADDED_LATER', // 走 default 分支
+  ];
+
+  /** 引擎错误词表 —— 机器标识，两种语言的文案里都必须仍然是这些词 */
+  const CODE_TOKENS = ['TIMEOUT', 'CRASH', 'INVALID', 'RUNNER', 'READY'];
+
+  let hits = 0;
+  for (const code of [...CODES, null]) {
+    for (const ran of [true, false]) {
+      const text = explainError(code, ran);
+      const key = explainErrorKey(code, ran);
+      assertEqual(
+        Boolean(key),
+        Boolean(text),
+        `错误码 ${code}（ran=${ran}）的两份映射必须同时有结论或同时没有`
+      );
+      if (!key) continue;
+      hits++;
+      for (const locale of LOCALES) {
+        const v = table(locale)[key];
+        assert(
+          typeof v === 'string' && v.length > 0,
+          `${locale} 缺少错误码 ${code} 的译文（${key}）`
+        );
+        // 错误码是机器标识：它不是被翻译掉的词，文案里必须还剩得下机器标记。
+        //
+        // 比的是引擎词表里的标记而**不是逐字等于 code** —— 引擎有意让
+        // `INVALID_DSL` 与 `INVALID_OUTPUT` 共用 `INVALID` 这一条结论
+        // （见 `explainError`），逐字比会把这条设计判成失败。
+        if (code && code !== 'SOMETHING_THE_ENGINE_ADDED_LATER') {
+          assert(
+            CODE_TOKENS.some((tok) => v.includes(tok)),
+            `${locale} 的 ${key} 把错误码整个翻译掉了（找不到任何机器标记）`
+          );
+        }
+      }
+    }
+  }
+  assert(hits >= 20, `错误码映射应当覆盖二十来种情形，实际 ${hits}`);
+
+  // ---- 反向防漂移：扫源码，而不是只跑上面那张写死的码表 ----
+  //
+  // 上面那圈只能验**已知**的码。引擎加一个新码、`explainErrorKey` 跟着加一个
+  // `case`，但翻译表忘了加 —— 只跑码表的写法一条也抓不到（已用变异验证过）。
+  // 所以这里直接扫 `JudgeConsole.ts` 里出现的每个 `round.error.*` 字面量。
+  const src = fs.readFileSync(path.join(REPO, 'src', 'ui', 'JudgeConsole.ts'), 'utf-8');
+  const emitted = new Set<string>();
+  for (const m of src.matchAll(/'(round\.error\.[A-Za-z0-9_.]+)'/g)) emitted.add(m[1]);
+  assert(emitted.size >= 10, `JudgeConsole.ts 里的错误键应当有十来条，实际 ${emitted.size}`);
+
+  for (const key of emitted) {
+    for (const locale of LOCALES) {
+      const v = table(locale)[key];
+      assert(typeof v === 'string' && v.length > 0, `${locale} 缺少错误键的译文: ${key}`);
+    }
+  }
+
+  // 表里的 round.error.* 也应当都被服务端用着，不留死键
+  const inTable = new Set(Object.keys(table('zh-CN')).filter((k) => k.startsWith('round.error.')));
+  const dead = [...inTable].filter((k) => !emitted.has(k));
+  assertEqual(dead, [], '翻译表里的 round.error.* 键必须都被服务端发出，否则是死键');
+});
+
+test('i18n: 回放打不开的原因键齐全（服务端给键，防漂移）', () => {
+  // 与上面那条同一种做法，只是键来自 `replays.ts` 的 `classifyMatch`。
+  // 扫源码而不是跑分类：这样连「新加一种 status 却忘了加译文」也能抓到。
+  const src = fs.readFileSync(path.join(REPO, 'src', 'server', 'replays.ts'), 'utf-8');
+  const emitted = new Set<string>();
+  for (const m of src.matchAll(/'(replay\.reason\.[A-Za-z0-9_.]+)'/g)) emitted.add(m[1]);
+  assert(emitted.size >= 5, `replays.ts 里的原因键应当有五六条，实际 ${emitted.size}`);
+
+  for (const key of emitted) {
+    for (const locale of LOCALES) {
+      const v = table(locale)[key];
+      assert(typeof v === 'string' && v.length > 0, `${locale} 缺少回放原因键的译文: ${key}`);
+    }
+  }
+
+  // 表里的 replay.reason.* 也应当都被服务端用着，不留死键
+  const dead = Object.keys(table('zh-CN'))
+    .filter((k) => k.startsWith('replay.reason.'))
+    .filter((k) => !emitted.has(k));
+  assertEqual(dead, [], '翻译表里的 replay.reason.* 键必须都被服务端发出，否则是死键');
+});
+
+test('i18n: 裁判步骤条与难度枚举的显示键齐全', () => {
+  // 两处都是「枚举 → 译文键」的映射。编译期已经保证了键齐全
+  // （`Record<…, TranslationKey>`），这里在运行期再确认译文本身非空 ——
+  // 防的是有人把某个键的文案清空或指向了另一个不存在的键。
+  for (const stage of WIZARD_STAGES) {
+    const key = WIZARD_STAGE_KEYS[stage];
+    for (const locale of LOCALES) {
+      const v = table(locale)[key];
+      assert(typeof v === 'string' && v.length > 0, `${locale} 缺少步骤条 ${stage} 的译文（${key}）`);
+      // 「翻译过」的最低标准：不等于标识符本身
+      assert(v !== stage, `${locale} 的步骤条 ${stage} 看起来根本没翻译`);
+    }
+  }
+  for (const d of ['easy', 'medium', 'hard'] as const) {
+    for (const locale of LOCALES) {
+      const v = table(locale)[DIFFICULTY_KEYS[d]];
+      assert(typeof v === 'string' && v.length > 0, `${locale} 缺少难度 ${d} 的译文`);
+    }
+  }
+  // 空转对照：难度值本身不受影响（机器值照旧提交给服务端）
+  assertEqual(DIFFICULTY_KEYS.easy, 'difficulty.easy', '难度枚举到键的映射不得被改名');
 });
 
 test('i18n: 插值与宽容查找', () => {

@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { useReplayList } from '../api/client';
 import { LanguageSwitch } from '../components/LanguageSwitch';
+import { difficultyLabel } from '../i18n/translations';
 import { useI18n } from '../i18n/useI18n';
 import type { ArenaView, TrajectoryPayload, WirePoint } from '../../../src/server/protocol';
 import type { JSX } from 'react';
@@ -53,7 +54,7 @@ const FIELD = { xMin: -20, xMax: 20, yMin: -12, yMax: 12 };
 const FRAME_MS = 1100;
 
 export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
-  const { t } = useI18n();
+  const { t, td, locale } = useI18n();
   const [replay, setReplay] = useState<ReplayDto | null>(null);
   const [match, setMatch] = useState<MatchDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,10 +70,24 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
     setError(null);
     fetch(`/api/replays/${encodeURIComponent(matchId)}`)
       .then(async (r) => {
-        const j = (await r.json()) as { replay?: ReplayDto; match?: MatchDto; errors?: string[] };
+        const j = (await r.json()) as {
+          replay?: ReplayDto;
+          match?: MatchDto;
+          errors?: string[];
+          reasonKey?: string;
+          reasonParams?: Record<string, string | number>;
+        };
         if (!alive) return;
         if (!r.ok || !j.replay || !j.match) {
-          setError(j.errors?.[0] ?? t('replay.loadFailed', { status: r.status }));
+          // 服务端给的是**原因键**（见 `classifyMatch`），这里按当前语言取译文；
+          // 认不出键时回退到它给的原文，最后才退回本地那句 HTTP 兜底。
+          setError(
+            td(
+              j.reasonKey ?? '',
+              j.reasonParams,
+              j.errors?.[0] ?? t('replay.loadFailed', { status: r.status })
+            )
+          );
           return;
         }
         setReplay(j.replay);
@@ -166,7 +181,8 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
         <span className="eyebrow">
           {t('replay.meta', {
             points: match.pointCount,
-            difficulty: match.difficulty,
+            // 难度是协议枚举 —— 值不变，只翻给人看的那个词
+            difficulty: difficultyLabel(locale, match.difficulty),
             seed: match.seed,
           })}
         </span>
@@ -209,10 +225,13 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
               setIndex(i);
             }}
           >
-            <span className="dim">R{String(f.round).padStart(2, '0')}</span>
+            <span className="dim">
+              {t('replay.roundShort', { n: String(f.round).padStart(2, '0') })}
+            </span>
             <span>
-              first {f.firstSolver} ·{' '}
-              {t('replay.frameKills', {
+              {t('replay.frameSummary', {
+                first: f.firstSolver,
+                attacks: f.attacksExecuted.length ? f.attacksExecuted.join('→') : t('common.none'),
                 kills: f.killed.length ? f.killed.join(',') : t('common.none'),
               })}
             </span>
@@ -234,7 +253,7 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
                 window.location.href = `/replay/${encodeURIComponent(r.matchId)}`;
               }}
             >
-              <span className="dim">{r.rounds}R</span>
+              <span className="dim">{t('replay.roundsBadge', { n: r.rounds })}</span>
               <span>
                 {r.winner === 'draw' ? t('replay.draw') : `TEAM ${r.winner}`} ·{' '}
                 {r.matchId.slice(-8)}
@@ -274,7 +293,8 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
             aria-label={t('replay.slider')}
           />
           <span className="num muted">
-            R{String(frame?.round ?? 0).padStart(2, '0')} / {replay.frames.length}
+            {t('replay.roundShort', { n: String(frame?.round ?? 0).padStart(2, '0') })} /{' '}
+            {replay.frames.length}
           </span>
           <span className="num dim">
             {t('replay.frameSummary', {

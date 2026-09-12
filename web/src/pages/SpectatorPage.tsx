@@ -12,13 +12,13 @@ import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { ComputeStatus } from '../components/ComputeStatus';
 import { useBoard, useTrajectory } from '../api/client';
 import { LanguageSwitch } from '../components/LanguageSwitch';
-import { PHASE_KEYS } from '../i18n/translations';
+import { PHASE_KEYS, localizeRoundErrors } from '../i18n/translations';
 import { useI18n } from '../i18n/useI18n';
 import type { SpectatorBoard } from '../../../src/server/protocol';
 import type { JSX } from 'react';
 
 export function SpectatorPage(): JSX.Element {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { board, connected } = useBoard<SpectatorBoard>('spectator');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
 
@@ -50,8 +50,17 @@ export function SpectatorPage(): JSX.Element {
         ? `${t('replay.draw')} · ${reason}`
         : `${t('replay.winner', { team: board.verdict.winner })} · ${reason}`;
     }
-    // 引擎给的人话错误原样带出（服务端文案，见 README「已知边界」）
-    if (board.lastRound?.errors.length) return board.lastRound.errors.join('   ');
+    // 引擎给的人话错误：服务端给**键**，这里按当前语言取译文（V1.3）。
+    // 认不出键（服务端换了新错误码、界面还没跟上）时回退到它给的原文 ——
+    // 绝不把键本身渲染到大屏上。
+    if (board.lastRound?.errors.length) {
+      return localizeRoundErrors(
+        locale,
+        board.lastRound.errors,
+        board.lastRound.errorKeys,
+        board.lastRound.errorParams
+      ).join('   ');
+    }
     if (board.lastRound) {
       const atk = board.lastRound.attacksExecuted;
       const killed = board.lastRound.killed;
