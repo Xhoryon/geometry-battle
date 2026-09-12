@@ -86,6 +86,16 @@ export const MAX_STDERR_BYTES = 64 * 1024;
 export const MIN_POINT_DISTANCE = 2.5;
 
 /**
+ * 任意两个障碍物之间的最小间距（V1.2 Gap 四）。
+ *
+ * 在此之前生成器完全不检查障碍物之间的关系，于是地图上会出现互相重合的障碍物：
+ * 视觉上是两坨叠在一起的形状，判定上则让「首次接触」的位置变得无法解释
+ * （同一个 x 上有两个不同的接触点）。取 1.0 —— 明显可辨、又不会把可用空间压得
+ * 太死（`POINT_OBSTACLE_CLEARANCE` 是 1.5，两者取同一量级）。
+ */
+export const MIN_OBSTACLE_CLEARANCE = 1.0;
+
+/**
  * 点与障碍物的最小间距（Plan V1 §47 Fairness Filter）。
  *
  * 不加这条约束时，生成器会把出生点放在障碍物边缘（实测出现过 0.11 的间距，

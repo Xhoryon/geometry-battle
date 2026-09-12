@@ -24,6 +24,7 @@ import {
   CANONICAL_SLOT_ROOT,
   RUNTIME_SLOT_ROOT,
   RunningServer,
+  StartOptions,
   seedRuntimeSlots,
   startServer,
 } from '../src/server/main';
@@ -33,8 +34,15 @@ import { JudgeBoard, ServerMessage } from '../src/server/protocol';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
-const ALGO_A = path.join(REPO, 'playtest', 'competitors', 'solver-fast');
-const ALGO_B = path.join(REPO, 'playtest', 'competitors', 'solver-hybrid');
+/**
+ * 测试用的两个算法包。
+ *
+ * 取的是 `tests/fixtures/algos/` 下的测试私有 fixture，而**不是**
+ * `playtest/competitors/*` —— 后者属于平台发行树，锦标赛模式（本套件的默认配置）
+ * 会在服务端拒绝它们上场（V1.2 §二，见 `isBundledAlgorithm`）。
+ */
+const ALGO_A = path.join(__dirname, 'fixtures', 'algos', 'arc-sweep');
+const ALGO_B = path.join(__dirname, 'fixtures', 'algos', 'parabola-arc');
 
 /** failure-path 夹具：只在**正式轮**（round ≥ 1）失败，因此能通过安装时的 decoy preflight */
 const ALGO_CRASH = path.join(REPO, 'tests', 'fixtures', 'algos', 'crash-on-real-round');
@@ -53,6 +61,55 @@ const MATCH_TIMEOUT_MS = 8 * 60 * 1000;
 interface RawResponse {
   status: number;
   text: string;
+}
+
+// ---------------------------------------------------------------------------
+// 服务登记表 + 令牌
+//
+// V1.2 Final RC Audit 之后 `/api/judge/*` 与 `/api/team/*` 都需要令牌。本套件测的是
+// **比赛语义**，不是鉴权，所以 HTTP 小工具按请求路径**自动带上本场令牌**，
+// 于是这一百来个既有调用点一行都不用改。
+//
+// 规则与生产完全一致，所以自动带令牌不会掩盖真实行为：
+//   - `/api/judge/*` → 裁判令牌
+//   - `/api/team/*`  → **该队**令牌（队别取自 query 或 body）
+//   - 其余（health / replays / trajectory）→ 不带
+//
+// **`rawRequest` 刻意不带**：下面「伪造 Host 403 / 跨源 403 / 非 JSON 415 / 坏 JSON 400」
+// 四条边界用例直接用它，必须保持**无令牌**才能继续证明「令牌门禁没有抢占协议层错误」。
+//
+// 鉴权本身（含一切「故意拿错令牌」的反向用例）在 `tests/team-auth.ts`。
+// ---------------------------------------------------------------------------
+
+const SERVERS = new Map<number, RunningServer>();
+
+/** 起服务并登记 —— 登记之后小工具才拿得到本场的令牌 */
+async function bootServer(opts: StartOptions): Promise<RunningServer> {
+  const srv = await startServer(opts);
+  SERVERS.set(srv.port, srv);
+  return srv;
+}
+
+function serverOf(port: number): RunningServer {
+  const srv = SERVERS.get(port);
+  if (!srv) throw new Error(`端口 ${port} 没有登记服务 —— 起服务要用 bootServer()`);
+  return srv;
+}
+
+function judgeTokenOf(port: number): string {
+  return serverOf(port).judgeToken;
+}
+
+/** 令牌**现取**：队伍令牌由当前 `matchId` 派生，换场就变，缓存会过期 */
+function tokenFor(port: number, p: string, body?: unknown): string | undefined {
+  if (p.startsWith('/api/judge/')) return serverOf(port).judgeToken;
+  if (p.startsWith('/api/team/')) {
+    const q = /[?&]team=([abAB])/.exec(p);
+    const raw = q ? q[1] : (body as { team?: unknown } | undefined)?.team;
+    if (raw === 'A' || raw === 'a') return serverOf(port).session.teamTokens().A;
+    if (raw === 'B' || raw === 'b') return serverOf(port).session.teamTokens().B;
+  }
+  return undefined;
 }
 
 function rawRequest(
@@ -83,17 +140,26 @@ function rawRequest(
 }
 
 async function post(port: number, p: string, body: unknown = {}): Promise<{ status: number; body: any }> {
+  const token = tokenFor(port, p, body);
   const r = await rawRequest(port, {
     method: 'POST',
     path: p,
-    headers: { Host: `127.0.0.1:${port}`, 'Content-Type': 'application/json' },
+    headers: {
+      Host: `127.0.0.1:${port}`,
+      'Content-Type': 'application/json',
+      ...(token ? { 'X-GB-Token': token } : {}),
+    },
     body: JSON.stringify(body),
   });
   return { status: r.status, body: JSON.parse(r.text) };
 }
 
 async function get(port: number, p: string): Promise<{ status: number; body: any }> {
-  const r = await rawRequest(port, { path: p, headers: { Host: `127.0.0.1:${port}` } });
+  const token = tokenFor(port, p);
+  const r = await rawRequest(port, {
+    path: p,
+    headers: { Host: `127.0.0.1:${port}`, ...(token ? { 'X-GB-Token': token } : {}) },
+  });
   return { status: r.status, body: JSON.parse(r.text) };
 }
 
@@ -102,7 +168,11 @@ async function getRaw(
   port: number,
   p: string
 ): Promise<{ status: number; body: unknown; text: string }> {
-  const r = await rawRequest(port, { path: p, headers: { Host: `127.0.0.1:${port}` } });
+  const token = tokenFor(port, p);
+  const r = await rawRequest(port, {
+    path: p,
+    headers: { Host: `127.0.0.1:${port}`, ...(token ? { 'X-GB-Token': token } : {}) },
+  });
   let body: unknown = null;
   try {
     body = JSON.parse(r.text);
@@ -150,7 +220,10 @@ interface Rehearsal {
 let rehearsal: Rehearsal | null = null;
 
 function connect(port: number, topic: 'judge' | 'spectator', sink: ServerMessage[]): WebSocket {
-  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=${topic}`);
+  // 浏览器无法给 WS 设请求头，所以令牌只能走查询串（见 src/server/tokens.ts）。
+  // spectator 不需要令牌 —— 它的语义就是给任何人看。
+  const t = topic === 'judge' ? `&t=${encodeURIComponent(judgeTokenOf(port))}` : '';
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=${topic}${t}`);
   ws.on('message', (raw: Buffer) => {
     try {
       sink.push(JSON.parse(String(raw)) as ServerMessage);
@@ -227,7 +300,7 @@ async function startIsolated(opts: { teamA?: string; teamB?: string } = {}): Pro
 }> {
   const root = tmpDir('webfail');
   const artifactRoot = path.join(root, 'artifacts');
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot,
@@ -251,6 +324,7 @@ async function playFirstRealRound(port: number): Promise<JudgeBoard> {
   await act(port, 'use-slot-b');
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
   await act(port, 'reveal');
   await act(port, 'start-round');
   await act(port, 'compute');
@@ -284,6 +358,31 @@ async function act(port: number, key: string, body: unknown = {}): Promise<{ sta
   return r;
 }
 
+/**
+ * V1.2 §一：START 之后比赛停在 `EMITTER_SELECT` —— 双方必须各自选定并锁定
+ * 本场的 Fixed Emitter，比赛才可能进入 `READY`。
+ *
+ * 这一步由**参赛者端**完成（裁判没有对应动作），因此任何驱动裁判流程的测试
+ * 都得在这里替两队各点一下，否则永远到不了 `reveal`。
+ */
+async function lockEmitters(port: number): Promise<void> {
+  for (const team of ['A', 'B'] as const) {
+    const state = await get(port, `/api/team/state?team=${team}`);
+    assertEqual(state.status, 200, `读取 Team ${team} 的参赛者板应回 200`);
+    const candidates: { id: string }[] = state.body.board.candidates;
+    assert(candidates.length > 0, `Team ${team} 必须至少有一个可选的 Emitter 候选点`);
+
+    const pick = candidates[0].id;
+    const sel = await post(port, '/api/team/select-emitter', { team, pointId: pick });
+    assert(sel.body.ok, `Team ${team} 选定 ${pick} 应成功：${JSON.stringify(sel.body.errors)}`);
+
+    const lock = await post(port, '/api/team/lock-emitter', { team });
+    assert(lock.body.ok, `Team ${team} 锁定 Emitter 应成功：${JSON.stringify(lock.body.errors)}`);
+  }
+  const board = await judgeState(port);
+  assertEqual(board.phase, 'READY', '双方锁定 Emitter 之后，比赛应进入 READY');
+}
+
 async function waitForMatchEnd(port: number): Promise<JudgeBoard> {
   const deadline = Date.now() + MATCH_TIMEOUT_MS;
   for (;;) {
@@ -297,7 +396,7 @@ async function waitForMatchEnd(port: number): Promise<JudgeBoard> {
 async function runRehearsal(): Promise<Rehearsal> {
   const root = tmpDir('websrv');
   const artifactRoot = path.join(root, 'artifacts');
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot,
@@ -319,11 +418,12 @@ async function runRehearsal(): Promise<Rehearsal> {
   const iB = await post(port, '/api/judge/install', { team: 'B', sourceDir: ALGO_B });
   assert(iB.body.ok, `Team B 安装应成功：${JSON.stringify(iB.body.errors)}`);
 
-  // ---- 正式主流程：Preflight → 开赛 → 手动跑两轮 → 一键跑完 ----
+  // ---- 正式主流程：Preflight → 开赛 → 双方锁锚点 → 手动跑两轮 → 一键跑完 ----
   await act(port, 'use-slot-a');
   await act(port, 'use-slot-b');
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
 
   for (let i = 0; i < 2; i++) {
     await act(port, 'reveal');
@@ -675,7 +775,7 @@ test('静态文件存在但不可读：受控 4xx/5xx，进程必须存活（tag
   fs.writeFileSync(locked, 'console.log("locked")\n');
   fs.chmodSync(locked, 0o000);
 
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     slotRoot: path.join(root, 'algorithms'),
     artifactRoot: path.join(root, 'artifacts'),
@@ -733,12 +833,19 @@ test('算法 CRASH：如实上板、不泄漏诊断，且 run-to-end 不在 COUN
     await act(iso.port, 'preflight');
     await act(iso.port, 'start');
 
-    // ---- P0-3：PUBLIC 时 run-to-end 可用（正向对照）----
+    // V1.2 §一：START 之后比赛先停在 EMITTER_SELECT，等双方各自锁定锚点。
+    // 「开赛即 PUBLIC」是 V1.1 的旧流程，已随规则修正案作废。
+    const atSelect = await judgeState(iso.port);
+    assertEqual(atSelect.phase, 'EMITTER_SELECT', 'START 之后应先停在 EMITTER_SELECT');
+
+    await lockEmitters(iso.port);
+
+    // ---- P0-3：READY 时 run-to-end 可用（正向对照）----
     const atPublic = await judgeState(iso.port);
-    assertEqual(atPublic.phase, 'PUBLIC', '开赛后应停在 PUBLIC');
+    assertEqual(atPublic.phase, 'READY', '双方锁定 Emitter 之后应停在 READY');
     assert(
       atPublic.actions.find((a) => a.key === 'run-to-end')!.enabled,
-      'PUBLIC 阶段 run-to-end 必须可用（正向对照）'
+      'READY 阶段 run-to-end 必须可用（正向对照）'
     );
 
     // ---- 槽位可见性：裁判必须能**当场**看出跑的是哪份算法 ----
@@ -830,6 +937,7 @@ test('run-to-end 期间页面刷新（重连）即恢复现场并自行收敛到
   // 演练留下的第二场：槽位已就绪，推到正式比赛
   await act(port, 'preflight');
   await act(port, 'start');
+  await lockEmitters(port);
 
   const run = await post(port, '/api/judge/run-to-end', {});
   assert(run.body.ok, 'run-to-end 应立即受理');
@@ -841,7 +949,7 @@ test('run-to-end 期间页面刷新（重连）即恢复现场并自行收敛到
   assert((dup.body.errors as string[]).join(' ').includes('尚未完成'), '拒绝理由必须是人话');
 
   // ② 「刷新页面」≈ 新开一条 WS：必须立刻拿到当前现场，而不是空白
-  const live = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=judge`);
+  const live = new WebSocket(`ws://127.0.0.1:${port}/ws?topic=judge&t=${encodeURIComponent(judgeTokenOf(port))}`);
   const first = await new Promise<JudgeBoard>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error('重连后 5s 内未收到 board')), 5000);
     live.on('message', (raw: Buffer) => {
@@ -984,7 +1092,7 @@ test('真的启动一次**默认配置**，槽位根必须是运行期投递点�
   // 槽位根分裂那条事故正是发生在这个盲区里（Final Re-Gate item 9/10）。
   const root = tmpDir('defaultroot');
   const canonBefore = fs.readFileSync(path.join(CANONICAL_SLOT_ROOT, 'team-a', 'solver.py'));
-  const srv = await startServer({
+  const srv = await bootServer({
     port: 0,
     // 故意**不传** slotRoot：走生产默认值（runs/slots + 从 canonical 播种）
     artifactRoot: path.join(root, 'artifacts'),

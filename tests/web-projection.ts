@@ -16,11 +16,12 @@ import * as path from 'path';
 import { MatchEngine } from '../src/core/Match';
 import { FIELD } from '../src/core/Rules';
 import { downsampleTrajectory } from '../src/ui/TrajectoryAnimator';
-import { TRAJECTORY_MAX_POINTS, isTopic } from '../src/server/protocol';
+import { TRAJECTORY_MAX_POINTS, isTopic, teamOfTopic } from '../src/server/protocol';
 import { snapshotDigest, spectatorBoard } from '../src/server/boards';
 import {
   obstacleToDrawable,
   projectPoint,
+  projectRadius,
   projectX,
   projectY,
   ratioAt,
@@ -206,7 +207,7 @@ test('四种障碍物都能投影成可绘制的屏幕几何', () => {
 
   const circle = obstacleToDrawable({ type: 'circle', center: [0, 0], radius: 3 }, FIELD, size);
   assertEqual(circle.kind, 'circle', '圆 → circle');
-  assert((circle.r ?? 0) > 0, '圆的半径必须为正');
+  assert((circle.rx ?? 0) > 0 && (circle.ry ?? 0) > 0, '圆的两个半径都必须为正');
 
   const seg = obstacleToDrawable({ type: 'segment', x1: -4, y1: 0, x2: 4, y2: 0 }, FIELD, size);
   assertEqual(seg.kind, 'segment', '线段 → segment');
@@ -214,6 +215,46 @@ test('四种障碍物都能投影成可绘制的屏幕几何', () => {
   const poly = obstacleToDrawable({ type: 'polygon', vertices: [[0, 0], [2, 0], [2, 2]] }, FIELD, size);
   assertEqual(poly.kind, 'polygon', '多边形 → polygon');
   assertEqual(poly.points?.length, 3, '多边形顶点数必须保留');
+});
+
+test('圆的屏幕几何 = 数学圆在投影下的像（非等比绘图区同样成立）', () => {
+  // 引擎判定的是一张数学平面上的**真圆**（`Judge.ts` 用欧氏距离），
+  // 而绘图区几乎不可能正好等比缩放 —— 于是屏幕上该画成椭圆。
+  //
+  // 旧实现只按 x 轴缩放半径，在宽屏下把圆画得**偏高**：轨迹看起来在碰到
+  // 障碍物之前就停了，两个其实有间距的障碍物看起来在重叠。这正是现场
+  // 报上来的「障碍物视觉重叠」。
+  const circle = { type: 'circle' as const, center: [-6, 3] as [number, number], radius: 4.6 };
+  // 400x240 的宽高比恰好是场地 40:24（1.667）—— 那是旧实现唯一看不出问题的尺寸，
+  // 所以清单里必须**同时**有非等比的尺寸，否则这条回归是空转的。
+  const sizes = [
+    { w: 400, h: 240 },
+    { w: 1200, h: 300 },
+    { w: 320, h: 640 },
+    { w: 900, h: 900 },
+  ];
+
+  for (const size of sizes) {
+    const d = obstacleToDrawable(circle, FIELD, size);
+    const rx = d.rx ?? 0;
+    const ry = d.ry ?? 0;
+    const tag = `${size.w}x${size.h}`;
+    assert(rx > 0 && ry > 0, `${tag}: 两个半径都必须为正`);
+
+    // 两个半径各用**自己**那条轴的尺度（与 projectX/projectY 分母一致）
+    assertClose(rx, projectRadius(circle.radius, FIELD.xMax - FIELD.xMin, size.w), 1e-9, `${tag}: rx 必须用 x 轴尺度`);
+    assertClose(ry, projectRadius(circle.radius, FIELD.yMax - FIELD.yMin, size.h), 1e-9, `${tag}: ry 必须用 y 轴尺度`);
+
+    // 数学圆上任意一点投影后，必须正好落在画出的椭圆上
+    for (const deg of [0, 30, 90, 145, 210, 300]) {
+      const th = (deg * Math.PI) / 180;
+      const px = projectX(circle.center[0] + circle.radius * Math.cos(th), FIELD, size.w);
+      const py = projectY(circle.center[1] + circle.radius * Math.sin(th), FIELD, size.h);
+      const nx = (px - d.cx!) / rx;
+      const ny = (py - d.cy!) / ry;
+      assertClose(nx * nx + ny * ny, 1, 1e-9, `${tag}: ${deg}° 处的投影点必须落在画出的椭圆上`);
+    }
+  }
 });
 
 // ============================================================================
@@ -273,12 +314,27 @@ test('稀疏轨迹降采样不做任何改动', () => {
 // 6. topic 校验
 // ============================================================================
 
-test('WS topic 只接受 judge / spectator', () => {
-  assert(isTopic('judge'), 'judge 合法');
-  assert(isTopic('spectator'), 'spectator 合法');
+test('WS topic 只接受 judge / spectator / team-a / team-b', () => {
+  // 标题此前写作「只接受 judge / spectator」——**与代码不符**：`WS_TOPICS` 一共四个值，
+  // 而 team-a / team-b 一直没有断言覆盖。V1.2 加入参赛者端之后它们是真实在用的 topic
+  // （`TeamPage.tsx` 的 `useBoard('team-a' | 'team-b')`），所以这里补齐。
+  for (const t of ['judge', 'spectator', 'team-a', 'team-b'] as const) {
+    assert(isTopic(t), `${t} 合法`);
+  }
   assert(!isTopic('admin'), 'admin 非法');
+  assert(!isTopic('team-c'), 'team-c 非法');
+  assert(!isTopic('team-a '), '带空格的 topic 非法（不做 trim）');
   assert(!isTopic(''), '空串非法');
   assert(!isTopic(null), 'null 非法');
+});
+
+test('teamOfTopic 只认参赛者 topic，并给出对应队别', () => {
+  assertEqual(teamOfTopic('team-a'), 'A', 'team-a → A');
+  assertEqual(teamOfTopic('team-b'), 'B', 'team-b → B');
+  // judge / spectator 不是任何一队 —— 这是 access 能力位的关键前提：
+  // 它们不能因为 topic 解析而意外落到某一队的投影上。
+  assertEqual(teamOfTopic('judge'), null, 'judge 不属于任何队');
+  assertEqual(teamOfTopic('spectator'), null, 'spectator 不属于任何队');
 });
 
 void runAll('web-projection');

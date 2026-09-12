@@ -17,6 +17,8 @@ import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const ALGO_A = path.join(__dirname, 'fixtures', 'algos', 'precision-line');
 const ALGO_B = path.join(__dirname, 'fixtures', 'algos', 'parabola-arc');
+/** 故意写死锚点（y=0，即只经过 (-18,0)）的包 —— 用来证明 preflight 会拦下它 */
+const HARDCODED = path.join(__dirname, 'fixtures', 'algos', 'hardcoded-anchor');
 
 interface DecoyDetail {
   decoySeed: number;
@@ -71,6 +73,7 @@ test('preflight-decoy: --seed 撞上派生种子时换种子，绝不重合（§
 
   // 比赛地图的实际用种（生成器可能微调）也必须与 decoy 不同
   assert(engine.startMatch().ok, '开始比赛应成功');
+  engine.autoSelectEmitters();
   const matchMap = engine.getSnapshot().map;
   assert(matchMap, '开赛后应持有比赛地图');
   assert(d.decoyMapSeed !== matchMap.seed, 'decoy 实际用种不得等于比赛地图实际用种');
@@ -91,6 +94,45 @@ test('preflight-decoy: 审计日志同时记录 decoy 与比赛种子（可复�
   assertEqual(details.decoyMapHash, d.decoyMapHash, '审计与返回值的 decoy 地图哈希必须一致');
   assertEqual(details.matchSeed, 777, '审计必须记录比赛种子');
   assert(details.decoySeed !== details.matchSeed, '审计可证明两个种子不同');
+});
+
+test('preflight-decoy: decoy 世界的锚点取自 decoy 地图 —— 写死坐标的算法会被拦下', async () => {
+  // 这条回归盯的是 V1.2 引入的一个**验证盲区**：
+  //
+  // 锚点从「平台常量」变成了「各队开赛前自选」。如果 decoy 世界仍下发常量，
+  // 那么 preflight 只能验证「算法能跑」，验证不了「算法会从 public_state 读锚点」——
+  // 一个写死 `-18` 的算法会顺利通过赛前校验，然后在正赛第一轮开始
+  // **每轮 INVALID**（NOT_THROUGH_SHOOTER），现场才会发现。
+  //
+  // `hardcoded-anchor` 交出的函数恒为 y=0，即「只经过 (-18,0)」。
+  const root = tmpDir('decoy-hardcode');
+  const engine = new MatchEngine({
+    matchId: 'DECOY-HARDCODE',
+    seed: 12345,
+    pointCount: 6,
+    difficulty: 'easy',
+    artifactRoot: path.join(root, 'artifacts'),
+    sandboxRoot: path.join(root, 'sandboxes'),
+  });
+  assert(engine.upload('A', HARDCODED).ok, '上传写死坐标的包应成功（安装不校验锚点）');
+  assert(engine.upload('B', HARDCODED).ok, '上传写死坐标的包应成功');
+
+  const r = await engine.preflight();
+  assertEqual(r.ok, false, '写死锚点的算法**必须**被 preflight 拦下');
+  assert(
+    r.errors.some((e) => e.includes('NOT_THROUGH_SHOOTER')),
+    `拒绝原因必须点明 NOT_THROUGH_SHOOTER，实际: ${r.errors.join('; ')}`
+  );
+  // 也不能再拿常量坐标当借口 —— 报出来的必须是 decoy 世界里真实的锚点
+  assert(
+    !/f\(-18\)/.test(r.errors.join('; ')),
+    `拒绝理由不得再出现常量锚点 -18（说明 decoy 又退回用常量了）: ${r.errors.join('; ')}`
+  );
+
+  // 正向对照：会读锚点的算法照样通过，否则上面只是「一律拒绝」
+  const ok = readyEngine('DECOY-HARDCODE-OK', 12345);
+  const okResult = await ok.preflight();
+  assert(okResult.ok, `正常的算法应通过 preflight: ${okResult.errors.join('; ')}`);
 });
 
 void runAll('preflight-decoy');

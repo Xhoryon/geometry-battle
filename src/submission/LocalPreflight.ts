@@ -27,7 +27,7 @@ import { CanonicalNode, parseCanonicalDSL } from '../core/Ast';
 import { buildPublicState, buildRevealState } from '../core/InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from '../core/Rules';
 import { validateAttackFunction } from '../core/Validator';
-import { generateMapOrNull } from '../map/MapGenerator';
+import { decoyEmitters, generateMapOrNull } from '../map/MapGenerator';
 import {
   cleanupSandbox,
   defaultSandboxRoot,
@@ -124,7 +124,7 @@ async function checkOneTeam(
   }
 ): Promise<LocalCheck[]> {
   const checks: LocalCheck[] = [];
-  // 发射锚点是固定 Emitter（Rule Revision 3 §4），不是「本队第一个点」。
+  // 发射锚点由世界给出（V1.2 起它是逐场选定的，不是一个平台常量）。
   const shooter = world.emitters[team];
 
   const sandbox = prepareSandbox({
@@ -342,14 +342,21 @@ export async function validateSubmission(
       continue;
     }
 
+    // 锚点取样例地图上双方各自的第一个点 —— 与官方 Preflight 的 decoy 世界
+    // **同一条规则**（`decoyEmitters`）。用平台常量的话，这个自检就只能验证
+    // 「算法能跑」，验证不了「算法会从 public_state 读锚点」：
+    // 一个写死 (-18,0) 的算法会在本地 PASS、在官方 Preflight 也 PASS，
+    // 然后在正赛第一轮开始每轮 INVALID。
+    const emitters = decoyEmitters(map);
     const points = [
       ...map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, x: p.x, y: p.y, alive: true })),
       ...map.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, x: p.x, y: p.y, alive: true })),
-    ];
+      // 被选作锚点的点不在 points 里 —— 与正式回合一致
+    ].filter((p) => p.id !== emitters.A.id && p.id !== emitters.B.id);
     const publicState = buildPublicState({
       matchId: `local-preflight-${process.pid}`,
       round: 0,
-      emitters: { A: map.emitterA, B: map.emitterB },
+      emitters: { A: emitters.A.position, B: emitters.B.position },
       points,
     });
     const revealState = buildRevealState({
@@ -364,7 +371,7 @@ export async function validateSubmission(
       target,
       inspection,
       { publicJson: publicState.json, revealJson: revealState.json },
-      { emitters: { A: map.emitterA, B: map.emitterB } },
+      { emitters: { A: emitters.A.position, B: emitters.B.position } },
       { timeoutMs, memoryLimitMb, sandboxRoot, denyReadPaths }
     );
     checks.push(...runChecks);

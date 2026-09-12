@@ -286,6 +286,61 @@ test('competitor-kit: JSON_SCHEMA 的字段表与真实样例键集合一致', (
   assertEqual(Object.keys(result).sort(), [...schema.result.only_keys].sort(), 'result.json 只允许 schema_version + dsl');
 });
 
+test('competitor-kit: 官方 reveal_state 的障碍物形态必须与文档一致（§8 防漂移）', () => {
+  // 为什么单独钉这一条，而不是靠 examples 的键集合比对：
+  //
+  // 算法侧现在有一份**兼容读取器**（demo 的 `gb_world`）同时接受两种形状 ——
+  //   · 协议形态      {"type":"circle","cx":…,"cy":…,"radius":…}
+  //   · 平台内部形态  {"type":"circle","center":[x,y],"radius":…}
+  // 兼容读取器本身没问题（回放帧里存的确实是内部形态），但它会诱导一种
+  // 「顺手统一」：既然两边都能读，那把官方输出也改成内部形态算了。
+  // 那会改掉 reveal_state 的**字节**，进而改掉 `public_state_sha256`、
+  // `roundStateHash`，以及所有历史回放的可复核性。
+  //
+  // examples 那条只在样例被重新生成时才会发现漂移；这条直接对着
+  // `buildRevealState` 的真实输出断言，不经过任何 fixture。
+  const md = readDoc('JSON_SCHEMA.md');
+  const block = md.match(/```json\n([\s\S]*?)\n```/);
+  assert(block, 'JSON_SCHEMA.md 必须包含机器可读的 ```json 块');
+  const schema = JSON.parse(block![1]);
+
+  const pub = buildPublicState({
+    matchId: 'ANTI-DRIFT',
+    round: 1,
+    points: [{ id: 'A1', team: 'A', x: -14, y: 6, alive: true }],
+  });
+  const rev = buildRevealState({
+    matchId: 'ANTI-DRIFT',
+    round: 1,
+    publicStateSha256: pub.sha256,
+    obstacles: [
+      { type: 'circle', center: [4, 3], radius: 2 },
+      { type: 'rectangle', xmin: -1, xmax: 2, ymin: -5, ymax: 1 },
+    ],
+  });
+  const obstacles = (JSON.parse(rev.json) as { obstacles: Record<string, unknown>[] }).obstacles;
+
+  for (const ob of obstacles) {
+    const expected =
+      ob.type === 'circle'
+        ? schema.reveal_state.obstacle_circle_fields
+        : schema.reveal_state.obstacle_rectangle_fields;
+    assertEqual(
+      Object.keys(ob).sort(),
+      [...expected].sort(),
+      `官方 reveal_state 的 ${ob.type} 键必须等于文档字段表 —— 兼容读取器能读内部形态，` +
+        '**不代表**官方输出可以改成内部形态'
+    );
+  }
+
+  // 圆必须是扁平的 cx/cy，绝不能残留内部的 center —— 这条是上面那条的名字版
+  const circle = obstacles.find((o) => o.type === 'circle')!;
+  assert('cx' in circle && 'cy' in circle, 'circle 必须写扁平 cx / cy');
+  assert(!('center' in circle), 'circle 不得出现内部形态的 center 字段');
+  // 而且字节里也不能有（键集合比对会被「两种都写」绕过）
+  assert(!rev.json.includes('"center"'), 'reveal_state 的字节里不得出现 "center"');
+});
+
 // ============================================================================
 // §10 examples 防漂移 + 必须通过当前 Validator
 // ============================================================================
@@ -671,6 +726,47 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
       `src/operator/${f} 不得再声称默认槽位是 algorithms/team-a|team-b`
     );
   }
+});
+
+test('competitor-kit: 文档不得再把 Emitter 写成平台常量（V1.2 §一）', () => {
+  // V1.2 把锚点从「平台常量」改成了「各队开赛前自选并锁定」。
+  // 选手手册若不跟着改，会教人写出写死 -18 的算法 —— 那能通过 Preflight
+  // （decoy 世界仍用常量），却在正赛第一轮就 NOT_THROUGH_SHOOTER。
+  const docs = ['README.md', 'ALGORITHM_REQUIREMENTS.md', 'DSL_SPECIFICATION.md', 'JSON_SCHEMA.md'];
+  const textOf = (f: string): string => fs.readFileSync(path.join(KIT, f), 'utf-8');
+
+  /** 这些是已经作废的 V1.1 原句，一个字都不许再出现 */
+  const stalePhrases = [
+    /Emitter\s*坐标是\s*\*\*常量\*\*/,
+    /Emitter\s*是\s*常量/,
+    /发射锚点[^\n]{0,20}里的\*\*常量\*\*/,
+    /\|\s*\*\*固定 Emitter\*\*\s*\|\s*A：`\(-18,\s*0\)`/,
+  ];
+  for (const f of docs) {
+    const text = textOf(f);
+    for (const re of stalePhrases) {
+      assert(!re.test(text), `competitor-kit/${f} 仍把 Emitter 写成常量：${re}`);
+    }
+  }
+
+  // 正向对照：必须**真的**教会选手从 public_state 读锚点，
+  // 否则「整篇不提」也会全绿。
+  for (const f of ['README.md', 'ALGORITHM_REQUIREMENTS.md', 'JSON_SCHEMA.md']) {
+    assert(
+      /public_state\.emitters|`emitters`/.test(textOf(f)),
+      `competitor-kit/${f} 必须写明 Emitter 从 public_state.emitters 读`
+    );
+  }
+
+  // 选手手册必须讲清楚 decoy 锚点的语义：它是**decoy 地图上的点**，不是平台常量，
+  // 因此写死坐标会在本地自检 / Preflight 就 FAIL。这句话是防止选手
+  // 「本地都过了」却在正赛每轮 INVALID 的关键提示。
+  const req = textOf('ALGORITHM_REQUIREMENTS.md');
+  assert(/Preflight/.test(req) && /decoy/.test(req), '选手手册必须解释 Preflight 用的是 decoy 世界');
+  assert(
+    /写死/.test(req) && /decoy 地图/.test(req),
+    '选手手册必须点明「decoy 锚点取自 decoy 地图，写死坐标会被拦下」'
+  );
 });
 
 void runAll('competitor-kit');

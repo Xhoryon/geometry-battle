@@ -22,17 +22,22 @@ import { persistArtifacts } from '../core/Logs';
 import { downsampleTrajectory } from '../ui/TrajectoryAnimator';
 import { RuntimeCheck, checkRuntime } from '../submission/Runtime';
 import { TeamSlot } from '../submission/Slot';
-import { judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest } from './boards';
+import { inspectPackage } from '../submission/Package';
+import { isBundledAlgorithm, judgeBoard, runToEndBlocker, spectatorBoard, snapshotDigest, teamBoard } from './boards';
+import { readPackageFile, writeUploadedPackage } from './upload';
+import { TokenAuthority } from './tokens';
 import {
   CommandResult,
   JudgeBoard,
   SettingsView,
   SpectatorBoard,
+  TeamBoard,
   TRAJECTORY_ANIMATION_MS,
   TRAJECTORY_MAX_POINTS,
   Topic,
   TrajectoryPayload,
   WireDifficulty,
+  teamOfTopic,
 } from './protocol';
 
 /** ticker 周期：足够让「计算中」的状态在长耗时里也能被看见 */
@@ -49,6 +54,14 @@ export interface SessionOptions {
   seed?: number;
   pointCount?: number;
   difficulty?: WireDifficulty;
+  /**
+   * 锦标赛模式（V1.2 §二），默认**开**。
+   *
+   * 打开时：出厂 starter / 测试算法不算就绪，正式 UI 也不提供任何内置算法选项 ——
+   * 一场正规比赛必须跑在**真实上传**的包上。
+   * 关掉它只用于开发自测（仍然不绕过任何校验）。
+   */
+  tournamentMode?: boolean;
 }
 
 const BUSY: CommandResult = { ok: false, errors: ['上一条命令尚未完成，请稍候'] };
@@ -67,6 +80,8 @@ export class MatchSession {
    * 忙的时候直接拒绝而不是排队 —— 排队会让裁判点了按钮却不知道发生了什么。
    */
   private busy = false;
+  /** 锦标赛模式（V1.2 §二） */
+  private readonly tournamentMode: boolean;
   /** 后台推进整场比赛时最后一次失败的说明（供裁判台显示） */
   private lastError: string | null = null;
   private listeners = new Set<(e: SessionEvent) => void>();
@@ -75,6 +90,14 @@ export class MatchSession {
   /** 宿主 Runtime 探测 —— 要 spawn python，**每场只算一次**，绝不放进 board 投影 */
   private runtime: RuntimeCheck;
 
+  /**
+   * 访问令牌（见 `tokens.ts`）。
+   *
+   * `judge` 令牌随进程存活；队伍令牌由 `judge` 令牌与**当前** `matchId` 派生 ——
+   * 所以这里没有需要维护的令牌状态，换场即失效。
+   */
+  private readonly auth = new TokenAuthority();
+
   constructor(opts: SessionOptions) {
     this.opts = opts;
     this.settings = {
@@ -82,6 +105,7 @@ export class MatchSession {
       pointCount: opts.pointCount ?? 8,
       difficulty: opts.difficulty ?? 'medium',
     };
+    this.tournamentMode = opts.tournamentMode ?? true;
     this.setup = this.buildSetup(this.settings);
     this.engine = this.setup.getEngine();
     this.runtime = checkRuntime();
@@ -153,9 +177,123 @@ export class MatchSession {
   // board
   // ========================================================================
 
-  getBoard(topic: Topic): SpectatorBoard | JudgeBoard {
+  getBoard(topic: Topic): SpectatorBoard | JudgeBoard | TeamBoard {
+    const team = teamOfTopic(topic);
+    if (team) return this.teamBoardFor(team);
     if (topic === 'judge') return judgeBoard(this.engine, this.judgeContext());
     return spectatorBoard(this.engine, this.currentTrajectory);
+  }
+
+  /** 本队包内的文件清单（读一次文件系统，不在每个 tick 上哈希） */
+  private packageFiles(team: TeamSlot): { path: string; bytes: number }[] {
+    const slot = this.setup.slotStates()[team];
+    if (slot.status !== 'READY') return [];
+    try {
+      return inspectPackage(slot.dir).files.map((f) => ({ path: f.relPath, bytes: f.size }));
+    } catch {
+      return [];
+    }
+  }
+
+  private teamBoardFor(team: TeamSlot): TeamBoard {
+    return teamBoard(this.engine, team, {
+      slot: this.setup.slotStates()[team],
+      slotRoot: this.opts.slotRoot,
+      files: this.packageFiles(team),
+      busy: this.busy,
+      lastError: this.lastError,
+      tournamentMode: this.tournamentMode,
+    });
+  }
+
+  /**
+   * 队伍上传算法包（浏览器来的文件清单）。
+   *
+   * **走的是同一条安装流水线** —— staging → validate → preflight → hash → seal → replace。
+   * 浏览器没有任何绕过校验的通道：这里只是把文件落到一个临时目录，然后交给
+   * `setup.installAlgorithm()`。
+   */
+  uploadPackage(
+    team: TeamSlot,
+    files: { path: string; contentBase64: string }[]
+  ): Promise<CommandResult> {
+    return this.run(async () => {
+      const staged = writeUploadedPackage(files);
+      if (!staged.ok) return { ok: false, errors: staged.errors };
+
+      // **先判后装**：此前是「装完再拒绝」，于是被拒的包其实已经落在槽位里了 ——
+      // 拒绝只改了返回值，槽位状态照旧被污染。
+      const blocked = this.tournamentRejection(team, inspectPackage(staged.dir).hash, '上传内容');
+      if (blocked) return blocked;
+
+      const r = await this.setup.installAlgorithm(team, staged.dir);
+      return {
+        ok: r.success,
+        errors: r.errors,
+        detail: { team, hash: r.hash, stage: r.detail?.stage, files: files.length },
+      };
+    });
+  }
+
+  /** 队伍选择本场 Emitter（只在 EMITTER_SELECT 阶段、且本方未锁定时可行） */
+  selectEmitter(team: TeamSlot, pointId: string): Promise<CommandResult> {
+    return this.run(async () => {
+      const r = this.engine.selectEmitter(team, pointId);
+      return { ok: r.ok, errors: r.error ? [r.error] : [], detail: { team, pointId } };
+    });
+  }
+
+  /** 队伍锁定 Emitter —— 锁定后整场不可更换 */
+  lockEmitter(team: TeamSlot): Promise<CommandResult> {
+    return this.run(async () => {
+      const r = this.engine.lockEmitter(team);
+      return { ok: r.ok, errors: r.error ? [r.error] : [], detail: { team } };
+    });
+  }
+
+  /** 读取本队包内的一个文件（只读浏览；严格限定在本队槽位内） */
+  /**
+   * 读回槽位内某个文件的源码。
+   *
+   * 参赛者端（`readOwnSource`）与裁判端（`readSlotSource`）走的是**同一条**
+   * 读取路径 —— 同一套路径越界 / 符号链接 / 体积防护，不存在「裁判那条松一点」
+   * 的第二套实现。两者只差一句「尚未就绪」的措辞。
+   */
+  private readSlotFile(
+    team: TeamSlot,
+    relPath: string,
+    notReady: string
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
+    const slot = this.setup.slotStates()[team];
+    if (slot.status !== 'READY') return { ok: false, errors: [notReady] };
+    try {
+      const p = readPackageFile(slot.dir, relPath);
+      // 二进制与超长都是**受控降级**，不是错误：ok 仍为 true，由调用方如实展示。
+      return { ok: true, errors: [], text: p.text, truncated: p.truncated, binary: p.binary };
+    } catch (e) {
+      return { ok: false, errors: [(e as Error).message] };
+    }
+  }
+
+  /** 参赛者视角：只读**本队**的源码 */
+  readOwnSource(
+    team: TeamSlot,
+    relPath: string
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
+    return this.readSlotFile(team, relPath, '本队尚未安装算法包');
+  }
+
+  /**
+   * 裁判 / 主办方视角：读**任一队**已安装的源码。
+   *
+   * V1.2 §一要求主办方能在网页上查看上传的算法源码 —— 这正是「投的是不是
+   * 选手那份」最直接的核对手段（哈希对不了人眼，源码可以）。
+   */
+  readSlotSource(
+    team: TeamSlot,
+    relPath: string
+  ): { ok: boolean; errors: string[]; text?: string; truncated?: boolean; binary?: boolean } {
+    return this.readSlotFile(team, relPath, `Team ${team} 的槽位尚未就绪`);
   }
 
   private judgeContext() {
@@ -168,7 +306,41 @@ export class MatchSession {
       trajectoryHandle: this.currentTrajectory,
       busy: this.busy,
       lastError: this.lastError,
+      tournamentMode: this.tournamentMode,
+      // 裁判板要带文件清单，主办方才能点开某个文件看源码（V1.2 §一）
+      slotFiles: { A: this.packageFiles('A'), B: this.packageFiles('B') },
+      // 本场的两个参赛者令牌。**只有裁判板下发** —— 参赛者板是另一个投影函数，
+      // 里面没有这个字段，所以对方拿不到（这正是 V1.2 需求 #7 的传输层保证）。
+      teamTokens: this.teamTokens(),
     };
+  }
+
+  // ========================================================================
+  // 访问令牌（V1.2 Final RC Audit 的 P1 修复）
+  // ========================================================================
+
+  /** 裁判令牌（进程生命周期）。组织者的裁判台链接里带着它 */
+  get judgeToken(): string {
+    return this.auth.judge;
+  }
+
+  /** 令牌签发与核验 —— HTTP / WS 边界共用同一份实现 */
+  get tokens(): TokenAuthority {
+    return this.auth;
+  }
+
+  /** 当前场次的 id。**便宜** —— 不投影任何 board（`/api/health` 靠它） */
+  currentMatchId(): string {
+    return this.engine.matchId;
+  }
+
+  /**
+   * 本场的两个参赛者令牌。
+   *
+   * **每次现算**，不缓存 —— 缓存就会在 `newMatch()` 换引擎之后留下陈旧引用。
+   */
+  teamTokens(): Record<TeamSlot, string> {
+    return this.auth.teamTokens(this.engine.matchId);
   }
 
   getTrajectory(id: string): TrajectoryPayload | null {
@@ -250,10 +422,43 @@ export class MatchSession {
     });
   }
 
+  /**
+   * 锦标赛模式的**执行门禁**（V1.2 §二）：平台自带的算法一律不许上场。
+   *
+   * 返回 `null` 表示放行；否则返回一条可以直接回给客户端的拒绝结果。
+   *
+   * 为什么必须是**执行时**的守卫，而不是只在 board 上把按钮变灰：
+   * `enabled` 只是提示，一个直接的 `POST /api/judge/prepare` 根本不读它。
+   * 此前正是如此 —— 服务端启动时会把 `algorithms/team-*` 播种进槽位，
+   * 于是在「锦标赛模式」下打一场，跑的其实是出厂模板。
+   */
+  private tournamentRejection(team: TeamSlot, hash: string | null, where: string): CommandResult | null {
+    if (!this.tournamentMode || !isBundledAlgorithm(hash)) return null;
+    return {
+      ok: false,
+      errors: [
+        `锦标赛模式：不接受平台自带算法（Team ${team}，${where}）—— ` +
+          '请提交你们自己的算法包（参赛者页上传，或在 Advanced 里指定你们自己的目录）',
+      ],
+      detail: { team, hash, tournamentMode: true },
+    };
+  }
+
   /** Advanced / Replace Algorithm：把算法安装进固定槽位（不动本场比赛已密封的副本） */
   install(team: TeamSlot, sourceDir: string): Promise<CommandResult> {
     return this.run(async () => {
-      const r = await this.setup.installAlgorithm(team, path.resolve(sourceDir));
+      const resolved = path.resolve(sourceDir);
+      // **先判后装**：被拒的包一个字节都不该写进槽位
+      let sourceHash: string | null = null;
+      try {
+        sourceHash = inspectPackage(resolved).hash;
+      } catch {
+        sourceHash = null; // 读不了就交给安装流水线去报它自己的错
+      }
+      const blocked = this.tournamentRejection(team, sourceHash, '安装来源');
+      if (blocked) return blocked;
+
+      const r = await this.setup.installAlgorithm(team, resolved);
       return {
         ok: r.success,
         errors: r.errors,
@@ -265,6 +470,10 @@ export class MatchSession {
   /** 正式主流程：把槽位里的算法密封进本场比赛 */
   useSlot(team: TeamSlot): Promise<CommandResult> {
     return this.run(async () => {
+      // 槽位里躺着的若是平台自带算法，锦标赛模式下不许密封进本场
+      const blocked = this.tournamentRejection(team, this.setup.slotStates()[team].hash, '槽位内');
+      if (blocked) return blocked;
+
       const r = this.setup.uploadFromSlot(team);
       return { ok: r.success, errors: r.errors, detail: { team, hash: r.hash } };
     });
@@ -284,6 +493,36 @@ export class MatchSession {
       // 「校验通过了反而开不了赛」那类影子规则。
       const r = this.setup.startMatch();
       return { ok: r.success, errors: r.errors, detail: { matchId: this.engine.matchId } };
+    });
+  }
+
+  /**
+   * 裁判向导的 **ALGORITHM READY** 主步（V1.2 §三）：
+   * 封装双方算法 → Preflight → 建赛。
+   *
+   * 三条底层动作（`use-slot-a/b` / `preflight` / `start`）仍然单独可用，
+   * 但普通裁判只需要这一个 —— 底层动作移进 Advanced Controls（§三）。
+   *
+   * **不重复实现门禁**：每一步都直接调 `MatchSetupUI`，失败就把它的原话报出来。
+   * 中途失败时停在失败的那一步；已经成功的步骤不回滚
+   * （密封副本与槽位替换都是非破坏性的，重试安全）。
+   */
+  prepareMatch(): Promise<CommandResult> {
+    return this.run(async () => {
+      for (const team of ['A', 'B'] as const) {
+        // 直接调 `uploadFromSlot` 会绕过 `useSlot()` 的锦标赛门禁 ——
+        // 而 `prepare` 才是裁判向导的主按钮，也就是最容易绕过的那一条。这里补上。
+        const blocked = this.tournamentRejection(team, this.setup.slotStates()[team].hash, '槽位内');
+        if (blocked) return { ...blocked, detail: { ...blocked.detail, step: `use-slot-${team}` } };
+
+        const r = this.setup.uploadFromSlot(team);
+        if (!r.success) return { ok: false, errors: r.errors, detail: { step: `use-slot-${team}` } };
+      }
+      const pre = await this.setup.preflight();
+      if (!pre.success) return { ok: false, errors: pre.errors, detail: { step: 'preflight' } };
+      const started = this.setup.startMatch();
+      if (!started.success) return { ok: false, errors: started.errors, detail: { step: 'start' } };
+      return { ok: true, errors: [], detail: { step: 'done', matchId: this.engine.matchId } };
     });
   }
 

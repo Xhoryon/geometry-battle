@@ -230,6 +230,7 @@ test('algorithm-slot: 比赛开始后槽位冻结（§32）', async () => {
   const pre = await engine.preflight();
   assert(pre.ok, `preflight 应通过: ${pre.errors.join('; ')}`);
   const started = engine.startMatch();
+  engine.autoSelectEmitters();
   assert(started.ok, `开赛应成功: ${started.errors.join('; ')}`);
 
   const before = fingerprint(slotDir(slotRoot, 'A'));

@@ -81,11 +81,13 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
   if (!pre.ok) throw new Error(`Preflight 失败: ${pre.errors.join('; ')}`);
   const started = engine.startMatch();
   if (!started.ok) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
+  // V1.2 §一：锚点由双方在 EMITTER_SELECT 阶段各自选定并锁定，锁定后比赛进入 READY。
+  // 这一步必须发生在 `startMatch()` 成功**之后** —— 先选后开赛会被引擎按阶段拒绝。
+  engine.autoSelectEmitters();
 
-  // Rule Revision 3 §5：每轮不再有人工选点。发射锚点是固定的 Emitter，
-  // 因此这里直接取第一次 beginRound 之后的快照作为本轮输入的真实来源。
+  // 取`锁定之后、开轮之前`的快照作为本轮输入的真实来源
   const snap = engine.getSnapshot();
-  if (!snap.emitters) throw new Error('引擎未提供固定 Emitter');
+  if (!snap.emitters) throw new Error('引擎未提供本场锁定的 Emitter');
   const judge = engine.judgeStartRound();
   if (!judge.ok) throw new Error(`START ROUND 失败: ${judge.error}`);
   const round = await engine.runRound();
@@ -101,7 +103,10 @@ export async function generateKitExamples(workRoot: string): Promise<KitExamples
   const publicState = buildPublicState({
     matchId: KIT_EXAMPLE_MATCH_ID,
     round: 1,
-    emitters: { A: snap.map!.emitterA, B: snap.map!.emitterB },
+    // 必须是引擎**实际下发**的那一对锚点（双方各选自己的点，V1.2 §一），
+    // 而不是 `map.emitterA/B` —— 后者仍是 Rule Revision 3 的平台常量，
+    // 拿它重算会得到一个引擎根本不会产出的 public_state（哈希必然对不上）。
+    emitters: { A: snap.emitters.A.position, B: snap.emitters.B.position },
     points,
   });
   const revealState = buildRevealState({

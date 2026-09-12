@@ -53,16 +53,19 @@ async function playFullMatch(opts: { seed: number; pointCount?: number }): Promi
   assert(pre.ok, `Preflight 失败: ${pre.errors.join('; ')}`);
 
   const started = engine.startMatch();
+  engine.autoSelectEmitters();
   assert(started.ok, `开始比赛失败: ${started.errors.join('; ')}`);
 
   let rounds = 0;
   while (engine.getWinner() === null) {
     const snap = engine.getSnapshot();
-    // Rule Revision 3 §5：这里曾经断言 `SELECT_SHOOTER` 并模拟人工选点。
-    // 现在每轮唯一的停留点是 PUBLIC（本轮输入已冻结、等待揭盲）。
-    assert(snap.phase === 'PUBLIC', `预期 PUBLIC，实际 ${snap.phase}`);
-    assert(snap.emitters !== null, '每轮都应能取到固定的 Emitter');
-    assert(snap.emitters!.A.id === 'A0' && snap.emitters!.B.id === 'B0', 'Emitter 标识必须固定');
+    // V1.2：开赛前的阶段是 READY —— 双方 Emitter 已各自选定并锁定。
+    assert(snap.phase === 'READY', `预期 READY，实际 ${snap.phase}`);
+    assert(snap.emitters !== null, '每轮都应能取到发射锚点');
+    assert(
+      /^A\d+$/.test(snap.emitters!.A.id) && /^B\d+$/.test(snap.emitters!.B.id),
+      `锚点应是双方各自选定的点，实际 ${snap.emitters!.A.id}/${snap.emitters!.B.id}`
+    );
 
     const judge = engine.judgeStartRound();
     assert(judge.ok, `START ROUND 失败: ${judge.error}`);
@@ -104,6 +107,7 @@ test('full-match-e2e: 存活数严格单调递减，且 winner 只在结算后�
   engine.upload('B', ALGO_B);
   assert((await engine.preflight()).ok, 'preflight 应通过');
   engine.startMatch();
+  engine.autoSelectEmitters();
 
   let prevAlive = engine.getSnapshot().alive.A + engine.getSnapshot().alive.B;
   let guard = 0;
@@ -162,6 +166,7 @@ test('full-match-e2e: 阶段守卫 —— 未锁定/未裁决时不允许开跑'
   // 比赛尚未开始时不得 START（阶段门禁）
   assert(!engine.judgeStartRound().ok, '比赛未开始时不应允许 START ROUND');
   engine.startMatch();
+  engine.autoSelectEmitters();
   // Rule Revision 3 §5 之后没有「锁定」这个动作：开始比赛即进入 PUBLIC，
   // START 的前置条件是 PUBLIC → REVEAL，而不是「双方 LOCK」。
   assert(engine.judgeStartRound().ok, '进入 PUBLIC 后应允许 START ROUND');

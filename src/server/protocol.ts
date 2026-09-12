@@ -45,6 +45,8 @@ export type WirePhase =
   | 'UPLOAD_A'
   | 'UPLOAD_B'
   | 'PREFLIGHT'
+  /** 双方各自选择本场的 Fixed Emitter 并锁定（V1.2） */
+  | 'EMITTER_SELECT'
   | 'READY'
   | 'PUBLIC'
   | 'REVEAL'
@@ -145,6 +147,14 @@ export interface SlotView {
   entry: string | null;
   preflightOk: boolean | null;
   files: number;
+  /**
+   * 包内文件清单（路径 + 字节数）—— **只有裁判板有**。
+   *
+   * 主办方要能在网页上核对选手交上来的到底是什么（V1.2 §一），
+   * 因此裁判需要清单才能点开某一个文件看内容（内容走 `JUDGE_READ_PATHS.source`）。
+   * 观众板是白名单，根本收不到这个字段。
+   */
+  fileList: { path: string; bytes: number }[];
   totalBytes: number;
   errors: string[];
   /**
@@ -226,6 +236,26 @@ export interface JudgeBoard extends SpectatorBoard {
   runtime: { frozen: string; detected: string; ok: boolean; mismatches: string[] };
   audit: AuditView;
   artifactDir: string | null;
+  /**
+   * Emitter 选择过程（V1.2 §一）。
+   *
+   * 裁判是**权威视角**：这里给出双方的完整状态（含各自选了哪个点、是否锁定），
+   * 而不是像参赛者板那样按队别裁剪。观众板里**没有**这个字段。
+   */
+  emitterSelection: {
+    A: { locked: boolean; selected: { id: string; x: number; y: number } | null };
+    B: { locked: boolean; selected: { id: string; x: number; y: number } | null };
+    revealed: boolean;
+  };
+  /**
+   * 本场的两个参赛者令牌（V1.2 Final RC Audit 的 P1 修复）。
+   *
+   * 裁判台据此渲染 `/team/a#t=...` 可复制链接 —— 队伍面的唯一入口。
+   * **只在裁判板里**：参赛者板与观众板都没有这个字段。
+   *
+   * 令牌形如 43 字符的 base64url 串；`judge` 令牌本身**不回显**（组织者的 URL 里已有）。
+   */
+  teamTokens: { A: string; B: string };
   actions: ActionView[];
 }
 
@@ -254,8 +284,28 @@ export interface TrajectoryPayload {
 // WS 消息
 // ============================================================================
 
-export const WS_TOPICS = ['judge', 'spectator'] as const;
+export const WS_TOPICS = ['judge', 'spectator', 'team-a', 'team-b'] as const;
+
+/**
+ * 令牌无效时服务端给客户端的 WS 关闭码（V1.2 Final RC Audit 的 P1 修复）。
+ *
+ * 为什么需要它：浏览器**读不到** WS 握手失败时的 HTTP 状态 —— 那只会表现成
+ * `onclose` 的 **1006**，与「服务没起来」完全同形。而前端的重连是无上限退避，
+ * 于是换场之后队伍页会带着过期令牌永久狂刷，现场只看到一句「未连接」。
+ * 用一个应用自定义码把「令牌不对」明确说出来，前端才能停下来给出人话。
+ *
+ * 放在 `protocol.ts`（而不是 `ws.ts`）是因为**前端也要用**，而 `ws.ts` 依赖
+ * node 的 `ws`/`http`，浏览器侧 import 不了。
+ */
+export const WS_INVALID_TOKEN = 4401;
 export type Topic = (typeof WS_TOPICS)[number];
+
+/** topic → 它代表的队伍（只有 team-* 有值） */
+export function teamOfTopic(topic: Topic): WireTeam | null {
+  if (topic === 'team-a') return 'A';
+  if (topic === 'team-b') return 'B';
+  return null;
+}
 
 export function isTopic(v: unknown): v is Topic {
   return typeof v === 'string' && (WS_TOPICS as readonly string[]).includes(v);
@@ -263,7 +313,7 @@ export function isTopic(v: unknown): v is Topic {
 
 export type ServerMessage =
   | { type: 'hello'; topic: Topic; seq: number }
-  | { type: 'board'; topic: Topic; seq: number; board: SpectatorBoard | JudgeBoard }
+  | { type: 'board'; topic: Topic; seq: number; board: SpectatorBoard | JudgeBoard | TeamBoard }
   | { type: 'trajectory'; topic: Topic; trajectory: TrajectoryPayload }
   | { type: 'pong' };
 
@@ -279,6 +329,56 @@ export interface CommandResult {
   detail?: Record<string, unknown>;
 }
 
+/** 参赛者端的一个候选点（本队自己的初始点） */
+export interface CandidateView {
+  id: string;
+  x: number;
+  y: number;
+  alive: boolean;
+}
+
+/**
+ * **参赛者板** —— 按队别裁剪的白名单投影。
+ *
+ * 三条硬规则：
+ *   1. 只含**本队**的槽位与源码；对方的东西一个字段都不给；
+ *   2. **双方锁定之前不暴露对方的 Emitter 选择** —— `opponent.selected` 恒为 null，
+ *      只给出 `opponent.locked` 这一个布尔；
+ *   3. `actions[].enabled` 的判据**逐条来自引擎自己的前置条件**，
+ *      前端不得再写一套（`buildActions` 是唯一来源）。
+ */
+export interface TeamBoard {
+  team: WireTeam;
+  matchId: string;
+  round: number;
+  phase: WirePhase;
+  /** 本队算法槽位 */
+  slot: SlotView;
+  /** 本队算法是否已就绪（上传 + Preflight 通过） */
+  packageReady: boolean;
+  /** 本队可选的 Emitter 候选点（自己的初始点） */
+  candidates: CandidateView[];
+  /** 本队自己的选择 */
+  own: { selected: string | null; locked: boolean };
+  /** 对方：锁定前只知道「锁没锁」 */
+  opponent: { locked: boolean; selected: string | null };
+  /** 双方是否都已锁定（此后锚点对所有人公开） */
+  revealed: boolean;
+  /** 双方锁定后公开的锚点坐标；未公开时为 null */
+  emitters: {
+    A: { id: string; x: number; y: number };
+    B: { id: string; x: number; y: number };
+  } | null;
+  /** 本队可执行的动作（服务端权威判据） */
+  actions: ActionView[];
+  /** 本队包内的文件清单（只读浏览用；不含内容） */
+  files: { path: string; bytes: number }[];
+  busy: boolean;
+  lastError: string | null;
+  /** 锦标赛模式：禁用一切内置/测试算法，必须使用真实上传的包 */
+  tournamentMode: boolean;
+}
+
 export const COMMAND_PATHS = {
   newMatch: '/api/judge/new-match',
   reset: '/api/judge/reset',
@@ -290,9 +390,45 @@ export const COMMAND_PATHS = {
   startRound: '/api/judge/start-round',
   compute: '/api/judge/compute',
   runToEnd: '/api/judge/run-to-end',
+  prepare: '/api/judge/prepare',
 } as const;
 
+/**
+ * 裁判端**只读**路径（GET）。
+ *
+ * `source` 让主办方在网页上查看**任一队**已安装的算法源码 ——
+ * 参赛者端那份 `/api/team/source` 是按队别裁剪的，裁判要的是权威视角：
+ * 两个队都能看，这样才能核对「选手交上来的到底是什么」。
+ */
+export const JUDGE_READ_PATHS = {
+  source: '/api/judge/source',
+} as const;
+
+/**
+ * 参赛者端命令。
+ *
+ * 队别由请求体给出，但**光有队别不够**：调用方还必须出示那一队的访问令牌
+ * （`X-GB-Token` 请求头），且令牌解析出的队伍必须与 `team` **一致** ——
+ * 否则 401。没有令牌校验时，「队别」只是一句自称（见 `src/server/tokens.ts`）。
+ */
+export const TEAM_COMMAND_PATHS = {
+  upload: '/api/team/upload',
+  selectEmitter: '/api/team/select-emitter',
+  lockEmitter: '/api/team/lock-emitter',
+} as const;
+
+export type TeamCommandPath = (typeof TEAM_COMMAND_PATHS)[keyof typeof TEAM_COMMAND_PATHS];
+
 export type CommandPath = (typeof COMMAND_PATHS)[keyof typeof COMMAND_PATHS];
+
+/**
+ * 一次上传的字节上限（算法包，未压缩的原始内容）。
+ *
+ * 放在这里（而不是 `upload.ts`）是因为**前端也要用**：`web/src/api/zip.ts` 在浏览器里
+ * 解包，必须用同一个预算给自己的解压过程封顶，否则一个 deflate 炸弹能把标签页打死。
+ * `upload.ts` 依赖 node 的 `fs`/`os`，浏览器 import 不了。
+ */
+export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
 /** 默认端口；占用时服务端会自动换端口并把实际端口写进 URL */
 export const DEFAULT_PORT = 17800;

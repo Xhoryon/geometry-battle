@@ -1,18 +1,24 @@
 /**
- * 路由。三条正式路线（任务书 §「至少提供」）：
+ * 路由。V1.2 的正式路线：
  *
- *   /judge            裁判台
- *   /spectator        只读大屏
- *   /replay/:matchId  回放
+ *   /team/a  /team/b   参赛者（V1.2 §一）
+ *   /judge             裁判台（phase-driven wizard，V1.2 §三）
+ *   /spectator         只读大屏
+ *   /replay/:matchId   回放
  *
  * 用一个几十行的 history 路由，而不是引 react-router：
- * 只有三条静态路线加一个参数段，装一个路由库不划算。
+ * 只有这几条静态路线加一个参数段，装一个路由库不划算。
+ *
+ * 页面之间**没有**站内跳转：每条路线都由整页加载进入。
+ * 这是有意的 —— 页面切换本来就要换掉那一页的组件与它持有的 WebSocket，
+ * 用 `pushState` 省下的那次加载并不换来任何东西，反而多一条容易走偏的代码路径。
  */
 
 import { useEffect, useState } from 'react';
 import { JudgePage } from './pages/JudgePage';
 import { SpectatorPage } from './pages/SpectatorPage';
 import { ReplayPage } from './pages/ReplayPage';
+import { TeamPage } from './pages/TeamPage';
 import type { JSX } from 'react';
 
 function usePathname(): string {
@@ -33,6 +39,14 @@ function NotFound({ path }: { path: string }): JSX.Element {
       <p style={{ marginTop: 18 }}>
         <a className="link" href="/judge">
           裁判台
+        </a>
+        {'　'}
+        <a className="link" href="/team/a">
+          参赛者 A
+        </a>
+        {'　'}
+        <a className="link" href="/team/b">
+          参赛者 B
         </a>
         {'　'}
         <a className="link" href="/spectator">
@@ -56,6 +70,8 @@ export function App(): JSX.Element {
 
   if (isRoot) return <JudgePage />;
   if (path === '/judge') return <JudgePage />;
+  if (path === '/team/a') return <TeamPage team="A" />;
+  if (path === '/team/b') return <TeamPage team="B" />;
   if (path === '/spectator') return <SpectatorPage />;
   if (path.startsWith('/replay/')) {
     const id = decodeURIComponent(path.slice('/replay/'.length));

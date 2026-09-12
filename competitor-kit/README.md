@@ -22,27 +22,32 @@ python3 competitor-kit/tools/validate_submission.py ./my-algorithm
 # 3) 改 solver.py，重复第 2 步
 ```
 
-自检输出长这样：
+自检输出长这样（数值会随包内容变化）：
 
 ```text
 ── Team A ──
   Entrypoint         PASS 包根目录存在 solver.py
-  Package            PASS 2 个文件 / 5969 字节 / hash=30cb9f2d1d22…
+  Package            PASS 2 个文件 / 6949 字节 / hash=0149cc81f781…
   Runtime            PASS sandbox-exec 可用，算法将在与官方比赛相同的沙箱内运行
   CLI / startup      PASS READY 握手成功，GO 已释放（release_ns=…）
-  Input              PASS public_state.json (1439 B) + reveal_state.json (680 B)，sha256 绑定已由启动壳复核
+  Input              PASS public_state.json (1389 B) + reveal_state.json (681 B)，sha256 绑定已由启动壳复核
   Result JSON        PASS schema_version="1.1"，键集合恰好为 {schema_version, dsl}
   DSL                PASS 结构合法（7 个节点）
-  Function legality  PASS f(-18) = 0（Emitter 残差 0.00e+0），凸性变号 0，采样 2649 点
-  Timeout            PASS 耗时 19.4 ms（上限 500 ms）
+  Function legality  PASS f(-12.7337) = -9.1846（Emitter 残差 0.00e+0），凸性变号 0，采样 3274 点
+  Timeout            PASS 耗时 17.4 ms（上限 500 ms）
 ── Team B ──
-  …（同上）
+  …（同上，但锚点坐标不同）
 PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
 ```
 
+> 注意 `Function legality` 那行里的 `f(…)` 取的是**样例世界**里的锚点坐标 ——
+> 它是逐场不同的，**不是** `(-18, 0)`。你的算法必须从 `public_state.emitters`
+> 读锚点；写死坐标会在这里就直接 FAIL（`NOT_THROUGH_SHOOTER`）。
+
 `PRE-FLIGHT PASS` 表示接口与函数合法性都没问题。判定代码与官方 Preflight 是**同一份**，
-差别只在于官方用另一份 decoy 世界 —— 所以**不要把样例世界里的具体数值写死进算法**，
-否则本地 PASS 不代表官方也 PASS。
+差别只在于两者用不同的 decoy 世界（种子不同、锚点坐标不同）——
+所以**不要把样例世界里的具体数值写死进算法**：写死锚点会在本地就 FAIL，
+而写死别的（比如某个点位坐标）则会让你在换一场比赛后失手。
 
 ---
 
@@ -65,7 +70,11 @@ PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
 1. **入口固定**：包根目录的 `solver.py`，四个参数 `--team / --public / --reveal / --output`。
 2. **输入只走文件**：两份 JSON，由参数给出路径；stdin 不是输入通道。
 3. **结果只走文件**：`{"schema_version":"1.1","dsl":<AST>}` 写进 `--output`；顶层只有这两个键，stdout 不是结果通道。
-4. **函数必须经过自己的固定 Emitter**：`|f(x_e) − y_e| ≤ 1e-6`。Emitter 是常量（A `(-18,0)`、B `(18,0)`），用 `f(x) = y_e + g(x − x_e)` 这种增量写法最稳。
+4. **函数必须经过自己的固定 Emitter**：`|f(x_e) − y_e| ≤ 1e-6`。**Emitter 坐标逐场不同** —— 每队开赛前从自己的点里选一个并锁定，因此必须从 `public_state.emitters[team]` 读，**不要写死 `-18` / `18`**。用 `f(x) = y_e + g(x − x_e)` 这种增量写法最稳（换锚点不用改代码）。
+
+   > **本地自检与官方 Preflight 都会替你检查这一点。** 它们的样例世界（decoy）
+   > 用的锚点是**样例地图上的点**，不是平台常量 —— 写死坐标会在
+   > `Function legality` 一节直接 FAIL（`NOT_THROUGH_SHOOTER`），当场就能发现。
 5. **没有第三方包**：`numpy` / `scipy` 在沙箱里**不可用**，只用标准库。
 6. **500 ms 内出结果**，每轮沙箱重建、不跨轮保存状态。
 

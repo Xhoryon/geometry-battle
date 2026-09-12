@@ -241,6 +241,7 @@ async function main(): Promise<void> {
         const pre = await setup.preflight();
         if (!pre.success) throw new Error(`校验失败: ${pre.errors.join('; ')}`);
         const started = setup.startMatch();
+      engine.autoSelectEmitters();
         if (!started.success) throw new Error(`无法开始比赛: ${started.errors.join('; ')}`);
       } else {
         const errs = uploadBoth();
@@ -356,6 +357,7 @@ async function main(): Promise<void> {
               // preflight 通过」才是可开赛状态，UI 再猜一套（比如按阶段名判断）
               // 只会造出一个和引擎不一致的影子规则。直接把它的结论报出来。
               const r = setup.startMatch();
+      engine.autoSelectEmitters();
               console.log(r.success ? '  ✓ 比赛已开始。' : `  ✕ ${r.errors.join('; ')}`);
               break;
             }

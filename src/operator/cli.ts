@@ -262,6 +262,7 @@ async function main(): Promise<void> {
 
     if (!opts.audience) console.log('\n═══ 3. 开始比赛 ═══');
     const started = setup.startMatch();
+      engine.autoSelectEmitters();
     if (!started.success) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
     if (!opts.audience) console.log(setup.renderStatusTable());
     persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）

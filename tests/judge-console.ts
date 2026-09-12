@@ -135,6 +135,11 @@ test('judge-console: 结果板区分 ELIMINATION 与各类判和，并标出终�
     endTime: '2026-01-01T00:01:00.000Z',
     winner: 'A',
     endReason: 'ELIMINATION',
+    // V1.2 §一：锚点由双方各自选定并锁定，必须落盘；结果板要能回答「从哪个点开火」
+    emitters: {
+      A: { id: 'A1', position: { x: -14, y: 6 } },
+      B: { id: 'B2', position: { x: 11, y: -4 } },
+    },
     rounds: [],
     finalAlive: { A: 3, B: 0 },
   };
@@ -142,6 +147,14 @@ test('judge-console: 结果板区分 ELIMINATION 与各类判和，并标出终�
   const win = renderMatchSummary(base);
   assert(win.includes('TEAM A WINS'), '一方全灭必须明确宣布胜者');
   assert(win.includes('ELIMINATION'), '必须给出终止原因');
+  assert(
+    win.includes('A1') && win.includes('B2'),
+    '结果板必须给出本场双方选定的 Emitter —— 它不再是平台常量'
+  );
+
+  const noEmitter = renderMatchSummary({ ...base, emitters: null });
+  assert(noEmitter.includes('未锁定'), '锚点缺失时必须如实说明，不得编造坐标');
+  assert(!noEmitter.includes('A1'), '未锁定时不得凭空写出一个 Emitter id');
 
   const stale = renderMatchSummary({ ...base, winner: 'draw', endReason: 'STALEMATE' });
   assert(stale.includes('MATCH DRAW'), '僵持必须判和');
@@ -188,6 +201,11 @@ test('judge-console: 回放索引逐轮一行，空回放不崩', () => {
     teamBName: 'B',
     winner: 'draw',
     endReason: 'STALEMATE',
+    // 刻意避开帧里已出现的 'B1'（那是击杀 id）—— 断言才分得清「锚点」与「击杀」
+    emitters: {
+      A: { id: 'A3', position: { x: -12, y: -5 } },
+      B: { id: 'B7', position: { x: 15, y: 2 } },
+    },
     frames: [
       {
         round: 1,
@@ -226,12 +244,17 @@ test('judge-console: 回放索引逐轮一行，空回放不崩', () => {
   assert(idx.includes('STALEMATE'), '必须给出终止原因');
   assert(idx.includes('R 1') || idx.includes('R1'), '必须逐轮列出');
   assert(idx.includes('B1'), '必须给出该轮击杀');
+  assert(
+    idx.includes('A3') && idx.includes('B7'),
+    '回放顶部必须给出本场双方选定的 Emitter —— 回放要能画出整场的发射锚点'
+  );
 
   const empty = renderReplayIndex({
     schemaVersion: 1, matchId: 'JC-EMPTY', seed: 1, teamAName: 'A', teamBName: 'B',
-    winner: 'draw', endReason: 'NONE', frames: [],
+    winner: 'draw', endReason: 'NONE', emitters: null, frames: [],
   });
   assert(empty.includes('JC-EMPTY'), '空回放也必须正常渲染，不得抛错');
+  assert(empty.includes('未锁定'), '无锚点的回放同样要如实标注');
 });
 
 void runAll('judge-console');

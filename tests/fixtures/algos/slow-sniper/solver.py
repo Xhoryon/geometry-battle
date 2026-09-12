@@ -1,7 +1,12 @@
-"""Sniper —— 延迟 400ms 后求解，直线瞄准敌方 Shooter。
+"""Sniper —— 延迟 250ms 后求解，直线瞄准敌方 Emitter。
 
 V1.1 输入契约见 sniper/solver.py。延迟发生在**参赛入口内部**，
 因此计时仍然落在 GO 之后（bootstrap 在收到 GO 之前不会执行本文件）。
+
+延迟取 250ms 而不是贴近上限：这个 fixture 的用途只是「比 sniper 慢」，
+给先手判定当对照组。原先的 400ms 只给 500ms 预算留了 100ms 余量 ——
+机器一忙（例如全量套件正在跑）它自己就会 TIMEOUT，
+把一次负载抖动变成一次假红。250ms 相对 sniper 仍是十倍以上的差距，语义不变。
 """
 
 import argparse
@@ -68,7 +73,7 @@ def num(v):
 
 
 def main():
-    time.sleep(0.4)
+    time.sleep(0.25)
     args, public, reveal = load_input()
     team = args.team
     other = "B" if team == "A" else "A"

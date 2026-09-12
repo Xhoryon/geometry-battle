@@ -9,6 +9,8 @@
  */
 
 import { useEffect, useState } from 'react';
+import { bytesToBase64, unzipToFiles } from './zip';
+import { JUDGE_READ_PATHS, WS_INVALID_TOKEN, teamOfTopic } from '../../../src/server/protocol';
 import type {
   CommandResult,
   JudgeBoard,
@@ -88,19 +90,111 @@ export function useTrajectory(handle: { id: string; round: number } | null): Tra
 }
 
 // ============================================================================
+// 访问令牌（V1.2 Final RC Audit 的 P1 修复）
+// ============================================================================
+
+/**
+ * 从页面 URL 的 **fragment** 里读令牌。
+ *
+ * 用 `#t=` 而不是 `?t=`：fragment **不发给服务端** —— 既不进 request-line，
+ * 也不进 `Referer`，服务端日志里更没有。回退到 `location.search` 只是为了让
+ * 手工调试（`?t=...`）也能用。
+ *
+ * 令牌是 **capability**，不是账号密码：拿到它就能行使那一队的权限。
+ * 所以每队链接由裁判台单独发放（每场轮换），不要转给别人。
+ */
+function readAccessToken(): string | null {
+  if (typeof location === 'undefined') return null;
+  const hash = location.hash.startsWith('#') ? location.hash.slice(1) : location.hash;
+  const fromHash = new URLSearchParams(hash).get('t');
+  if (fromHash) return fromHash;
+  return new URLSearchParams(location.search).get('t');
+}
+
+/**
+ * 令牌**每次现读**，不缓存。
+ *
+ * 缓存过一次之后，换场时那个坑就来了：组织者发的新链接与原链接**只差 fragment**，
+ * 而浏览器对「仅 fragment 变化」的导航**不会重新加载文档** —— SPA 会带着上一场的
+ * 令牌继续跑，用户看到「令牌已失效」，怎么刷新都不生效（因为刷新也保留新 fragment，
+ * 但模块级缓存已经定死）。现读就没有这个问题：下一次请求自动用新令牌。
+ * `useBoard` 另需监听 `hashchange` 重连 WS（见下）。
+ */
+export function getAccessToken(): string | null {
+  return readAccessToken();
+}
+
+function authHeaders(): Record<string, string> {
+  const t = getAccessToken();
+  // REST 走请求头（POST 尤其不该把令牌放 request-line）。
+  // WS 只能走查询串 —— 浏览器无法给 WebSocket 设请求头，见下面的 useBoard。
+  return t ? { 'X-GB-Token': t } : {};
+}
+
+/**
+ * 这一页的访问状态。
+ *
+ * **三种失败必须分开**，否则现场只会看到一句「未连接」，而它们的处置完全不同：
+ *   - `missing`：链接里就没带令牌 → 用错了链接，去裁判台复制正确的那条；
+ *   - `unauthorized`：令牌无效 / 已过期（裁判开了新的一场）→ 索取本场新链接；
+ *   - `unreachable`：服务没响应 → 去看服务是否还活着。
+ */
+export type AccessState = 'ok' | 'missing' | 'unauthorized' | 'unreachable';
+
+/** 能证明「这个 topic 的令牌是对的」的那个只读端点；`spectator` 不需要令牌 */
+function probePath(topic: Topic): string | null {
+  if (topic === 'judge') return '/api/judge/state';
+  const team = teamOfTopic(topic);
+  return team ? `/api/team/state?team=${team.toLowerCase()}` : null;
+}
+
+/**
+ * 用一次 REST 探测拿到**服务端的权威判据**，而不是让前端去猜。
+ *
+ * WS 侧的 4401 也能说明「令牌无效」，但 `onclose` 的 1006 分不清
+ * 「服务没起来」和「网络断了」；先探一次 REST 就能把三者明确分开。
+ */
+async function probeAccess(topic: Topic): Promise<AccessState> {
+  const p = probePath(topic);
+  if (!p) return 'ok'; // 观众大屏：本来就不需要令牌
+  if (!getAccessToken()) return 'missing';
+  try {
+    const res = await fetch(p, { headers: authHeaders() });
+    return res.status === 401 ? 'unauthorized' : 'ok';
+  } catch {
+    return 'unreachable';
+  }
+}
+
+// ============================================================================
 // WS board 订阅
 // ============================================================================
 
 export interface BoardFeed<T> {
   board: T | null;
+  /** WS 是否在线。断线时页面自己决定怎么显示（三条板都显示同一个「未连接」标记） */
   connected: boolean;
-  error: string | null;
+  /** 这一页的访问状态 —— 页面据此给出「缺令牌 / 令牌过期 / 服务没起来」三种不同的下一步 */
+  access: AccessState;
 }
 
 export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFeed<T> {
   const [board, setBoard] = useState<T | null>(null);
   const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [access, setAccess] = useState<AccessState>('ok');
+  /** 令牌换代计数：fragment 变了就 +1，逼下面的 effect 重连 */
+  const [tokenVersion, setTokenVersion] = useState(0);
+
+  /**
+   * 换场时组织者发来的新链接与原链接**只差 fragment**，而浏览器对这类导航
+   * **不会重新加载文档** —— 不监听 `hashchange` 的话，WS 会一直用上一场的令牌，
+   * 页面停在「令牌已失效」上。用户把新链接粘进地址栏正是这个路径。
+   */
+  useEffect(() => {
+    const onHash = (): void => setTokenVersion((v) => v + 1);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
 
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -108,15 +202,24 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
     let retry = 0;
     let retryTimer: number | undefined;
 
+    // 先探一次 REST，拿到服务端的权威判据 —— 别让前端去猜是哪一种失败
+    setAccess('ok');
+    void probeAccess(topic).then((a) => {
+      if (!disposed && a !== 'ok') setAccess(a);
+    });
+
     const open = (): void => {
       if (disposed) return;
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(`${proto}://${location.host}/ws?topic=${topic}`);
+      // 令牌只能走查询串：浏览器**无法**给 WebSocket 设请求头。
+      const t = getAccessToken();
+      const query = `topic=${encodeURIComponent(topic)}${t ? `&t=${encodeURIComponent(t)}` : ''}`;
+      ws = new WebSocket(`${proto}://${location.host}/ws?${query}`);
 
       ws.onopen = () => {
         retry = 0;
         setConnected(true);
-        setError(null);
+        setAccess('ok'); // 连上了就说明令牌是好的（也覆盖「服务重启后恢复」）
       };
       ws.onmessage = (ev: MessageEvent<string>) => {
         let msg: ServerMessage;
@@ -134,9 +237,19 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
       ws.onerror = () => {
         /* onclose 会紧随其后，统一在那里重连 */
       };
-      ws.onclose = () => {
+      ws.onclose = (ev: CloseEvent) => {
         setConnected(false);
         if (disposed) return;
+        // 4401 = 服务端明确说「令牌无效」（见 src/server/ws.ts 的 WS_INVALID_TOKEN）。
+        // **必须与 1006（服务重启 / 页面休眠）分开**：令牌不对时再连一万次也没用，
+        // 而下面是无上限退避重连 —— 不区分的话，换场之后队伍页会带着过期令牌
+        // 永久狂刷，现场只看到一句「未连接」，真实原因被藏起来。
+        if (ev.code === WS_INVALID_TOKEN) {
+          setAccess('unauthorized');
+          // 上一场的轨迹不要留在这一场
+          trajCache.clear();
+          return;
+        }
         retry += 1;
         // 服务重启 / 页面休眠都会走到这里；退避重连，最长 5s
         retryTimer = window.setTimeout(open, Math.min(5000, 250 * retry));
@@ -156,9 +269,10 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       ws?.close();
     };
-  }, [topic]);
+    // tokenVersion 变化（fragment 换代）→ 重跑整个 effect：重新探测 + 换新令牌重连
+  }, [topic, tokenVersion]);
 
-  return { board, connected, error };
+  return { board, connected, access };
 }
 
 // ============================================================================
@@ -169,7 +283,8 @@ export async function command(path: string, body: unknown = {}): Promise<Command
   try {
     const res = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // 令牌走请求头：POST 的 request-line 最容易进日志 / 错误报告 / 截图
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(body),
     });
     const json = (await res.json()) as CommandResult;
@@ -216,4 +331,126 @@ export function useReplayList(): { replays: ReplayIndexEntry[]; error: string | 
     };
   }, []);
   return { replays, error };
+}
+
+// ============================================================================
+// 参赛者端（V1.2 §一）
+// ============================================================================
+
+export type TeamSide = 'A' | 'B';
+
+export const TEAM_PATHS = {
+  source: '/api/team/source',
+  upload: '/api/team/upload',
+  selectEmitter: '/api/team/select-emitter',
+  lockEmitter: '/api/team/lock-emitter',
+} as const;
+
+/**
+ * 读取槽位内的一个源文件（只读浏览；服务端会做路径校验）。
+ *
+ * 参赛者端（`/api/team/source`）与裁判端（`/api/judge/source`）只有**路径**不同，
+ * 读取与防护是服务端同一条实现 —— 这里也就不必写两份 fetch。
+ */
+/**
+ * 一次源码预览的结果。
+ *
+ * `binary` / `truncated` 是服务端的**受控降级**（不是错误）：
+ * 二进制不尝试解码，超长如实标注「已截断」。
+ */
+export interface SourcePreview {
+  ok: boolean;
+  errors: string[];
+  text?: string;
+  truncated?: boolean;
+  binary?: boolean;
+}
+
+async function fetchSource(base: string, team: TeamSide, relPath: string): Promise<SourcePreview> {
+  try {
+    const res = await fetch(`${base}?team=${team.toLowerCase()}&path=${encodeURIComponent(relPath)}`, {
+      headers: authHeaders(),
+    });
+    return (await res.json()) as SourcePreview;
+  } catch (e) {
+    return { ok: false, errors: [`无法连接到本地服务：${(e as Error).message}`] };
+  }
+}
+
+/** 参赛者视角：只读本队的源码 */
+export function fetchTeamSource(team: TeamSide, relPath: string): Promise<SourcePreview> {
+  return fetchSource(TEAM_PATHS.source, team, relPath);
+}
+
+/** 裁判 / 主办方视角：可读**任一队**的源码（核对选手交上来的到底是什么） */
+export function fetchJudgeSource(team: TeamSide, relPath: string): Promise<SourcePreview> {
+  return fetchSource(JUDGE_READ_PATHS.source, team, relPath);
+}
+
+/**
+ * 去掉一层**公共的顶层目录**。
+ *
+ * 「把文件夹压缩成 zip」和「选一个目录上传」都会让所有文件带上同一个外层目录名
+ * （`my-algo/solver.py`）。但平台要求入口就在**包根目录**，所以这一层必须去掉，
+ * 否则一个结构完全正常的包会因为「缺少固定入口 solver.py」被拒。
+ *
+ * 只有**所有**文件都共享同一个首段时才剥；`a/x.py` + `b/y.py` 这种不剥。
+ */
+function stripCommonRoot(
+  files: { path: string; contentBase64: string }[]
+): { path: string; contentBase64: string }[] {
+  if (files.length === 0) return files;
+  const first = files[0].path.split('/').filter(Boolean);
+  if (first.length < 2) return files;
+  const root = first[0];
+  const allShare =
+    files.every((f) => {
+      const parts = f.path.split('/').filter(Boolean);
+      return parts.length >= 2 && parts[0] === root;
+    }) &&
+    // 单文件也要剥：用户的包里可能确实只有 solver.py
+    files.some((f) => f.path.split('/').filter(Boolean).length > 1);
+  if (!allShare) return files;
+  return files.map((f) => ({ ...f, path: f.path.split('/').filter(Boolean).slice(1).join('/') }));
+}
+
+/**
+ * 把浏览器选到的文件变成「路径 + base64」清单。
+ *
+ * 三种来源统一到这里：
+ *   - 单个 `solver.py` → 一个文件；
+ *   - 目录（`webkitdirectory`）→ `FileList` 里每一项带 `webkitRelativePath`；
+ *   - `.zip` → 交给 `unzipToFiles` 在浏览器里展开。
+ *
+ * 三条路都必须产出**同一种形状**，因为服务端只有一条安装流水线。
+ */
+export async function filesToUploadPayload(list: FileList): Promise<{
+  files: { path: string; contentBase64: string }[];
+  errors: string[];
+}> {
+  const picked = Array.from(list);
+  if (picked.length === 0) return { files: [], errors: ['没有选择任何文件'] };
+
+  const collected: { path: string; contentBase64: string }[] = [];
+  const errors: string[] = [];
+
+  for (const f of picked) {
+    // 每个 zip 都在浏览器里展开 —— **不管同时选了几个文件**。
+    // 此前只在「恰好选了一个文件、且它是 zip」时才展开：一个 zip 和别的文件
+    // 一起选中时，它的原始字节会被当成算法文件上传，得到一个莫名其妙的失败。
+    if (/\.zip$/i.test(f.name)) {
+      try {
+        collected.push(...(await unzipToFiles(await f.arrayBuffer())));
+      } catch (e) {
+        errors.push(`${f.name} 解压失败：${(e as Error).message}`);
+      }
+      continue;
+    }
+    const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+    collected.push({ path: rel, contentBase64: bytesToBase64(new Uint8Array(await f.arrayBuffer())) });
+  }
+
+  // 有任何一份没解出来就整体不提交 —— 半个包上传上去比失败更糟
+  if (errors.length > 0) return { files: [], errors };
+  return { files: stripCommonRoot(collected), errors: [] };
 }

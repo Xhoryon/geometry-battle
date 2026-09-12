@@ -189,7 +189,9 @@ export function validateAttackFunction(
   } else if (Math.abs(metrics.shooterResidual) > epsilon) {
     issues.push({
       code: 'NOT_THROUGH_SHOOTER',
-      message: `f(${shooter.x}) = ${yAtShooter}，与 Shooter y = ${shooter.y} 相差 ${Math.abs(metrics.shooterResidual).toExponential(3)} > ε=${epsilon}`,
+      // 消息正文用现行术语 Emitter。错误**码**保留原样：它是对外可见的稳定标识，
+      // 已被测试与 competitor-kit 文档引用，改名属于契约变更，不在这里顺手做。
+      message: `f(${shooter.x}) = ${yAtShooter}，与 Emitter y = ${shooter.y} 相差 ${Math.abs(metrics.shooterResidual).toExponential(3)} > ε=${epsilon}`,
       at: shooter.x,
     });
   }

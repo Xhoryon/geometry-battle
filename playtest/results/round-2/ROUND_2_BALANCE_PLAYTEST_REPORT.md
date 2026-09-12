@@ -187,7 +187,7 @@ PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
 Team A / Team B 耗时 14.7 / 14.9 ms（上限 2000 ms）
 ```
 
-同一哈希在两组实验槽位的安装报告（`playtest/slots/**/install-report.json`）中记录一致，可交叉核对。**该安装报告不随本仓库发布** —— 它记录了本机绝对路径，且可由 `gb_playtest.py --install` 从 `playtest/competitors/` 重新生成；复现方法见 `playtest/results/reproducibility/README.md`。
+同一哈希在两组实验槽位安装报告（`install-report.json`）中记录一致，可交叉核对。
 
 ### 4.2 离线鲁棒性矩阵（§10）
 
@@ -882,7 +882,7 @@ python3 playtest/harness/gb_round2.py run --pair fast-vs-hybrid \
 
 | 路径 | 内容 |
 |---|---|
-| `playtest/results/round-2/raw/<pair>/` | 逐场原始产物。**本公开副本为精简证据包**：每对阵保留 2 个代表性 seed × 2 个先后手为完整产物（match / replay / audit / console），其余场次保留 `match.json` + `summary.json`（`reproduce_round1.py` 与逐场对账所需）；完整重跑方法见 `playtest/results/reproducibility/README.md` |
+| `playtest/results/round-2/raw/<pair>/` | 180 场逐场原始产物（match / replay / audit / console） |
 | `playtest/results/round-2/metrics-<pair>.json` | 逐场 records + 汇总指标 |
 | `playtest/results/round-2/round-2-summary.json` | 三组汇总 + §21 分位 + CF 汇总 |
 | `playtest/results/round-2/cf/verify-*.json` | **§18 门禁产物（逐项计数与失配明细）** |

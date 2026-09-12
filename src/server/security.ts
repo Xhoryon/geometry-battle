@@ -12,6 +12,23 @@
  *
  * 三道闸：Host 白名单、Origin 必须缺席或同源、POST 必须是 JSON。
  * 另外**不出 CORS 响应头** —— 跨源预检直接失败。
+ *
+ * ---
+ *
+ * ## 本文件**不**负责的那一层：调用方身份
+ *
+ * 上面三道闸回答的是「这个请求来自哪个页面」，**不回答「你是谁」**。
+ * 一个本机进程（或同机的另一个浏览器标签页）完全可以带着合法的 Host / Origin
+ * 去请求**别人那一队**的端点。那一层由 `tokens.ts` 的 capability token 负责：
+ *
+ *   - `/api/judge/*`、`ws?topic=judge`         → 裁判令牌
+ *   - `/api/team/*`、`ws?topic=team-{a,b}`     → **该队**的令牌
+ *   - spectator / replay / trajectory / health / 静态资源 → 不需要令牌
+ *     （它们是脱敏只读投影，大屏语义要求可匿名访问）
+ *
+ * 门禁顺序是硬约束：**协议层三闸 → body 解析 → 鉴权**。403 / 415 / 400 / 404
+ * 的语义不能因为多了一层令牌而改变（`tests/team-auth.ts` 与
+ * `tests/web-server.ts` 的边界用例钉住了这一点）。
  */
 
 import type { IncomingMessage } from 'http';

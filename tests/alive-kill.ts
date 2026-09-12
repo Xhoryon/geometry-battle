@@ -82,10 +82,13 @@ test('alive-kill: MatchEngine 中存活数严格递减且只作用于敌人', as
   engine.upload('B', ARC_B);
   assert((await engine.preflight()).ok, 'preflight 应通过');
   engine.startMatch();
+  engine.autoSelectEmitters();
 
   const before = engine.getSnapshot();
-  assertEqual(before.alive.A, 6, '开局 A 应为 6');
-  assertEqual(before.alive.B, 6, '开局 B 应为 6');
+  // V1.2：pointCount=6 生成 6 个点，其中 1 个被选为本场的 Emitter（不是战斗点），
+  // 因此开局双方各 **5 个战斗点**。
+  assertEqual(before.alive.A, 5, '开局 A 应为 5 个战斗点（6 个点里 1 个是 Emitter）');
+  assertEqual(before.alive.B, 5, '开局 B 应为 5 个战斗点（6 个点里 1 个是 Emitter）');
 
   let guard = 0;
   let total = before.alive.A + before.alive.B;
@@ -115,7 +118,7 @@ test('alive-kill: MatchEngine 中存活数严格递减且只作用于敌人', as
 
   const final = engine.getSnapshot();
   assert(final.alive.A === 0 || final.alive.B === 0, '比赛结束时必有一方归零');
-  assert(final.alive.A + final.alive.B < 12, '存活总数必须下降');
+  assert(final.alive.A + final.alive.B < 10, '存活总数必须下降');
   assert(engine.getWinner() !== null, '必须决出胜者');
 });
 
@@ -133,6 +136,7 @@ test('alive-kill: 击杀在整场比赛中只被应用一次', async () => {
   engine.upload('B', ARC_B);
   assert((await engine.preflight()).ok, 'preflight 应通过');
   engine.startMatch();
+  engine.autoSelectEmitters();
 
   const seen = new Set<string>();
   let guard = 0;

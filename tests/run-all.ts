@@ -18,6 +18,7 @@ const SUITES = [
   'official-starter',
   'map-fairness',
   'obstacle-block',
+  'obstacle-geometry',
   'fixed-emitter',
   'locked-attack-right',
   'termination',
@@ -41,13 +42,19 @@ const SUITES = [
   'arena-view',
   'judge-console',
   'operator-e2e',
+  'server-team',
   'runtime-manifest',
   'competitor-kit',
+  'demo-repro',
   // Web UI（V1.1 Local Web UI）—— 投影层纯函数 + 真 HTTP/WS 端到端。
   // 浏览器演练（Playwright）不在这里：它需要构建前端与真实浏览器，
   // 由 `npm run e2e` 单独跑。
   'web-projection',
+  'web-zip',
   'web-server',
+  // 调用方身份绑定（V1.2 Final RC Audit 的 P1）：参赛者面 / 裁判面的令牌门禁，
+  // 以及「哪些面**必须**保持匿名」的反向对照。
+  'team-auth',
 ];
 
 const requested = process.argv.slice(2).filter((a) => !a.startsWith('-'));

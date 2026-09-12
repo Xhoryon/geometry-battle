@@ -22,11 +22,22 @@ import { Replay } from '../core/Logs';
 import {
   COMMAND_PATHS,
   CommandResult,
+  JUDGE_READ_PATHS,
+  TEAM_COMMAND_PATHS,
   TRAJECTORY_MAX_POINTS,
   WireDifficulty,
 } from './protocol';
+import { MAX_UPLOAD_BYTES, UploadedFile } from './upload';
 
 const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * 上传端点的体积上限。
+ *
+ * 「装下 8MB 的包 + base64 的 33% 开销 + JSON 包装」还留有余量。
+ * 其它端点仍然受 64KB 限制 —— 不因为多了一个上传口就把全局闸门放松。
+ */
+const MAX_UPLOAD_BODY_BYTES = MAX_UPLOAD_BYTES + 2 * 1024 * 1024;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -65,13 +76,16 @@ function sendText(res: ServerResponse, status: number, text: string): void {
   res.end(text);
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(
+  req: IncomingMessage,
+  limit = MAX_BODY_BYTES
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const chunk of req) {
     const b = chunk as Buffer;
     total += b.length;
-    if (total > MAX_BODY_BYTES) throw new Error('请求体过大');
+    if (total > limit) throw new Error('请求体过大');
     chunks.push(b);
   }
   if (chunks.length === 0) return {};
@@ -84,6 +98,104 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
 
 function asTeam(v: unknown): 'A' | 'B' | null {
   return v === 'A' || v === 'B' ? v : null;
+}
+
+/** 查询串里的队别（大小写不敏感：`?team=a` 与 `?team=A` 都收） */
+function asTeamQuery(v: string | null): 'A' | 'B' | null {
+  if (typeof v !== 'string') return null;
+  const u = v.trim().toUpperCase();
+  return u === 'A' || u === 'B' ? (u as 'A' | 'B') : null;
+}
+
+// ============================================================================
+// 访问令牌（V1.2 Final RC Audit 的 P1 修复）
+// ============================================================================
+
+/** 需要**裁判**令牌的命令（精确路径，不是前缀匹配） */
+const JUDGE_COMMANDS: readonly string[] = Object.values(COMMAND_PATHS);
+/** 需要**对应队伍**令牌的命令 */
+const TEAM_COMMANDS: readonly string[] = Object.values(TEAM_COMMAND_PATHS);
+
+const UNAUTHORIZED_MESSAGE = '缺少或无效的访问令牌';
+const UNAUTHORIZED: CommandResult = { ok: false, errors: [UNAUTHORIZED_MESSAGE] };
+
+/** 401 —— 鉴权失败是**协议层**错误，所以用 4xx 而不是既有的「200 + ok:false」 */
+function sendUnauthorized(res: ServerResponse): void {
+  sendJson(res, 401, { ok: false, errors: [UNAUTHORIZED_MESSAGE] });
+}
+
+/**
+ * 取出调用方出示的令牌。
+ *
+ * - **POST 只认请求头**：request-line 是最容易进日志、进错误报告、进截图的位置，
+ *   而 POST 完全没必要把令牌放进去（浏览器能设头）。
+ * - **GET 允许回退到 `?t=`**：纯粹为了让 curl / 测试 / 下一次审计能一行命令探测。
+ * - **WS 只能走 `?t=`**：浏览器无法给 `WebSocket` 设置请求头（见 `ws.ts`）。
+ *
+ * 注意令牌**不是**秘密凭据（没有用户名密码），它是 capability：持有即可行使其权限。
+ * 因此「查询串里出现令牌」在 GET/WS 上是可接受的，而页面 URL 本身改用 fragment
+ * `#t=`，让它既不进 request-line 也不进 `Referer`。
+ */
+function presentedToken(req: IncomingMessage, url: URL, method: string): string | null {
+  const h = req.headers['x-gb-token'];
+  const header = Array.isArray(h) ? h[0] ?? null : h ?? null;
+  if (header) return header;
+  if (method === 'POST') return null;
+  return url.searchParams.get('t');
+}
+
+/**
+ * 裁判面的门禁。
+ *
+ * 为什么**必须**有这一道：`boards.ts` 的裁判板「Emitter 选择在这里给全」
+ * （参赛者板才按队别裁剪），而 `Match.ts` 的快照在队伍**一选就**填 `emitterChoice`。
+ * 也就是说裁判板在 reveal 前就带着双方的锚点身份 —— 所以只给参赛者加令牌
+ * 根本关不掉这个洞：打开 `/judge` 就看到了。
+ */
+function requireJudge(session: MatchSession, presented: string | null): CommandResult | null {
+  return session.tokens.isJudge(presented) ? null : UNAUTHORIZED;
+}
+
+/**
+ * 参赛者面的门禁：令牌解析出的队伍必须**与入参一致**。
+ *
+ * 刻意不做「用令牌决定队伍、忽略入参」：那样一个客户端 bug（模板变量拼错）会
+ * **静默操作另一支队伍**并回 `ok:true`。现场「请求成功了但动的是别人」比
+ * 「401 被拒」坏一个数量级。而且 `body.team` / `?team=` 在分派与投影里到处都是，
+ * 宣称忽略它而代码里还留着，就是下一次回归的种子。
+ */
+function requireTeam(
+  session: MatchSession,
+  team: 'A' | 'B',
+  presented: string | null
+): CommandResult | null {
+  const resolved = session.tokens.teamOf(session.currentMatchId(), presented);
+  return resolved === team ? null : UNAUTHORIZED;
+}
+
+/**
+ * 命令的鉴权分派。
+ *
+ * 返回 `null` 表示放行**或**「这个路径不归鉴权管」—— 未知路径仍然走
+ * `dispatchCommand` 的 `default → null → 404`。**不能**用
+ * `pathname.startsWith('/api/judge/')`：那会把 `POST /api/judge/not-a-thing`
+ * 从 404 变成 401，既有用例「未知接口回 404」当场变红。
+ */
+function authorizeCommand(
+  session: MatchSession,
+  pathname: string,
+  body: Record<string, unknown>,
+  presented: string | null
+): CommandResult | null {
+  if (JUDGE_COMMANDS.includes(pathname)) return requireJudge(session, presented);
+  if (TEAM_COMMANDS.includes(pathname)) {
+    const team = asTeam(body.team);
+    // 形状不对时**不**在这里拒绝：交给 dispatchCommand 回它那句「team 必须是 A 或 B」，
+    // 保持既有语义（那是人话提示，不是鉴权失败）。
+    if (!team) return null;
+    return requireTeam(session, team, presented);
+  }
+  return null;
 }
 
 function asDifficulty(v: unknown): WireDifficulty | undefined {
@@ -264,13 +376,24 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
       return;
     }
 
+    // 协议层三闸（Host / Origin / Content-Type）**先于**鉴权：
+    // 403 / 415 的语义不能因为多了一层令牌而改变。
+    const presented = presentedToken(req, url, method);
+
     try {
       // ---- 只读 ----
       if (method === 'GET' && pathname === '/api/health') {
-        sendJson(res, 200, { ok: true, version: 1, matchId: deps.session.getBoard('judge').matchId });
+        // 只回一个 id。**不要**投影整块裁判板：那会走 packageFiles + slotStates +
+        // inspectPackage（读盘 + 哈希），而这个端点**故意**不设卡，
+        // 于是它会变成一个任何调用方都能踩的放大器。
+        sendJson(res, 200, { ok: true, version: 1, matchId: deps.session.currentMatchId() });
         return;
       }
       if (method === 'GET' && pathname === '/api/judge/state') {
+        if (requireJudge(deps.session, presented)) {
+          sendUnauthorized(res);
+          return;
+        }
         sendJson(res, 200, { ok: true, board: deps.session.getBoard('judge') });
         return;
       }
@@ -288,6 +411,72 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
         sendJson(res, 200, { ok: true, replay: downsampleReplay(r.replay), match: r.match });
         return;
       }
+      // ---- 参赛者端只读（V1.2）----
+      if (method === 'GET' && pathname === '/api/team/state') {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        // 形状（400）先于身份（401）：缺参数和没身份是两件事，不该混成一句
+        if (requireTeam(deps.session, team, presented)) {
+          sendUnauthorized(res);
+          return;
+        }
+        sendJson(res, 200, { ok: true, board: deps.session.getBoard(team === 'A' ? 'team-a' : 'team-b') });
+        return;
+      }
+      if (method === 'GET' && pathname === '/api/team/source') {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        const rel = url.searchParams.get('path') ?? '';
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        if (requireTeam(deps.session, team, presented)) {
+          sendUnauthorized(res);
+          return;
+        }
+        const r = deps.session.readOwnSource(team, rel);
+        if (!r.ok) {
+          sendJson(res, 400, { ok: false, errors: r.errors });
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          path: rel,
+          text: r.text,
+          truncated: r.truncated ?? false,
+          binary: r.binary ?? false,
+        });
+        return;
+      }
+      // ---- 裁判端只读（V1.2 §一：主办方核对选手交上来的源码）----
+      if (method === 'GET' && pathname === JUDGE_READ_PATHS.source) {
+        const team = asTeamQuery(url.searchParams.get('team'));
+        const rel = url.searchParams.get('path') ?? '';
+        if (!team) {
+          sendJson(res, 400, { ok: false, errors: ['team 必须是 a / A / b / B'] });
+          return;
+        }
+        if (requireJudge(deps.session, presented)) {
+          sendUnauthorized(res);
+          return;
+        }
+        const r = deps.session.readSlotSource(team, rel);
+        if (!r.ok) {
+          sendJson(res, 400, { ok: false, errors: r.errors });
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          path: rel,
+          text: r.text,
+          truncated: r.truncated ?? false,
+          binary: r.binary ?? false,
+        });
+        return;
+      }
       if (method === 'GET' && pathname.startsWith('/api/trajectory/')) {
         const id = decodeURIComponent(pathname.slice('/api/trajectory/'.length));
         const traj = deps.session.getTrajectory(id);
@@ -301,7 +490,19 @@ async function route(deps: HttpDeps, req: IncomingMessage, res: ServerResponse):
 
       // ---- 命令（全部 POST） ----
       if (method === 'POST') {
-        const body = await readJsonBody(req);
+        // 只有上传端点放宽体积上限；其余一律 64KB
+        const limit = pathname === TEAM_COMMAND_PATHS.upload ? MAX_UPLOAD_BODY_BYTES : undefined;
+        const body = await readJsonBody(req, limit);
+        // 鉴权排在 body 解析**之后**，这是被既有用例钉死的顺序：
+        //   - 坏 JSON 必须仍然回 400（协议层错误先于身份）
+        //   - 未知路径必须仍然回 404（`authorizeCommand` 对非命令路径返回 null）
+        // 代价：上传端点在鉴权前会缓冲一个请求体。那是**既有行为**（此前无条件读），
+        // 且已有 MAX_UPLOAD_BODY_BYTES 封顶，不新增暴露面。
+        const denied = authorizeCommand(deps.session, pathname, body, presented);
+        if (denied) {
+          sendUnauthorized(res);
+          return;
+        }
         const result = await dispatchCommand(deps.session, pathname, body);
         if (result === null) {
           sendJson(res, 404, { ok: false, errors: ['未知接口'] });
@@ -366,7 +567,43 @@ async function dispatchCommand(
       return session.compute();
     case COMMAND_PATHS.runToEnd:
       return session.runToEnd();
+    case COMMAND_PATHS.prepare:
+      return session.prepareMatch();
+
+    // ---- 参赛者端命令（V1.2）----
+    case TEAM_COMMAND_PATHS.upload: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      const files = asUploadedFiles(body.files);
+      if (!files) return { ok: false, errors: ['files 必须是 [{path, contentBase64}]'] };
+      return session.uploadPackage(team, files);
+    }
+    case TEAM_COMMAND_PATHS.selectEmitter: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      const pointId = typeof body.pointId === 'string' ? body.pointId : '';
+      if (!pointId) return { ok: false, errors: ['缺少 pointId'] };
+      return session.selectEmitter(team, pointId);
+    }
+    case TEAM_COMMAND_PATHS.lockEmitter: {
+      const team = asTeam(body.team);
+      if (!team) return { ok: false, errors: ['team 必须是 A 或 B'] };
+      return session.lockEmitter(team);
+    }
     default:
       return null;
   }
+}
+
+/** 把请求体里的 files 字段收敛成受控形状；形状不对就返回 null（不猜） */
+function asUploadedFiles(v: unknown): UploadedFile[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: UploadedFile[] = [];
+  for (const item of v) {
+    if (!item || typeof item !== 'object') return null;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.path !== 'string' || typeof rec.contentBase64 !== 'string') return null;
+    out.push({ path: rec.path, contentBase64: rec.contentBase64 });
+  }
+  return out;
 }
