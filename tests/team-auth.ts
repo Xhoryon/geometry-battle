@@ -24,6 +24,7 @@ import * as http from 'http';
 import * as path from 'path';
 import { WebSocket } from 'ws';
 import { startServer, RunningServer } from '../src/server/main';
+import { WS_INVALID_TOKEN } from '../src/server/protocol';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const REPO = path.join(__dirname, '..');
@@ -485,6 +486,67 @@ test('team-auth: 换场之后旧队伍令牌失效，裁判令牌不受影响', 
     // 裁判令牌：**不随场次轮换** —— 否则组织者按一次 new-match 就锁死自己开着的裁判页
     const jb = await getJson(ctx, '/api/judge/state', ctx.judge);
     assertEqual(jb.status, 200, '裁判令牌不得随场次失效');
+  } finally {
+    await ctx.server.close();
+  }
+});
+
+test('team-auth: 换场必须断掉已建立的参赛者 WS，且断开前不再推新场次的 board', async () => {
+  const ctx = await boot();
+  try {
+    const { A: tokA } = ctx.toks();
+
+    // 保持观察：`expectMessages = 0` 表示一路收到关闭为止（不是收到一条就收工）
+    const watching = probeWs(ctx.server.port, `topic=team-a&t=${tokA}`, 0, 8000);
+    await new Promise((r) => setTimeout(r, 400)); // 让它先连上并收到旧场次的 hello+board
+
+    const r = await postJson(ctx, '/api/judge/new-match', {}, ctx.judge);
+    assert(r.body?.ok, `裁判开新场应成功：${JSON.stringify(r.body?.errors ?? [])}`);
+    const newMatchId = ctx.server.session.currentMatchId();
+
+    const out = await watching;
+    assert(out.opened, '（前置）这条连接本来应当能建立');
+    // **最关键的一条**：陈旧连接绝不能收到新场次的任何一条 board。
+    // 令牌轮换只让新请求失效；若不断开旧连接，它会带着上一场的授权继续读本队状态。
+    assertEqual(
+      out.messages.filter((m) => m.includes(newMatchId)),
+      [],
+      '换场后陈旧连接不得收到新场次的 board'
+    );
+    assert(
+      out.messages.length <= 2,
+      `换场后最多只该有旧场次的 hello+board，实际收到 ${out.messages.length} 条`
+    );
+    assertEqual(out.code, WS_INVALID_TOKEN, `换场应主动断开该连接（实际关闭码 ${out.code}）`);
+  } finally {
+    await ctx.server.close();
+  }
+});
+
+test('team-auth: 换场**不**影响裁判与观众的连接（它们本就该跨场开着）', async () => {
+  const ctx = await boot();
+  try {
+    // 反向对照：上面那条修复最容易犯的错是「一律断开」——
+    // 裁判令牌是进程生命周期的，观众大屏更是本来就该跨场一直开着。
+    const j = probeWs(ctx.server.port, `topic=judge&t=${ctx.judge}`, 0, 5000);
+    const s = probeWs(ctx.server.port, 'topic=spectator', 0, 5000);
+    await new Promise((r) => setTimeout(r, 400));
+
+    const r = await postJson(ctx, '/api/judge/new-match', {}, ctx.judge);
+    assert(r.body?.ok, `裁判开新场应成功：${JSON.stringify(r.body?.errors ?? [])}`);
+    const newMatchId = ctx.server.session.currentMatchId();
+
+    const [jo, so] = await Promise.all([j, s]);
+    assertEqual(jo.code, null, '裁判连接不得因换场被断开');
+    assertEqual(so.code, null, '观众大屏连接不得因换场被断开');
+    assert(
+      jo.messages.some((m) => m.includes(newMatchId)),
+      '裁判连接应当继续收到新场次的 board'
+    );
+    assert(
+      so.messages.some((m) => m.includes(newMatchId)),
+      '观众大屏应当继续收到新场次的 board'
+    );
   } finally {
     await ctx.server.close();
   }

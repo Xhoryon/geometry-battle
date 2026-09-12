@@ -116,6 +116,21 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
       ws.send(JSON.stringify(msg));
     };
 
+    /**
+     * 这条连接是在**哪个场次**上通过授权的。
+     *
+     * 参赛者令牌随 `matchId` 派生，所以「换场」等于「令牌轮换」。但轮换只让
+     * **新请求**失效 —— 已经建立的 WS 不会自己重扫，它会带着旧场次的授权继续
+     * 收到新场次的（本队）只读状态。那与 `README.md` 的承诺不符：
+     * 「上一场的人不该继续持有下一场的访问权」。
+     *
+     * 所以这里记住授权时的场次，推送前发现已经换场就断开。
+     * 只对参赛者 topic 生效：裁判令牌是进程生命周期的，观众大屏本来就该
+     * 跨场一直开着。
+     */
+    const teamTopic = teamOfTopic(topic);
+    const authorizedMatchId = session.currentMatchId();
+
     // 连接建立：hello + 当前 board + 当前轨迹（若有）—— 重连即恢复现场
     send({ type: 'hello', topic, seq: ++seq });
     const board = session.getBoard(topic);
@@ -128,6 +143,13 @@ export function attachWebSocket(server: Server, session: MatchSession): WsHub {
     }
 
     const unsubscribe = session.onChange((ev) => {
+      // 换场即断，**在推送之前**判断 —— 否则这条陈旧连接会先收到一条新场次的 board
+      // 再被关闭，而「收到过新场次的本队状态」正是要避免的那件事。
+      if (teamTopic && session.currentMatchId() !== authorizedMatchId) {
+        unsubscribe();
+        ws.close(WS_INVALID_TOKEN, 'match-rotated');
+        return;
+      }
       if (ev.kind === 'board') {
         send({ type: 'board', topic, seq: ++seq, board: session.getBoard(topic) });
       } else {

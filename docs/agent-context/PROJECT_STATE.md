@@ -148,6 +148,11 @@ Emitter 选择、代对方改选/锁定锚点、覆盖对方已提交的算法�
 - 队伍令牌 = `HMAC-SHA256(裁判令牌, \`${matchId}:${team}\`)`（`src/server/tokens.ts`）。
   `newMatch()` 整体换引擎 ⇒ `matchId` 必变 ⇒ 上一场的令牌**自动失效**。
   轮换因此不需要任何可变状态，也不存在「忘了清旧令牌」「轮换与在途请求竞争」。
+- **换场会主动断开已建立的参赛者 WS。** 令牌轮换只让**新请求**失效 —— 已经建立的
+  WS 不会自己重扫，它会带着上一场的授权继续收到新场次的（本队）只读状态。
+  `ws.ts` 因此在连接建立时记住授权时的 `matchId`，推送前发现已换场就 `close(4401)`
+  （**在推送之前**判断，否则陈旧连接会先收到一条新场次的 board 再被关闭）。
+  只对参赛者 topic 生效 —— 裁判令牌是进程生命周期的，观众大屏本来就该跨场开着。
 - 传输：HTTP POST **只认请求头** `X-GB-Token`（令牌不进 request-line）；
   HTTP GET 允许回退 `?t=`（方便 curl / 测试探测）；WS 只能走 `?t=`
   （浏览器无法给 WebSocket 设请求头）。
@@ -167,9 +172,10 @@ body 解析（坏 JSON 400）→ **鉴权（401）** → 分派。且门禁必�
 **裁判台链接不得外传**：裁判板合法地同时显示双方的选择，拿着裁判令牌就等于
 同时拿到两队的权限，也能下达 `reveal` / `start` / `reset` / `install`。
 
-回归：`tests/team-auth.ts`（第 37 个套件）覆盖无令牌 / 错队令牌 / 裁判面无令牌 /
+回归：`tests/team-auth.ts`（第 37 个套件，12 条）覆盖无令牌 / 错队令牌 / 裁判面无令牌 /
 畸形令牌不 500 / 换场后旧令牌失效 / **WS 未授权时一个字节都不发** /
-以及「公开面仍须匿名可用」的反向对照。
+**换场必须断掉已建立的参赛者 WS 且断开前不再推新场次** /
+**换场不得影响裁判与观众的连接** / 以及「公开面仍须匿名可用」的反向对照。
 
 ### 锦标赛模式（默认开）
 
@@ -291,7 +297,7 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 36 套件（含 timing-fairness，约 10 分钟）
+npm test                                       # 全量 37 套件（含 timing-fairness，约 10 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
@@ -301,7 +307,7 @@ npm run e2e                                    # Playwright 浏览器演练（�
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 36/36 套件通过，exit 0
+npm test                            → 37/37 套件通过，exit 0
 npm run e2e                         → 3 passed，连续跑了两次
                                       （完整赛事演练 + ZIP 上传演练，各含连续两场真实对局）
 ```
