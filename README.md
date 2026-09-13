@@ -1172,27 +1172,26 @@ algorithm actually received cannot go unnoticed.
 
 ## 版本沿革 / Release provenance
 
-**中文.** 本仓库是**研发历史**。公开发布的是
-<https://github.com/Xhoryon/geometry-battle> —— 那是一份**独立脱敏导出**，
-与本地研发仓库的 SHA **不互见**。
+**中文.** 本仓库是 Geometry Battle 的**公开发布版本**，采用独立的脱敏历史。
 
-- 已发布的 tag：`v1.0.0-competition`、`v1.1.0-competition`、`v1.2.0-competition`。
-  它们**从不移动**，历史**从不改写**（不 force push、不 rebase 已发布的提交）。
-- V1.3（本地化）**尚未打 tag**。
-- 归档的试玩证据（`playtest/`）与历史审计（`Plans/Output/`）**保持原样**，
-  不因为术语更新而回改 —— 它们要作为历史证据可复现。
+- **公开 tag**：`v1.2.0`、`v1.3.0`、`v1.4.0`。
+- **内部审计来源**：
+  - V1.3 公开发布基于独立审计的内部快照 `febf1c69fb6cb78624811513149f477c4e30fac6`。
+  - V1.4 公开发布基于独立审计的内部快照 `7f6e39d0d4faaa34ca48981aaee44f0213a52337`。
+- **公开 Git 提交标识符与内部 SHA 刻意不同**，因为公开仓库使用经过脱敏的发布历史。
+- 已发布的 tag **从不移动**，历史**从不改写**（不 force push、不 rebase 已发布的提交）。
 
-**English.** This repository is the **development history**. The public release is
-<https://github.com/Xhoryon/geometry-battle> — an **independently sanitised export**
-whose SHAs are **not comparable** with this development repository.
+**English.** This repository is the **public release** of Geometry Battle, using an
+independent sanitized history.
 
-- Published tags: `v1.0.0-competition`, `v1.1.0-competition`, `v1.2.0-competition`.
-  They are **never moved** and the history is **never rewritten** (no force push, no
-  rebasing published commits).
-- V1.3 (localization) is **not tagged yet**.
-- Archived playtest evidence (`playtest/`) and historical audits (`Plans/Output/`) are
-  left as they are and are **not** rewritten just to modernise terminology — they have
-  to remain reproducible as historical evidence.
+- **Public tags**: `v1.2.0`, `v1.3.0`, `v1.4.0`.
+- **Internal audit provenance**:
+  - V1.3 public distribution prepared from independently audited internal snapshot `febf1c69fb6cb78624811513149f477c4e30fac6`.
+  - V1.4 public distribution prepared from independently audited internal snapshot `7f6e39d0d4faaa34ca48981aaee44f0213a52337`.
+- **Public Git commit identifiers intentionally differ from internal SHAs** because the
+  public repository uses a sanitized release history.
+- Published tags are **never moved** and the history is **never rewritten** (no force
+  push, no rebasing published commits).
 
 ---
 
