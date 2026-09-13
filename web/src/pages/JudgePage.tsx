@@ -23,6 +23,16 @@ import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { ComputeStatus } from '../components/ComputeStatus';
 import { AccessNotice } from '../components/AccessNotice';
 import { command, fetchJudgeSource, useBoard, useTrajectory } from '../api/client';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import {
+  PHASE_KEYS,
+  WIZARD_STAGES,
+  WIZARD_STAGE_KEYS,
+  difficultyLabel,
+  localizeRoundErrors,
+} from '../i18n/translations';
+import { useI18n } from '../i18n/useI18n';
+import type { TranslationKey, WizardStage } from '../i18n/translations';
 import { COMMAND_PATHS } from '../../../src/server/protocol';
 import type { ActionView, JudgeBoard, WirePhase } from '../../../src/server/protocol';
 import type { JSX } from 'react';
@@ -51,30 +61,19 @@ function actionBody(key: string): Record<string, unknown> {
 // 向导的「展示」模型 —— 只与阶段名有关，与可用性无关
 // ============================================================================
 
-/** 阶段中文名（与观众大屏 / 参赛者页同一套说法；`EMITTER_SELECT` 是 V1.2 新增） */
-const PHASE_LABEL: Record<string, string> = {
-  SETUP: '等待载入算法',
-  UPLOAD_A: '已载入 Team A',
-  UPLOAD_B: '已载入 Team B',
-  PREFLIGHT: '校验中',
-  EMITTER_SELECT: '选择发射锚点',
-  READY: '就绪',
-  PUBLIC: '本轮已冻结 — 等待揭晓',
-  REVEAL: '已揭晓 — 等待 START',
-  COUNTDOWN: 'START 已下达',
-  COMPUTING: '双方算法计算中',
-  ROUND_RESULT: '本轮结算',
-  MATCH_END: '比赛结束',
-};
-
-/** 主流程的步骤条（与任务书的 SETUP → … → MATCH END 一一对应） */
-const STAGES = ['SETUP', 'ALGORITHM READY', 'EMITTER LOCK', 'READY', 'START MATCH', 'ROUND', 'MATCH END'] as const;
+/**
+ * 主流程的步骤条（与任务书的 SETUP → … → MATCH END 一一对应）。
+ *
+ * 这些格子的**标识符**是机器标识，不随语言变；显示文案由
+ * `WIZARD_STAGE_KEYS` 按当前语言取（见下方渲染处）。
+ */
+const STAGES: readonly WizardStage[] = WIZARD_STAGES;
 
 interface WizardStep {
   /** 步骤条里高亮哪一格 */
-  stage: (typeof STAGES)[number];
-  /** 这一步在做什么（静态说明 —— 不是可用性判据） */
-  what: string;
+  stage: WizardStage;
+  /** 这一步在做什么（静态说明 —— 不是可用性判据）。存**键**，渲染时再取文案 */
+  whatKey: TranslationKey;
   /**
    * 本步的**候选主动作**（按优先级）。
    *
@@ -91,7 +90,7 @@ interface WizardStep {
 const STEPS: Record<WirePhase, WizardStep> = {
   SETUP: {
     stage: 'SETUP',
-    what: '把双方的算法密封进本场比赛。选手要先把算法投进运行期槽位（见下方「投递点」）；两边都就绪时，下面这一步一次做完「封装 → 校验 → 建赛」。',
+    whatKey: 'judge.step.SETUP',
     // `prepare` 排在前面：它一次做完封装双方 → Preflight → 建赛。
     // 只有在它不可用（例如另一边还没就绪）时，才顺延到单队的「使用槽位算法」。
     // 反过来排会把 `prepare` 挤进 Advanced 折叠区 —— 那正好是本步的主按钮。
@@ -99,58 +98,58 @@ const STEPS: Record<WirePhase, WizardStep> = {
   },
   UPLOAD_A: {
     stage: 'ALGORITHM READY',
-    what: 'Team A 已密封。Team B 的算法就绪后，同样一步就能完成筹备。',
+    whatKey: 'judge.step.UPLOAD_A',
     candidates: ['prepare', 'use-slot-b'],
   },
   UPLOAD_B: {
     stage: 'ALGORITHM READY',
-    what: '双方算法都在槽位里了：一次完成「封装双方算法 → 沙箱 Preflight → 建赛」，随后进入 Emitter 选择。',
+    whatKey: 'judge.step.UPLOAD_B',
     candidates: ['prepare', 'preflight', 'start'],
   },
   PREFLIGHT: {
     stage: 'ALGORITHM READY',
-    what: '沙箱里正在真跑一次双方算法（Preflight），确认能产出合法函数。',
+    whatKey: 'judge.step.PREFLIGHT',
     candidates: ['prepare', 'start'],
   },
   EMITTER_SELECT: {
     stage: 'EMITTER LOCK',
-    what: '地图已生成。双方各自在选手端选定并锁定本场的发射锚点 —— 这一步由选手完成，裁判在此等待；双方都锁定后锚点自动公开。',
+    whatKey: 'judge.step.EMITTER_SELECT',
     candidates: [],
     waiting: true,
   },
   READY: {
     stage: 'READY',
-    what: '双方 Emitter 已锁定，锚点已公开，可以开始本轮。',
+    whatKey: 'judge.step.READY',
     candidates: ['reveal', 'run-to-end'],
   },
   PUBLIC: {
     stage: 'START MATCH',
-    what: '本轮 public_state 已冻结。揭晓障碍物 —— 此刻参赛代码一行都还没跑。',
+    whatKey: 'judge.step.PUBLIC',
     candidates: ['reveal', 'start-round', 'run-to-end'],
   },
   REVEAL: {
     stage: 'START MATCH',
-    what: '障碍物已公开，参赛代码仍然没有运行。下达 START 才是唯一允许它运行的开关。',
+    whatKey: 'judge.step.REVEAL',
     candidates: ['start-round', 'reveal', 'run-to-end'],
   },
   COUNTDOWN: {
     stage: 'ROUND',
-    what: 'START 已下达，倒计时归零后双方算法开始计算。',
+    whatKey: 'judge.step.COUNTDOWN',
     candidates: ['compute'],
   },
   COMPUTING: {
     stage: 'ROUND',
-    what: '双方算法在各自沙箱里计算，本轮正在结算。',
+    whatKey: 'judge.step.COMPUTING',
     candidates: ['compute'],
   },
   ROUND_RESULT: {
     stage: 'ROUND',
-    what: '本轮已结算，可以进入下一轮。',
+    whatKey: 'judge.step.ROUND_RESULT',
     candidates: ['reveal', 'run-to-end'],
   },
   MATCH_END: {
     stage: 'MATCH END',
-    what: '比赛已终止。可以看回放，或开新的一场。',
+    whatKey: 'judge.step.MATCH_END',
     candidates: ['reset'],
   },
 };
@@ -229,6 +228,7 @@ function emitterRows(board: JudgeBoard): EmitterRow[] | null {
 // ============================================================================
 
 export function JudgePage(): JSX.Element {
+  const { t, td, locale } = useI18n();
   const { board, connected, access } = useBoard<JudgeBoard>('judge');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
   const [errors, setErrors] = useState<string[]>([]);
@@ -264,13 +264,22 @@ export function JudgePage(): JSX.Element {
   } | null>(null);
   const [previewErrors, setPreviewErrors] = useState<string[]>([]);
 
+  /**
+   * 动作文案：服务端给的是**稳定 key**，语言由客户端决定。
+   * 认不出 key（比如服务端先加了新动作）就回退到服务端原文 ——
+   * 绝不把 key 本身渲染出去。
+   */
+  const actionLabel = (a: ActionView): string => td(a.labelKey, a.labelParams, a.label);
+  const actionHint = (a: ActionView): string => td(a.hintKey, a.hintParams, a.hint);
+
   if (!board) {
     return (
       <div className="judge">
         <div className="judge__bar">
-          <span className="eyebrow">裁判台</span>
+          <span className="eyebrow">{t('judge.title')}</span>
+          <LanguageSwitch />
         </div>
-        <div className="empty">正在连接本地比赛服务…</div>
+        <div className="empty">{t('common.connecting')}</div>
       </div>
     );
   }
@@ -288,7 +297,7 @@ export function JudgePage(): JSX.Element {
     const path = ACTION_PATHS[key];
     if (!path) {
       // 服务端多了一个动作而界面还没接：说清楚，不静默吞掉
-      setErrors([`界面尚未接入该动作：${key}`]);
+      setErrors([t('judge.lastRound.notConnected', { key })]);
       return Promise.resolve();
     }
     const body: Record<string, unknown> = actionBody(key);
@@ -306,7 +315,7 @@ export function JudgePage(): JSX.Element {
     setPreviewErrors([]);
     const r = await fetchJudgeSource(team, relPath);
     if (!r.ok) {
-      setPreviewErrors(r.errors.length ? r.errors : ['读取失败']);
+      setPreviewErrors(r.errors.length ? r.errors : [t('team.err.readFailed')]);
       setPreview(null);
       return;
     }
@@ -326,29 +335,30 @@ export function JudgePage(): JSX.Element {
   const advancedActions = board.actions.filter((a) => a.key !== primary?.key);
   const emitterStatus = emitterRows(board);
   const showEmitters = board.phase === 'EMITTER_SELECT' || board.phase === 'READY';
-  const phaseLabel = PHASE_LABEL[board.phase] ?? board.phase;
+  const phaseLabel = t(PHASE_KEYS[board.phase]);
   const match = board.settings;
 
   return (
     <div className="judge">
       <header className="judge__bar">
-        <span className="eyebrow">裁判台</span>
+        <span className="eyebrow">{t('judge.title')}</span>
         <span className="num muted" data-testid="match-id">MATCH {board.matchId}</span>
         <span className="num">
-          ROUND <strong>{String(board.round).padStart(2, '0')}</strong>
+          {t('judge.header.round')} <strong>{String(board.round).padStart(2, '0')}</strong>
         </span>
         {/* E2E 依赖：这里必须是引擎的**原始阶段名** */}
         <span className="eyebrow" data-testid="phase">{board.phase}</span>
-        <span className="num muted">seed {match.seed}</span>
+        <span className="num muted">{t('judge.header.seed')} {match.seed}</span>
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
           <a className="link" href="/spectator" target="_blank" rel="noreferrer">
-            打开观众大屏 ↗
+            {t('nav.openSpectator')}
           </a>
           <a className="link" href={`/replay/${encodeURIComponent(board.matchId)}`}>
-            回放
+            {t('nav.replay')}
           </a>
+          <LanguageSwitch />
           <span className={`tag ${connected ? 'tag--live' : 'tag--down'}`}>
-            {connected ? '● 实时' : '○ 未连接'}
+            {connected ? t('common.live') : t('common.offline')}
           </span>
         </span>
       </header>
@@ -360,28 +370,39 @@ export function JudgePage(): JSX.Element {
         所有字段都是服务端投影的直通拷贝，页面不推断任何状态。
       */}
       <div className="judge__teams" data-testid="judge-teams">
-        {(['A', 'B'] as const).map((t) => {
-          const s = board.slots[t];
-          const lock = emitterSelectionOf(board)?.[t] ?? null;
+        {(['A', 'B'] as const).map((side) => {
+          const s = board.slots[side];
+          const lock = emitterSelectionOf(board)?.[side] ?? null;
           const ready = s.status === 'READY';
-          const pre = s.preflightOk === null ? '未经本平台安装' : s.preflightOk ? 'Preflight ✓' : 'Preflight ✕';
+          const pre =
+            s.preflightOk === null
+              ? t('judge.teamCard.preflightNever')
+              : s.preflightOk
+                ? t('judge.teamCard.preflightOk')
+                : t('judge.teamCard.preflightFail');
           return (
-            <div className="teamcard" key={t} data-team={t} data-testid={`judge-team-${t}`}>
-              <span className={`team-dot team-dot--${t.toLowerCase()}`} />
-              <span className="teamcard__name" title="算法包自报的名字">
-                {s.name ?? '（未命名）'}
+            <div className="teamcard" key={side} data-team={side} data-testid={`judge-team-${side}`}>
+              <span className={`team-dot team-dot--${side.toLowerCase()}`} />
+              <span className="teamcard__name" title={t('judge.teamCard.nameTitle')}>
+                {s.name ?? t('judge.teamCard.unnamed')}
               </span>
               <span className={`tag ${ready ? 'tag--live' : 'tag--down'}`} title={pre}>
-                {ready ? '算法就绪' : '未就绪'}
+                {ready ? t('judge.teamCard.ready') : t('judge.teamCard.notReady')}
               </span>
               <span
                 className={`tag ${lock?.locked ? 'tag--live' : ''}`}
-                data-testid={`judge-team-${t}-emitter`}
+                data-testid={`judge-team-${side}-emitter`}
               >
-                {lock?.locked ? `锚点 ${lock.selected?.id ?? '已锁定'}` : '锚点未锁定'}
+                {lock?.locked
+                  ? t('judge.teamCard.emitterLocked', {
+                      id: lock.selected?.id ?? t('judge.teamCard.emitterLockedNoId'),
+                    })
+                  : t('judge.teamCard.emitterUnlocked')}
               </span>
               <span className="num dim">
-                {board.packages[t] ? `本场密封 ${board.packages[t]!.hash.slice(0, 10)}…` : '本场未密封'}
+                {board.packages[side]
+                  ? t('judge.teamCard.sealed', { hash: board.packages[side]!.hash.slice(0, 10) })
+                  : t('judge.teamCard.notSealed')}
               </span>
             </div>
           );
@@ -399,8 +420,11 @@ export function JudgePage(): JSX.Element {
           </ul>
         ) : null}
 
+        {/* 后台任务（目前只有「连续跑完余下回合」）失败时留下的原因。
+            单独给一个 testid：它与上面那条「本机命令失败」是两回事 ——
+            后台任务失败会把比赛**停在原地**，演练必须能精确断言「没有留下它」。 */}
         {board.lastError ? (
-          <ul className="errors" role="alert">
+          <ul className="errors" role="alert" data-testid="judge-last-error">
             <li>{board.lastError}</li>
           </ul>
         ) : null}
@@ -416,25 +440,24 @@ export function JudgePage(): JSX.Element {
         */}
         <section className="panel" data-testid="team-links" key={board.matchId}>
           <div className="panel__title">
-            <h2>参赛者入口</h2>
-            <span className="num dim">本场链接 · 换场即更新</span>
+            <h2>{t('judge.links.title')}</h2>
+            <span className="num dim">{t('judge.links.subtitle')}</span>
           </div>
           <p className="muted" style={{ margin: '0 0 8px', fontSize: 11 }}>
-            把对应的那条发给各队。链接里带着**本场**的访问令牌：不要投到大屏上，
-            也不要发给另一队 —— 拿着某队的令牌就能替那一队操作。
+            {t('judge.links.desc')}
           </p>
-          {(['A', 'B'] as const).map((t) => {
-            const url = `${location.origin}/team/${t.toLowerCase()}#t=${board.teamTokens[t]}`;
+          {(['A', 'B'] as const).map((side) => {
+            const url = `${location.origin}/team/${side.toLowerCase()}#t=${board.teamTokens[side]}`;
             return (
               <div
-                key={t}
+                key={side}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0' }}
               >
-                <span className={`team-dot team-dot--${t.toLowerCase()}`} />
-                <span className="slot__name">Team {t}</span>
+                <span className={`team-dot team-dot--${side.toLowerCase()}`} />
+                <span className="slot__name">Team {side}</span>
                 <code
                   className="num"
-                  data-testid={`team-link-${t}`}
+                  data-testid={`team-link-${side}`}
                   style={{
                     flex: 1,
                     overflow: 'hidden',
@@ -448,10 +471,10 @@ export function JudgePage(): JSX.Element {
                 <button
                   type="button"
                   className="btn"
-                  data-testid={`team-link-${t}-copy`}
-                  onClick={() => copyLink(t, url)}
+                  data-testid={`team-link-${side}-copy`}
+                  onClick={() => copyLink(side, url)}
                 >
-                  {copied === t ? '已复制' : '复制'}
+                  {copied === side ? t('common.copied') : t('common.copy')}
                 </button>
               </div>
             );
@@ -461,9 +484,14 @@ export function JudgePage(): JSX.Element {
         {/* ---- 向导 ---- */}
         <section className="panel" data-testid="wizard" data-phase={board.phase}>
           <div className="panel__title">
-            <h2>裁判向导</h2>
+            <h2>{t('judge.wizard.title')}</h2>
+            {/*
+              这里只印**引擎的阶段**。步骤条就在紧下面，而且高亮着当前那一格 ——
+              再把向导自己的步骤名并排印一遍，`READY` 下就成了「就绪 · 就绪」。
+              阶段名与步骤标识符重合时那种重复没有信息量，去掉。
+            */}
             <span className="num dim" data-testid="phase-label">
-              {step.stage} · {phaseLabel}
+              {phaseLabel}
             </span>
           </div>
 
@@ -490,14 +518,14 @@ export function JudgePage(): JSX.Element {
                     borderColor: state === 'now' ? 'color-mix(in oklab, var(--a) 55%, transparent)' : 'var(--rule)',
                   }}
                 >
-                  {i + 1} {s}
+                  {i + 1} {t(WIZARD_STAGE_KEYS[s])}
                 </li>
               );
             })}
           </ol>
 
           <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }} data-testid="wizard-what">
-            {step.what}
+            {t(step.whatKey)}
           </p>
 
           {primary ? (
@@ -508,7 +536,7 @@ export function JudgePage(): JSX.Element {
                 data-action={primary.key}
                 data-testid="primary-action"
                 disabled={!primary.enabled || busy}
-                title={primary.hint}
+                title={actionHint(primary)}
                 onClick={() => void runAction(primary.key)}
                 style={{
                   padding: '12px 13px',
@@ -519,22 +547,22 @@ export function JudgePage(): JSX.Element {
               >
                 <span className="act__key">{primary.key}</span>
                 <span className="act__body">
-                  <span className="act__label">{primary.label}</span>
+                  <span className="act__label">{actionLabel(primary)}</span>
                   {/* 服务端给的 hint —— 不可点时它就是「为什么不能点」的答案 */}
-                  <span className="act__hint">{primary.hint}</span>
+                  <span className="act__hint">{actionHint(primary)}</span>
                 </span>
               </button>
               <p className="num dim" style={{ margin: '8px 0 0', fontSize: 11 }} data-testid="primary-why">
                 {busy
-                  ? '执行中…（命令是串行的，忙时按钮一律不可点）'
+                  ? t('judge.wizard.busy')
                   : primary.enabled
-                    ? `服务端判据：可用 —— ${primary.hint}`
-                    : `服务端判据：不可用 —— ${primary.hint}`}
+                    ? t('judge.wizard.whyEnabled', { hint: actionHint(primary) })
+                    : t('judge.wizard.whyDisabled', { hint: actionHint(primary) })}
               </p>
             </>
           ) : (
             <p className="num dim" style={{ margin: 0, fontSize: 11 }} data-testid="primary-why">
-              {busy ? '执行中…' : '本步由双方选手在各自的参赛者页完成，裁判没有对应动作。'}
+              {busy ? t('judge.wizard.busyShort') : t('judge.wizard.waitingBody')}
             </p>
           )}
 
@@ -545,9 +573,11 @@ export function JudgePage(): JSX.Element {
               style={{ border: '1px solid var(--rule)', padding: '8px 10px', marginTop: 12 }}
             >
               <div className="panel__title" style={{ marginBottom: 6 }}>
-                <h2>双方 Emitter</h2>
+                <h2>{t('judge.emitter.title')}</h2>
                 <span className="num dim">
-                  {emitterSelectionOf(board)?.revealed ? '双方已锁定 · 锚点公开' : '未公开'}
+                  {emitterSelectionOf(board)?.revealed
+                    ? t('judge.emitter.revealed')
+                    : t('judge.emitter.hidden')}
                 </span>
               </div>
               {emitterStatus ? (
@@ -561,16 +591,20 @@ export function JudgePage(): JSX.Element {
                       Team {r.team}
                     </span>
                     <span className="num" data-testid={`emitter-${r.team}`}>
-                      {r.selected ?? '未选择'}
+                      {r.selected ?? t('judge.emitter.none')}
                     </span>
                     <span className={`tag ${r.locked ? 'tag--live' : ''}`} data-testid={`emitter-${r.team}-lock`}>
-                      {r.locked === null ? '状态未知' : r.locked ? '已锁定' : '未锁定'}
+                      {r.locked === null
+                        ? t('judge.emitter.unknown')
+                        : r.locked
+                          ? t('judge.emitter.locked')
+                          : t('judge.emitter.unlocked')}
                     </span>
                   </div>
                 ))
               ) : (
                 <p className="muted" style={{ margin: 0, fontSize: 11 }}>
-                  服务端尚未下发双方的选择 —— 这里不猜锁定状态。
+                  {t('judge.emitter.notSent')}
                 </p>
               )}
             </div>
@@ -579,12 +613,18 @@ export function JudgePage(): JSX.Element {
 
         <section className="panel">
           <div className="panel__title">
-            <h2>算法槽位</h2>
-            <span className="dim num">{board.settings.pointCount} 点 · {board.settings.difficulty}</span>
+            <h2>{t('judge.slot.title')}</h2>
+            <span className="dim num">
+              {t('judge.slot.settings', {
+                points: board.settings.pointCount,
+                // 难度是协议枚举（`easy/medium/hard`）—— 值不变，只翻给人看的那个词
+                difficulty: difficultyLabel(locale, board.settings.difficulty),
+              })}
+            </span>
           </div>
           <div className="slot">
             <span className="slot__detail">
-              投递点 <code>{board.slotRoot}</code>
+              {t('judge.slot.deliveryPoint')} <code>{board.slotRoot}</code>
             </span>
             {/*
               这里曾有一行「仓库里的 algorithms/ 只是出厂 fixture —— 改它**不会**改变
@@ -593,13 +633,13 @@ export function JudgePage(): JSX.Element {
               说清楚了，这句解释留在 README 里更合适。
             */}
           </div>
-          {(['A', 'B'] as const).map((t) => {
-            const s = board.slots[t];
+          {(['A', 'B'] as const).map((side) => {
+            const s = board.slots[side];
             return (
-              <div className="slot" key={t}>
+              <div className="slot" key={side}>
                 <span className="slot__name">
-                  <span className={`team-dot team-dot--${t.toLowerCase()}`} />
-                  Team {t}
+                  <span className={`team-dot team-dot--${side.toLowerCase()}`} />
+                  Team {side}
                   {/* 算法名是防「静默跑错算法」最直接的信号：投的是谁，板上就写谁 */}
                   {s.name ? <b> · {s.name}</b> : null}
                 </span>
@@ -608,18 +648,35 @@ export function JudgePage(): JSX.Element {
                 </span>
                 <span className="slot__detail">
                   {s.status === 'READY'
-                    ? `${s.files} 文件 · ${s.totalBytes} B · preflight ${s.preflightOk === null ? '未经本平台安装' : s.preflightOk ? '✓' : '✕'}`
-                    : s.errors[0] ?? '槽位为空'}
+                    ? t('judge.slot.summary', {
+                        files: s.files,
+                        bytes: s.totalBytes,
+                        state:
+                          s.preflightOk === null
+                            ? t('judge.teamCard.preflightNever')
+                            : s.preflightOk
+                              ? '✓'
+                              : '✕',
+                      })
+                    : (s.errors[0] ?? t('judge.slot.empty'))}
                 </span>
                 <span className="slot__detail">
-                  {s.origin === 'installed' ? `已安装 · 来源 ${s.source ?? '未知'}` : '无安装记录（出厂播种 / 手工放置）'}
+                  {s.origin === 'installed'
+                    ? t('judge.slot.installed', { source: s.source ?? t('common.unknown') })
+                    : t('judge.slot.unrecorded')}
                 </span>
                 <span className="slot__detail">
                   <code>{s.dir}</code>
                 </span>
-                {s.hash ? <span className="slot__detail dim">包哈希 {s.hash.slice(0, 24)}…</span> : null}
+                {s.hash ? (
+                  <span className="slot__detail dim">
+                    {t('judge.slot.hash', { hash: s.hash.slice(0, 24) })}
+                  </span>
+                ) : null}
                 <span className="slot__detail">
-                  本场已密封 {board.packages[t] ? `${board.packages[t]!.hash.slice(0, 16)}…` : '—'}
+                  {board.packages[side]
+                    ? t('judge.slot.sealed', { hash: board.packages[side]!.hash.slice(0, 16) })
+                    : '—'}
                 </span>
 
                 {/*
@@ -628,15 +685,15 @@ export function JudgePage(): JSX.Element {
                   内容按需取，不随 board 推送。
                 */}
                 {s.fileList.length > 0 ? (
-                  <ul className="audit-list" data-testid={`judge-files-${t}`}>
+                  <ul className="audit-list" data-testid={`judge-files-${side}`}>
                     {s.fileList.map((f) => (
                       <li key={f.path}>
                         <span className="num dim">{f.bytes}</span>
                         <button
                           className="link"
-                          data-testid={`judge-file-${t}`}
+                          data-testid={`judge-file-${side}`}
                           data-path={f.path}
-                          onClick={() => void openSource(t, f.path)}
+                          onClick={() => void openSource(side, f.path)}
                         >
                           {f.path}
                         </button>
@@ -663,11 +720,11 @@ export function JudgePage(): JSX.Element {
                 <h2>
                   <span className={`team-dot team-dot--${preview.team.toLowerCase()}`} /> {preview.path}
                 </h2>
-                <span className="muted">只读</span>
+                <span className="muted">{t('judge.slot.readonly')}</span>
               </div>
               {preview.binary ? (
                 <p className="muted" data-testid="judge-source-binary">
-                  二进制文件 —— 不提供预览
+                  {t('team.source.binary')}
                 </p>
               ) : (
                 <>
@@ -676,7 +733,7 @@ export function JudgePage(): JSX.Element {
                   </pre>
                   {preview.truncated ? (
                     <p className="muted" data-testid="judge-source-truncated">
-                      内容已截断（仅显示开头部分）
+                      {t('team.source.truncated')}
                     </p>
                   ) : null}
                 </>
@@ -686,11 +743,10 @@ export function JudgePage(): JSX.Element {
         </section>
 
         <details className="adv">
-          <summary>Advanced Controls · 底层动作与比赛设置</summary>
+          <summary>{t('judge.adv.summary')}</summary>
           <div className="adv__body">
             <p className="dim" style={{ margin: '0 0 10px', fontSize: 11 }}>
-              向导只突出「现在该做的那一个」；这里是服务端下发的**全部**动作（含向导未用到的底层步骤）。
-              可用性同样只读服务端的判据 —— 灰掉的按钮把鼠标悬上去就是原因。
+              {t('judge.adv.desc')}
             </p>
             <div className="actions">
               {advancedActions.map((a) => (
@@ -700,13 +756,13 @@ export function JudgePage(): JSX.Element {
                   className="act"
                   data-action={a.key}
                   disabled={!a.enabled || busy}
-                  title={a.hint}
+                  title={actionHint(a)}
                   onClick={() => void runAction(a.key)}
                 >
                   <span className="act__key">{a.key.replace(/^use-slot-/, 'slot-').slice(0, 8)}</span>
                   <span className="act__body">
-                    <span className="act__label">{a.label}</span>
-                    <span className="act__hint">{a.hint}</span>
+                    <span className="act__label">{actionLabel(a)}</span>
+                    <span className="act__hint">{actionHint(a)}</span>
                   </span>
                 </button>
               ))}
@@ -714,20 +770,19 @@ export function JudgePage(): JSX.Element {
 
             <hr style={{ border: 0, borderTop: '1px solid var(--rule)', margin: '14px 0 12px' }} />
             <p className="dim" style={{ margin: '0 0 10px', fontSize: 11 }}>
-              正式比赛请用向导里的「封装双方算法 → 校验 → 建赛」—— 算法要投进**运行期槽位**
-              （见上方「投递点」）。这里只在需要临时换算法时使用，输入的是**服务端**上的目录绝对路径。
+              {t('judge.adv.installDesc')}
             </p>
-            {(['A', 'B'] as const).map((t) => {
-              const value = t === 'A' ? pathA : pathB;
-              const setValue = t === 'A' ? setPathA : setPathB;
+            {(['A', 'B'] as const).map((side) => {
+              const value = side === 'A' ? pathA : pathB;
+              const setValue = side === 'A' ? setPathA : setPathB;
               return (
-                <div key={t}>
+                <div key={side}>
                   <label className="field">
-                    <span>Team {t} 算法目录</span>
+                    <span>{t('judge.adv.teamDir', { team: side })}</span>
                     <input
                       value={value}
                       onChange={(e) => setValue(e.target.value)}
-                      placeholder="/绝对/路径/到/算法包"
+                      placeholder={t('judge.adv.pathPlaceholder')}
                       spellCheck={false}
                     />
                   </label>
@@ -736,9 +791,11 @@ export function JudgePage(): JSX.Element {
                     className="btn"
                     disabled={busy || value.trim() === ''}
                     style={{ marginBottom: 14 }}
-                    onClick={() => void run(COMMAND_PATHS.install, { team: t, sourceDir: value.trim() })}
+                    onClick={() =>
+                      void run(COMMAND_PATHS.install, { team: side, sourceDir: value.trim() })
+                    }
                   >
-                    安装 Team {t} 算法
+                    {t('judge.adv.install', { team: side })}
                   </button>
                 </div>
               );
@@ -746,14 +803,14 @@ export function JudgePage(): JSX.Element {
 
             <hr style={{ border: 0, borderTop: '1px solid var(--rule)', margin: '4px 0 12px' }} />
             <p className="dim" style={{ margin: '0 0 10px', fontSize: 11 }}>
-              比赛设置 —— 在下一次「重置 / 下一场」时生效。
+              {t('judge.adv.settingsDesc')}
             </p>
             <label className="field">
-              <span>种子（留空 = 随机）</span>
+              <span>{t('judge.adv.seed')}</span>
               <input value={seed} onChange={(e) => setSeed(e.target.value)} placeholder={String(match.seed)} inputMode="numeric" />
             </label>
             <label className="field">
-              <span>战斗点数（留空 = 沿用）</span>
+              <span>{t('judge.adv.points')}</span>
               <input
                 value={points}
                 onChange={(e) => setPoints(e.target.value)}
@@ -762,12 +819,20 @@ export function JudgePage(): JSX.Element {
               />
             </label>
             <label className="field">
-              <span>难度（留空 = 沿用）</span>
+              <span>{t('judge.adv.difficulty')}</span>
               <select value={difficulty} onChange={(e) => setDifficulty(e.target.value)}>
-                <option value="">沿用 {match.difficulty}</option>
-                <option value="easy">easy</option>
-                <option value="medium">medium</option>
-                <option value="hard">hard</option>
+                {/*
+                  `value` 是**协议枚举**（提交给服务端的机器值），必须原样；
+                  只有给人看的那个词跟着语言走。
+                */}
+                <option value="">
+                  {t('judge.adv.keepDifficulty', {
+                    value: difficultyLabel(locale, match.difficulty),
+                  })}
+                </option>
+                <option value="easy">{t('difficulty.easy')}</option>
+                <option value="medium">{t('difficulty.medium')}</option>
+                <option value="hard">{t('difficulty.hard')}</option>
               </select>
             </label>
           </div>
@@ -775,8 +840,8 @@ export function JudgePage(): JSX.Element {
 
         <section className="panel" style={{ marginTop: 20 }}>
           <div className="panel__title">
-            <h2>审计</h2>
-            <span className="num dim">{board.audit.events} 事件</span>
+            <h2>{t('judge.audit.title')}</h2>
+            <span className="num dim">{t('judge.audit.events', { n: board.audit.events })}</span>
           </div>
           <ul className="audit-list">
             {[...board.audit.recent].reverse().map((e) => (
@@ -788,8 +853,11 @@ export function JudgePage(): JSX.Element {
             ))}
           </ul>
           <p className="dim" style={{ fontSize: 11, marginTop: 8 }}>
-            {board.artifactDir ? `产物：${board.artifactDir}` : '尚未产生产物'} · runtime{' '}
-            {board.runtime.ok ? '✓ 与冻结清单一致' : '✕ 与冻结清单不符'}
+            {board.artifactDir
+              ? t('judge.audit.artifacts', { dir: board.artifactDir })
+              : t('judge.audit.noArtifacts')}{' '}
+            · runtime{' '}
+            {board.runtime.ok ? t('judge.audit.runtimeOk') : t('judge.audit.runtimeMismatch')}
           </p>
         </section>
       </aside>
@@ -804,39 +872,55 @@ export function JudgePage(): JSX.Element {
             computes={board.computes}
             budgetMs={board.computeBudgetMs}
             headline={
-              board.lastRound ? `R${board.lastRound.round} first: ${board.lastRound.firstSolver.toUpperCase()}` : undefined
+              board.lastRound
+                ? t('judge.lastRound.headline', {
+                    round: board.lastRound.round,
+                    team: board.lastRound.firstSolver.toUpperCase(),
+                  })
+                : undefined
             }
           />
           <span className="lastround__item">
-            <span className="lastround__label">本轮攻击</span>
+            <span className="lastround__label">{t('judge.lastRound.attacks')}</span>
             <span className="lastround__value">
               {board.lastRound?.attacksExecuted.length ? board.lastRound.attacksExecuted.join(' → ') : '—'}
             </span>
           </span>
           <span className="lastround__item">
-            <span className="lastround__label">击杀</span>
-            <span className="lastround__value">{board.lastRound?.killed.join(',') || '无'}</span>
+            <span className="lastround__label">{t('judge.lastRound.kills')}</span>
+            <span className="lastround__value">
+              {board.lastRound?.killed.join(',') || t('common.none')}
+            </span>
           </span>
           <span className="lastround__item">
-            <span className="lastround__label">存活</span>
+            <span className="lastround__label">{t('judge.lastRound.alive')}</span>
             <span className="lastround__value">
               A {board.alive.A} / B {board.alive.B}
             </span>
           </span>
           {board.verdict ? (
             <span className="lastround__item" data-testid="verdict">
-              <span className="lastround__label">终局</span>
+              <span className="lastround__label">{t('judge.lastRound.verdict')}</span>
               <span
                 className="lastround__value"
                 style={{ color: board.verdict.winner === 'draw' ? 'var(--muted)' : board.verdict.winner === 'A' ? 'var(--a)' : 'var(--b)' }}
               >
-                {board.verdict.winner === 'draw' ? '平局' : `TEAM ${board.verdict.winner} 获胜`} · {board.verdict.endReason}
+                {board.verdict.winner === 'draw'
+                  ? t('judge.lastRound.draw')
+                  : t('judge.lastRound.winner', { team: board.verdict.winner })}{' '}
+                · {board.verdict.endReason}
               </span>
             </span>
           ) : null}
           {board.lastRound?.errors.length ? (
             <span className="lastround__item" style={{ color: 'var(--danger)' }}>
-              {board.lastRound.errors.join('   ')}
+              {/* 服务端给键、这里取译文；认不出键时回退到它给的原文 */}
+              {localizeRoundErrors(
+                locale,
+                board.lastRound.errors,
+                board.lastRound.errorKeys,
+                board.lastRound.errorParams
+              ).join('   ')}
             </span>
           ) : null}
         </div>

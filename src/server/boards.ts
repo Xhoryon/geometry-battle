@@ -21,7 +21,7 @@ import { Obstacle } from '../obstacle/Obstacle';
 import { GeneratedMap } from '../map/MapGenerator';
 import { SlotState, TeamSlot } from '../submission/Slot';
 import { inspectPackage } from '../submission/Package';
-import { explainError } from '../ui/JudgeConsole';
+import { explainError, explainErrorKey } from '../ui/JudgeConsole';
 import { RuntimeCheck, describeRuntime } from '../submission/Runtime';
 import type { MatchPhase } from '../core/Match';
 import type { MatchLog } from '../core/Logs';
@@ -166,15 +166,27 @@ function buildComputes(snap: MatchSnapshot): { A: ComputeCell; B: ComputeCell } 
 }
 
 /** 本轮人话错误（§27 Error UX）—— 复用终端裁判台的翻译表，不另写一套 */
-function roundErrors(last: MatchLog['rounds'][number]): string[] {
-  const out: string[] = [];
+function roundErrors(last: MatchLog['rounds'][number]): {
+  errors: string[];
+  errorKeys: string[];
+  errorParams: Record<string, string | number>[];
+} {
+  const errors: string[] = [];
+  const errorKeys: string[] = [];
+  const errorParams: Record<string, string | number>[] = [];
   for (const team of ['A', 'B'] as const) {
     const code = team === 'A' ? last.aErrorCode : last.bErrorCode;
     const ran = last.attacksExecuted.includes(team);
     const msg = explainError(code, ran);
-    if (msg) out.push(`Team ${team}: ${msg}`);
+    if (!msg) continue;
+    errors.push(`Team ${team}: ${msg}`);
+    // 键由服务端给、译文由浏览器取（V1.3）。客户端认不出键时回退到上面那条原文，
+    // 所以这三个数组**等长且一一对应**是唯一的约定。
+    const key = explainErrorKey(code, ran) ?? 'round.error.unknown';
+    errorKeys.push(key);
+    errorParams.push(key === 'round.error.unknown' ? { team, code: code ?? '' } : { team });
   }
-  return out;
+  return { errors, errorKeys, errorParams };
 }
 
 /**
@@ -217,7 +229,8 @@ export function spectatorBoard(
           attacksExecuted: [...last.attacksExecuted],
           killed: frameKilled,
           aliveAfter: { A: last.aliveAAfter, B: last.aliveBAfter },
-          errors: roundErrors(last),
+          // `errors` / `errorKeys` / `errorParams` 三者等长且一一对应
+          ...roundErrors(last),
         }
       : null,
     // 只有比赛真正结束才公布判决 —— 中途 `getWinner()` 可能已是 'A'/'B'，
@@ -455,15 +468,32 @@ export function buildActions(
   /** 使用槽位：A 需 SETUP、B 需 UPLOAD_A —— 抄自 `upload()` 自己的阶段检查 */
   const useSlot = (team: TeamSlot): ActionView => {
     const phaseOk = team === 'A' ? phase === 'SETUP' : phase === 'UPLOAD_A';
+    const isFactory = tournament && isBundledAlgorithm(slots[team].hash);
     return {
       key: `use-slot-${team.toLowerCase()}`,
       label: `使用槽位算法（Team ${team}）`,
+      labelKey: 'action.useSlot.label',
+      labelParams: { team },
       enabled: phaseOk && ready(team) && !busy,
       hint: !ready(team)
         ? factoryHint(team) || `槽位 ${team} 尚不可用（${slots[team].status}）`
         : !phaseOk
           ? `当前阶段 ${phase} 不允许载入 Team ${team}`
           : '把槽位里的算法密封进本场比赛',
+      hintKey: ready(team)
+        ? phaseOk
+          ? 'action.useSlot.hint.ok'
+          : 'action.useSlot.hint.phase'
+        : isFactory
+          ? 'action.useSlot.hint.factory'
+          : 'action.useSlot.hint.notReady',
+      hintParams: ready(team)
+        ? phaseOk
+          ? {}
+          : { phase, team }
+        : isFactory
+          ? {}
+          : { team, status: slots[team].status },
     };
   };
 
@@ -480,30 +510,44 @@ export function buildActions(
       // （Advanced Controls 用），但普通裁判只需要这一个。
       key: 'prepare',
       label: '开始比赛筹备（封装双方算法 → 校验 → 建赛）',
+      labelKey: 'action.prepare.label',
       enabled: gate(canPrepare && bothReady && !hasMap),
       hint: !bothReady
         ? `需要双方算法都已就绪${tournament ? '（锦标赛模式：必须上传真实算法包）' : ''}`
         : !canPrepare
           ? `当前阶段 ${phase} 不能筹备`
           : '封装密封副本 → 沙箱 Preflight → 生成地图（随后进入 Emitter 选择）',
+      hintKey: bothReady
+        ? canPrepare
+          ? 'action.prepare.hint.ok'
+          : 'action.prepare.hint.phase'
+        : tournament
+          ? 'action.prepare.hint.notReadyTournament'
+          : 'action.prepare.hint.notReady',
+      hintParams: bothReady && !canPrepare ? { phase } : {},
     },
     useSlot('A'),
     useSlot('B'),
     {
       key: 'preflight',
       label: '校验双方算法（Preflight）',
+      labelKey: 'action.preflight.label',
       enabled: gate(phase === 'UPLOAD_B' && bothPackages),
       hint: '在沙箱里真跑一次，确认算法能产出合法函数',
+      hintKey: 'action.preflight.hint',
     },
     {
       key: 'start',
       label: '开始比赛（进入第一轮）',
+      labelKey: 'action.start.label',
       enabled: gate(phase === 'UPLOAD_B' && bothPackages && preflightPassed),
       hint: preflightPassed ? '生成地图并进入第一轮' : '需先通过 Preflight',
+      hintKey: preflightPassed ? 'action.start.hint.ready' : 'action.start.hint.needPreflight',
     },
     {
       key: 'reveal',
       label: '揭晓本轮（REVEAL）',
+      labelKey: 'action.reveal.label',
       // 判据与 `MatchEngine.beginRound()` 一致：V1.2 每轮结算后回到 READY，
       // 开赛前的那一步也是 READY —— 漏掉它会让「揭晓→START→结算」这条
       // 逐步流程在 READY 下整条不可点（只剩 run-to-end 能走）。
@@ -511,34 +555,43 @@ export function buildActions(
         !terminal && hasMap && (phase === 'READY' || phase === 'PUBLIC' || phase === 'REVEAL')
       ),
       hint: '公开本轮障碍物 —— 此刻参赛代码仍未运行',
+      hintKey: 'action.reveal.hint',
     },
     {
       key: 'start-round',
       label: 'START（此刻之前参赛代码一行都没跑）',
+      labelKey: 'action.startRound.label',
       enabled: gate(
         !terminal && hasMap && (phase === 'READY' || phase === 'PUBLIC' || phase === 'REVEAL')
       ),
       hint: '唯一允许参赛代码运行的开关',
+      hintKey: 'action.startRound.hint',
     },
     {
       key: 'compute',
       label: '结算本轮（播放轨迹动画）',
+      labelKey: 'action.compute.label',
       enabled: gate(phase === 'COUNTDOWN'),
       hint: '运行双方算法并结算本轮',
+      hintKey: 'action.compute.hint',
     },
     {
       key: 'run-to-end',
       label: '连续跑完余下回合',
+      labelKey: 'action.runToEnd.label',
       // 与 `MatchSession.runToEnd()` 的守卫共用同一个判据函数 —— 两处分开写
       // 就会出现「UI 说能跑、后台一跑就抛」（Final Audit P2-3 / Re-Gate）。
       enabled: gate(runToEndBlocker(engine) === null),
       hint: '后台推进到比赛终止，期间可继续观看',
+      hintKey: 'action.runToEnd.hint',
     },
     {
       key: 'reset',
       label: hasMap ? '结束本场并重置' : '重置比赛',
+      labelKey: hasMap ? 'action.reset.labelWithMatch' : 'action.reset.label',
       enabled: gate(true),
       hint: '回到初始状态，准备下一场',
+      hintKey: 'action.reset.hint',
     },
   ];
 }
@@ -644,22 +697,35 @@ export function teamBoard(
     {
       key: 'select-emitter',
       label: '选择本场 Emitter',
+      labelKey: 'action.selectEmitter.label',
       enabled: canSelect,
       hint: mine.locked
         ? '已锁定，整场不可更换'
         : phase !== 'EMITTER_SELECT'
           ? `当前阶段 ${phase} 不能选择 Emitter`
           : '从自己的初始点里选一个作为本场的发射锚点',
+      hintKey: mine.locked
+        ? 'action.selectEmitter.hint.locked'
+        : phase !== 'EMITTER_SELECT'
+          ? 'action.selectEmitter.hint.phase'
+          : 'action.selectEmitter.hint.ok',
+      hintParams: !mine.locked && phase !== 'EMITTER_SELECT' ? { phase } : {},
     },
     {
       key: 'lock-emitter',
       label: '锁定 Emitter',
+      labelKey: 'action.lockEmitter.label',
       enabled: canLock,
       hint: mine.locked
         ? '已锁定'
         : mine.selected === null
           ? '请先选择 Emitter'
           : '锁定后整场不可更换；双方都锁定后锚点公开',
+      hintKey: mine.locked
+        ? 'action.lockEmitter.hint.locked'
+        : mine.selected === null
+          ? 'action.lockEmitter.hint.needSelect'
+          : 'action.lockEmitter.hint.ok',
     },
   ];
 

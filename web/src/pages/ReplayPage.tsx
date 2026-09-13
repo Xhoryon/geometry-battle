@@ -9,6 +9,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { useReplayList } from '../api/client';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { difficultyLabel } from '../i18n/translations';
+import { useI18n } from '../i18n/useI18n';
 import type { ArenaView, TrajectoryPayload, WirePoint } from '../../../src/server/protocol';
 import type { JSX } from 'react';
 
@@ -51,6 +54,7 @@ const FIELD = { xMin: -20, xMax: 20, yMin: -12, yMax: 12 };
 const FRAME_MS = 1100;
 
 export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
+  const { t, td, locale } = useI18n();
   const [replay, setReplay] = useState<ReplayDto | null>(null);
   const [match, setMatch] = useState<MatchDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,10 +70,24 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
     setError(null);
     fetch(`/api/replays/${encodeURIComponent(matchId)}`)
       .then(async (r) => {
-        const j = (await r.json()) as { replay?: ReplayDto; match?: MatchDto; errors?: string[] };
+        const j = (await r.json()) as {
+          replay?: ReplayDto;
+          match?: MatchDto;
+          errors?: string[];
+          reasonKey?: string;
+          reasonParams?: Record<string, string | number>;
+        };
         if (!alive) return;
         if (!r.ok || !j.replay || !j.match) {
-          setError(j.errors?.[0] ?? `读取失败（HTTP ${r.status}）`);
+          // 服务端给的是**原因键**（见 `classifyMatch`），这里按当前语言取译文；
+          // 认不出键时回退到它给的原文，最后才退回本地那句 HTTP 兜底。
+          setError(
+            td(
+              j.reasonKey ?? '',
+              j.reasonParams,
+              j.errors?.[0] ?? t('replay.loadFailed', { status: r.status })
+            )
+          );
           return;
         }
         setReplay(j.replay);
@@ -80,7 +98,7 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [matchId]);
+  }, [matchId, t]);
 
   const frame = replay?.frames[index] ?? null;
 
@@ -127,14 +145,15 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
     return (
       <div className="replay">
         <div className="replay__bar">
-          <span className="eyebrow">回放</span>
+          <span className="eyebrow">{t('replay.title')}</span>
           <span className="num muted">{matchId}</span>
+          <LanguageSwitch />
         </div>
         <div className="empty">
           {error}
           <div style={{ marginTop: 16 }}>
             <a className="link" href="/judge">
-              回到裁判台
+              {t('nav.backToJudge')}
             </a>
           </div>
         </div>
@@ -146,9 +165,10 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
     return (
       <div className="replay">
         <div className="replay__bar">
-          <span className="eyebrow">回放</span>
+          <span className="eyebrow">{t('replay.title')}</span>
+          <LanguageSwitch />
         </div>
-        <div className="empty">正在读取回放…</div>
+        <div className="empty">{t('replay.loading')}</div>
       </div>
     );
   }
@@ -156,10 +176,15 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
   return (
     <div className="replay">
       <header className="replay__bar">
-        <span className="eyebrow">回放</span>
+        <span className="eyebrow">{t('replay.title')}</span>
         <span className="num muted">{replay.matchId}</span>
         <span className="eyebrow">
-          {match.pointCount} 点 · {match.difficulty} · seed {match.seed}
+          {t('replay.meta', {
+            points: match.pointCount,
+            // 难度是协议枚举 —— 值不变，只翻给人看的那个词
+            difficulty: difficultyLabel(locale, match.difficulty),
+            seed: match.seed,
+          })}
         </span>
         <span
           className="num"
@@ -168,23 +193,26 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
             fontWeight: 600,
           }}
         >
-          {replay.winner === 'draw' ? '平局' : `TEAM ${replay.winner} 获胜`}
+          {replay.winner === 'draw'
+            ? t('replay.draw')
+            : t('replay.winner', { team: replay.winner })}
         </span>
         <span className="eyebrow">{replay.endReason}</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12 }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
           <a className="link" href="/judge">
-            裁判台
+            {t('nav.judge')}
           </a>
           <a className="link" href="/spectator">
-            观众大屏
+            {t('nav.spectator')}
           </a>
+          <LanguageSwitch />
         </span>
       </header>
 
       <aside className="replay__side">
         <div className="panel__title">
-          <h2>逐轮</h2>
-          <span className="num dim">{replay.frames.length} 回合</span>
+          <h2>{t('replay.rounds')}</h2>
+          <span className="num dim">{t('replay.roundsCount', { n: replay.frames.length })}</span>
         </div>
         {replay.frames.map((f, i) => (
           <button
@@ -197,15 +225,21 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
               setIndex(i);
             }}
           >
-            <span className="dim">R{String(f.round).padStart(2, '0')}</span>
+            <span className="dim">
+              {t('replay.roundShort', { n: String(f.round).padStart(2, '0') })}
+            </span>
             <span>
-              first {f.firstSolver} · 击杀 {f.killed.length ? f.killed.join(',') : '无'}
+              {t('replay.frameSummary', {
+                first: f.firstSolver,
+                attacks: f.attacksExecuted.length ? f.attacksExecuted.join('→') : t('common.none'),
+                kills: f.killed.length ? f.killed.join(',') : t('common.none'),
+              })}
             </span>
           </button>
         ))}
 
         <div className="panel__title" style={{ marginTop: 20 }}>
-          <h2>其他场次</h2>
+          <h2>{t('replay.others')}</h2>
         </div>
         {replays
           .filter((r) => r.matchId !== replay.matchId)
@@ -219,9 +253,10 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
                 window.location.href = `/replay/${encodeURIComponent(r.matchId)}`;
               }}
             >
-              <span className="dim">{r.rounds}R</span>
+              <span className="dim">{t('replay.roundsBadge', { n: r.rounds })}</span>
               <span>
-                {r.winner === 'draw' ? '平局' : `TEAM ${r.winner}`} · {r.matchId.slice(-8)}
+                {r.winner === 'draw' ? t('replay.draw') : `TEAM ${r.winner}`} ·{' '}
+                {r.matchId.slice(-8)}
               </span>
             </button>
           ))}
@@ -234,17 +269,17 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
 
         <div className="replay__controls">
           <button type="button" className="btn btn--a" onClick={() => setPlaying((p) => !p)}>
-            {playing ? '暂停' : '播放'}
+            {playing ? t('replay.pause') : t('replay.play')}
           </button>
           <button type="button" className="btn" onClick={() => setIndex((i) => Math.max(0, i - 1))}>
-            上一轮
+            {t('replay.prev')}
           </button>
           <button
             type="button"
             className="btn"
             onClick={() => setIndex((i) => Math.min(replay.frames.length - 1, i + 1))}
           >
-            下一轮
+            {t('replay.next')}
           </button>
           <input
             type="range"
@@ -255,14 +290,18 @@ export function ReplayPage({ matchId }: { matchId: string }): JSX.Element {
               setPlaying(false);
               setIndex(Number(e.target.value));
             }}
-            aria-label="回合"
+            aria-label={t('replay.slider')}
           />
           <span className="num muted">
-            R{String(frame?.round ?? 0).padStart(2, '0')} / {replay.frames.length}
+            {t('replay.roundShort', { n: String(frame?.round ?? 0).padStart(2, '0') })} /{' '}
+            {replay.frames.length}
           </span>
           <span className="num dim">
-            first {frame?.firstSolver} · 攻击 {frame?.attacksExecuted.join('→') || '—'} · 击杀{' '}
-            {frame?.killed.length ? frame.killed.join(',') : '无'}
+            {t('replay.frameSummary', {
+              first: String(frame?.firstSolver ?? ''),
+              attacks: frame?.attacksExecuted.join('→') || '—',
+              kills: frame?.killed.length ? frame.killed.join(',') : t('common.none'),
+            })}
           </span>
         </div>
       </main>

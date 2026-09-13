@@ -23,6 +23,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useI18n } from '../i18n/useI18n';
 import type { ArenaView, TrajectoryPayload, WireObstacle, WirePoint } from '../../../src/server/protocol';
 import {
   HIT_RADIUS_PX,
@@ -118,6 +119,7 @@ export function ArenaCanvas({
   hoveredId: hoveredIdProp,
   onSelectPoint,
 }: ArenaCanvasProps): JSX.Element {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // hover 由画布内部维护；调用方给了**具体的 id** 才覆盖（null 不算覆盖，见 props 注释）
   const [hoverInternal, setHoverInternal] = useState<string | null>(null);
@@ -554,7 +556,7 @@ export function ArenaCanvas({
   return (
     <canvas
       ref={canvasRef}
-      aria-label={interactive ? '竞技场（可点击选择）' : '竞技场'}
+      aria-label={interactive ? t('arena.labelInteractive') : t('arena.label')}
       role="img"
       style={interactive ? { cursor: hoveredId !== null ? 'pointer' : 'default' } : undefined}
       // 只读时**不挂任何监听**：V1.1 的行为与 DOM 一字不差

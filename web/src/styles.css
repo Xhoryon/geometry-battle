@@ -147,6 +147,35 @@ button {
   border-color: color-mix(in oklab, var(--danger) 45%, transparent);
 }
 
+/*
+ * 语言开关 —— 五条路由头部共用**同一个组件**（不是每页各写一个选择器）。
+ * 两个选项都写本名，不懂当前语言的人也找得到自己那一项。
+ */
+.lang {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  flex: none;
+}
+.lang__opt {
+  padding: 3px 10px;
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  background: transparent;
+  cursor: pointer;
+}
+.lang__opt + .lang__opt {
+  border-left: 1px solid var(--rule);
+}
+.lang__opt:hover {
+  color: var(--text);
+}
+/* 选中项用页面角色色**实底**：这是「当前语言」，不是可选项之一 —— 要一眼看出来 */
+.lang__opt--on {
+  color: var(--paper);
+  background: var(--role);
+}
+
 .team-dot {
   width: 8px;
   height: 8px;
@@ -608,10 +637,19 @@ details.adv .adv__body {
 }
 .panel__title {
   display: flex;
+  /* 允许换行：标题与副标题各自作为**整体**落到下一行，
+     而不是被 flex 收缩后在词组中间断开。
+     英文标题比中文长得多（`Participant entry` vs「参赛者入口」），
+     340px 的侧栏里不这样处理就会出现「PARTICIPANT / ENTRY」那种断法。 */
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px 8px;
   margin-bottom: 8px;
+}
+/* 标题本身不参与压缩：宁可把副标题挤到下一行，也不要把标题切碎 */
+.panel__title h2 {
+  flex: 0 0 auto;
 }
 .panel__title h2 {
   font-size: var(--fs-label);

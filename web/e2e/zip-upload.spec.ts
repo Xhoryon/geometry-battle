@@ -239,6 +239,26 @@ async function clickAction(page: Page, key: string): Promise<void> {
 
 // ============================================================================
 
+/**
+ * 把浏览器语言钉成中文。
+ *
+ * 这两条演练断言的是**中文界面**的行为，而 Playwright 的默认 locale 是 `en-US` ——
+ * 不钉的话它们会去断言英文文案。规格要求「既有中文流程必须继续可用」，
+ * 所以这里显式选择中文；**英文全流程**由 `web/e2e/i18n.spec.ts` 单独覆盖。
+ *
+ * 用 `addInitScript` 而不是在页面里点开关：它在该 context 的**每个**页面
+ * 加载之前执行，因此 `page.context().newPage()` 新建的参赛者页同样带得上。
+ */
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem('geometry-battle.locale', 'zh-CN');
+    } catch {
+      /* 私密模式下写不进去，那就退回浏览器语言 */
+    }
+  });
+});
+
 test.beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-zip-'));
   tmpZipDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-zipfiles-'));

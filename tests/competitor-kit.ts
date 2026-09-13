@@ -137,17 +137,28 @@ test('competitor-kit: 不再把沙箱内不可用的包写成可用（§4/§5）
     path.join(KIT, 'JSON_SCHEMA.md'),
     path.join(PLATFORM_ROOT, 'README.md'),
   ];
+  // 否定词表**必须两种语言都有**：README 自 V1.3 起是双语的，只写中文的话
+  // 英文那半边的「依赖不可用」说明会被误判成「把不可用的包写成了可用」。
+  // 注意不要加 `available` 这类词 —— 它会把真正的问题陈述一起放过。
+  const NEGATED =
+    /(不可用|不允许|禁止|无|NONE|none|失败|ModuleNotFoundError|无法|已修正|宿主观测|不要|cannot|unavailable|unusable|denies|deny|forbidden|not allowed|no third-party)/i;
+  /**
+   * 判定看**前后各 3 行**，而不是只看当前行。
+   *
+   * 散文是折行的：英文那句「早期文档把 numpy/scipy 写成冻结依赖 …… 但它们在沙箱里
+   * 不可用」里，包名与否定词天然会落在不同物理行上。只看单行就会把**正确的说明**
+   * 判成错误陈述。放宽到一个小窗口不会放过真问题 —— 一段话里只要有一句说「不可用」，
+   * 它就是在讲不可用；一段话从头到尾不提否定，仍然会被抓。
+   */
   const suspicious: string[] = [];
   for (const file of files) {
     const lines = fs.readFileSync(file, 'utf-8').split('\n');
     lines.forEach((line, i) => {
       for (const pkg of unavailable) {
         if (!new RegExp(`\\b${pkg}\\b`).test(line)) continue;
-        // 允许出现在「不可用 / 无 / 禁止 / NONE / 失败」等否定语境里
-        const negated = /(不可用|不允许|禁止|无|NONE|none|失败|ModuleNotFoundError|无法|已修正|宿主观测|不要)/.test(line);
-        if (!negated) {
-          suspicious.push(`${path.relative(PLATFORM_ROOT, file)}:${i + 1} ${line.trim().slice(0, 90)}`);
-        }
+        const context = lines.slice(Math.max(0, i - 3), i + 4).join('\n');
+        if (NEGATED.test(context)) continue;
+        suspicious.push(`${path.relative(PLATFORM_ROOT, file)}:${i + 1} ${line.trim().slice(0, 90)}`);
       }
     });
   }

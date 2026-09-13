@@ -128,6 +128,26 @@ async function expectTeamLinksOnJudge(page: Page): Promise<void> {
   }
 }
 
+/**
+ * 把浏览器语言钉成中文。
+ *
+ * 这两条演练断言的是**中文界面**的行为，而 Playwright 的默认 locale 是 `en-US` ——
+ * 不钉的话它们会去断言英文文案。规格要求「既有中文流程必须继续可用」，
+ * 所以这里显式选择中文；**英文全流程**由 `web/e2e/i18n.spec.ts` 单独覆盖。
+ *
+ * 用 `addInitScript` 而不是在页面里点开关：它在该 context 的**每个**页面
+ * 加载之前执行，因此 `page.context().newPage()` 新建的参赛者页同样带得上。
+ */
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => {
+    try {
+      window.localStorage.setItem('geometry-battle.locale', 'zh-CN');
+    } catch {
+      /* 私密模式下写不进去，那就退回浏览器语言 */
+    }
+  });
+});
+
 test.beforeAll(async () => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'gb-e2e-'));
   server = spawn(
@@ -349,10 +369,20 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   for (const bad of FORBIDDEN_RULE_WORDS) {
     expect(screenText, `大屏不得出现旧规则字样 ${bad}`).not.toContain(bad);
   }
-  expect(await page.locator('button').count(), '大屏不得有按钮').toBe(0);
+  // 大屏是**只读**的：不得出现任何**命令**控件。
+  //
+  // V1.3 起这里多了一个例外：语言开关（`data-locale` 标记了它的两个选项）。
+  // 它不是命令、不改变比赛、也不下达任何动作 —— 而大屏必须能切语言。
+  // 所以断言写成「没有任何命令按钮」+「除语言开关外没有其它按钮」，
+  // 比原来那句 `button count === 0` 更精确地表达了这条不变量。
+  expect(await page.locator('[data-action]').count(), '大屏不得出现裁判动作按钮').toBe(0);
+  expect(
+    await page.locator('button:not([data-locale])').count(),
+    '大屏除语言开关外不得有按钮'
+  ).toBe(0);
   // 双方锁定后，大屏必须能看到锚点
   expect(screenText).toContain(idA);
-  clock.mark('观众大屏（无诊断 / 无按钮 / 锚点已公开）');
+  clock.mark('观众大屏（无诊断 / 无命令控件 / 锚点已公开）');
 
   // ---- 10. 回放 ----
   await page.goto(`${baseURL}/replay/${encodeURIComponent(matchId)}`);
@@ -400,6 +430,17 @@ test('参赛者端：坏包被拒，且不碰槽位里已装好的包', async ({
   // 因此这里能证明的是**更强**的性质 —— 安装流水线是非破坏性的，
   // 被拒的上传一个字节都不会动到槽位里现有的东西。
   // （「空槽位 + 坏包 → 未就绪」那条由 `server-team` 在全新服务上覆盖。）
+
+  // 先等**权威 board** 到达再读 —— 否则下面读到的可能不是槽位里的真实包名。
+  //
+  // `goto()` 在文档 load 时就 resolve，而 board 是随后经 WS 推来的第一条消息；
+  // 这段窗口里 `board` 仍是 null，槽位名渲染的是兜底串。旧写法直接读文本，
+  // 于是偶发地把兜底串当成真实包名 —— 竞态，与语言无关。
+  //
+  // 等的是 `data-board` 这个机器可读的就绪标记（见 TeamPage），不是渲染出来的
+  // 文案、也不是睡眠：文案本身正是被测对象。
+  await expect(page.locator('.team')).toHaveAttribute('data-board', 'ready');
+
   const nameBefore = await page.locator('[data-testid="team-package"] .slot__name').innerText();
   expect(nameBefore, '前置：A 的槽位里应已装好一个包').not.toContain('未命名');
 
@@ -437,4 +478,109 @@ test('参赛者端：坏包被拒，且不碰槽位里已装好的包', async ({
   // 坏 ZIP 同样一个字节都不该动到槽位里已装好的包
   await expect(page.locator('[data-testid="team-package"] .slot__name')).toHaveText(nameBefore);
   await expect(page.locator('[data-testid="team-package"] .tag')).toHaveText('已就绪');
+});
+
+/**
+ * 裁判把本轮**揭晓**之后，直接点「连续跑完余下回合」也必须跑到终局。
+ *
+ * 这是 V1.3 窄口径复评抓到的 P1 的现场：`runToEndBlocker()` 把 READY / PUBLIC /
+ * REVEAL 三个阶段都判为「可以连续推进」（裁判板上那个按钮的 `enabled` 用的就是
+ * 它），而后台循环原本**无条件**重放 `beginRound(); revealRound();` —— 那套次序只在
+ * READY 起点成立。从 REVEAL 起点重放时：`beginRound()` 把本轮已经揭盲的阶段打回
+ * PUBLIC，`revealRound()` 见 `pendingReveal` 已存在而提前返回（不推回 REVEAL），
+ * 紧接着的 `judgeStartRound()` 以「需已 REVEAL」失败、循环退出 ——
+ * **比赛永久停在 PUBLIC / 0 回合**，此后 reveal / start-round / run-to-end 全部
+ * 变成空操作，只能换场重开，而换场会作废双方已经锁定的 Emitter。
+ *
+ * 在此之前，「揭晓 → 连续跑完」这条组合**零覆盖**：既有演练一律在 READY 阶段点
+ * run-to-end。
+ *
+ * `run-to-end` 在 PUBLIC 阶段的可达性由 `tests/run-to-end-phases.ts` 在服务端覆盖 ——
+ * 界面里 PUBLIC 是「揭晓」这条命令内部的中间态，裁判不可能停在那一格上，
+ * 所以浏览器侧能断言的就是「揭晓之后」这个起点。
+ */
+test('裁判：揭晓本轮后直接「连续跑完余下回合」，必须跑到终局且不卡在 PUBLIC', async ({
+  page,
+}) => {
+  test.setTimeout(10 * 60 * 1000);
+
+  // 本用例自包含：先换一场，再自己上传两个包 —— 不依赖前面用例留下的比赛状态。
+  //
+  // 换场这一步是必须的：前两个用例把这一场留在了终局，而规范 §32 规定
+  // **比赛中途冻结槽位**，MATCH_END 下替换算法包会被服务端当场拒绝。
+  await page.goto(judgeURL);
+  await clickAction(page, 'reset');
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP', { timeout: 60000 });
+
+  const pageA = await page.context().newPage();
+  const pageB = await page.context().newPage();
+  await uploadPackage(pageA, 'A');
+  await uploadPackage(pageB, 'B');
+
+  await page.goto(judgeURL);
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP', { timeout: 60000 });
+  await clickAction(page, 'prepare');
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('EMITTER_SELECT', {
+    timeout: 120000,
+  });
+  const idA = await pickAndLock(pageA, 'A', 1);
+  const idB = await pickAndLock(pageB, 'B', 1);
+
+  await page.goto(judgeURL);
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('READY', { timeout: 120000 });
+  const matchIdBefore = (await page.locator('[data-testid="match-id"]').innerText()).replace(
+    /^MATCH\s*/,
+    ''
+  );
+  // READY 才能看到 Emitter 状态块；终局时它整块收起，所以那时改用队卡上的锚点
+  await expect(page.locator('[data-testid="emitter-A-lock"]')).toHaveText('已锁定');
+  await expect(page.locator('[data-testid="emitter-B-lock"]')).toHaveText('已锁定');
+  const emittersBefore = {
+    A: await page.locator('[data-testid="judge-team-A-emitter"]').innerText(),
+    B: await page.locator('[data-testid="judge-team-B-emitter"]').innerText(),
+  };
+  expect(emittersBefore.A, 'A 的锚点应记在队卡上').toContain(idA);
+  expect(emittersBefore.B, 'B 的锚点应记在队卡上').toContain(idB);
+
+  // ---- 裁判的正常两步 ----
+  await clickAction(page, 'reveal');
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('REVEAL', { timeout: 60000 });
+
+  // 此刻 run-to-end 是**可用**的 —— 这正是那条路径的可达条件，先把它钉住，
+  // 免得将来有人「把按钮禁用」当成修好了（那只是把缺陷藏起来）。
+  await expect(page.locator('[data-action="run-to-end"]')).toBeEnabled();
+
+  const phaseText = page.locator('[data-testid="phase"]');
+  const lastError = page.locator('[data-testid="judge-last-error"]');
+  const settle = (p: Promise<unknown>): Promise<unknown> => p.catch(() => undefined);
+
+  await clickAction(page, 'run-to-end');
+  // 后台任务要么跑到终局、要么当场把失败原因写到板上 —— 两者都在几秒内发生，
+  // 所以不必等满超时：先等「任一发生」，再分别断言，失败信息才直接指向根因。
+  await Promise.race([
+    settle(expect(phaseText).toHaveText('MATCH_END', { timeout: 300000 })),
+    settle(expect(lastError).toBeVisible({ timeout: 300000 })),
+  ]);
+
+  // 旧实现会在这里红：板上留下「当前阶段 PUBLIC 不能 START ROUND（需已 REVEAL）」，
+  // 而阶段永远停在 PUBLIC。
+  await expect(lastError, '后台连续推进不得留下错误').toHaveCount(0);
+  await expect(phaseText).toHaveText('MATCH_END', { timeout: 60000 });
+  await expect(page.locator('[data-testid="verdict"]')).toBeVisible({ timeout: 60000 });
+
+  // 没有换场（换场会作废双方已锁定的 Emitter），两个锚点也原样保留。
+  await expect(page.locator('[data-testid="match-id"]')).toHaveText(`MATCH ${matchIdBefore}`);
+  await expect(page.locator('[data-testid="judge-team-A-emitter"]')).toHaveText(emittersBefore.A);
+  await expect(page.locator('[data-testid="judge-team-B-emitter"]')).toHaveText(emittersBefore.B);
+
+  // 产物落在服务端：这一场真的结算了回合，且终局落在四类之内。
+  const port = new URL(baseURL).port;
+  const res = await fetch(`http://127.0.0.1:${port}/api/replays`);
+  const list = (await res.json()) as { replays: { matchId: string; rounds: number }[] };
+  const entry = list.replays.find((r) => r.matchId === matchIdBefore);
+  expect(entry, `终局后 ${matchIdBefore} 应出现在回放列表里`).toBeTruthy();
+  expect(entry!.rounds, '至少应结算一轮').toBeGreaterThan(0);
+
+  await pageA.close();
+  await pageB.close();
 });

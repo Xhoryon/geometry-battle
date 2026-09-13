@@ -11,34 +11,21 @@
 import { ArenaCanvas } from '../arena/ArenaCanvas';
 import { ComputeStatus } from '../components/ComputeStatus';
 import { useBoard, useTrajectory } from '../api/client';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { PHASE_KEYS, localizeRoundErrors } from '../i18n/translations';
+import { useI18n } from '../i18n/useI18n';
 import type { SpectatorBoard } from '../../../src/server/protocol';
 import type { JSX } from 'react';
 
-const PHASE_LABEL: Record<string, string> = {
-  SETUP: '等待载入算法',
-  UPLOAD_A: '已载入 Team A',
-  UPLOAD_B: '已载入 Team B',
-  PREFLIGHT: '校验中',
-  // V1.2 §一：START 之后、双方锁定之前。漏掉这一格，大屏会直接把原始枚举
-  // （`EMITTER_SELECT`）印在现场，观众看到的是一个英文常量。
-  EMITTER_SELECT: '双方选择发射锚点',
-  READY: '就绪',
-  PUBLIC: '本轮已冻结 — 等待揭晓',
-  REVEAL: '已揭晓 — 等待 START',
-  COUNTDOWN: 'START 已下达',
-  COMPUTING: '双方算法计算中',
-  ROUND_RESULT: '本轮结算',
-  MATCH_END: '比赛结束',
-};
-
 export function SpectatorPage(): JSX.Element {
+  const { t, locale } = useI18n();
   const { board, connected } = useBoard<SpectatorBoard>('spectator');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
 
   if (!board) {
     return (
       <div className="screen">
-        <div className="empty">正在连接本地比赛服务…</div>
+        <div className="empty">{t('common.connecting')}</div>
       </div>
     );
   }
@@ -54,48 +41,62 @@ export function SpectatorPage(): JSX.Element {
    */
   const statusText =
     board.phase === 'READY' && board.round > 0
-      ? '本轮已结算 · 等待下一轮'
-      : (PHASE_LABEL[board.phase] ?? board.phase);
+      ? t('spectator.readyNextRound')
+      : t(PHASE_KEYS[board.phase]);
   const note = ((): string => {
     if (board.verdict) {
+      const reason = board.verdict.endReason;
       return board.verdict.winner === 'draw'
-        ? `平局 · ${board.verdict.endReason}`
-        : `TEAM ${board.verdict.winner} 获胜 · ${board.verdict.endReason}`;
+        ? `${t('replay.draw')} · ${reason}`
+        : `${t('replay.winner', { team: board.verdict.winner })} · ${reason}`;
     }
-    if (board.lastRound?.errors.length) return board.lastRound.errors.join('   ');
+    // 引擎给的人话错误：服务端给**键**，这里按当前语言取译文（V1.3）。
+    // 认不出键（服务端换了新错误码、界面还没跟上）时回退到它给的原文 ——
+    // 绝不把键本身渲染到大屏上。
+    if (board.lastRound?.errors.length) {
+      return localizeRoundErrors(
+        locale,
+        board.lastRound.errors,
+        board.lastRound.errorKeys,
+        board.lastRound.errorParams
+      ).join('   ');
+    }
     if (board.lastRound) {
       const atk = board.lastRound.attacksExecuted;
       const killed = board.lastRound.killed;
-      return `本轮攻击 ${atk.length ? `[${atk.join(' → ')}]` : '未执行'}   击杀 ${killed.length ? killed.join(',') : '无'}`;
+      return t('spectator.note.attacks', {
+        attacks: atk.length ? `[${atk.join(' → ')}]` : t('spectator.note.noAttacks'),
+        kills: killed.length ? killed.join(',') : t('common.none'),
+      });
     }
-    return PHASE_LABEL[board.phase] ?? board.phase;
+    return t(PHASE_KEYS[board.phase]);
   })();
 
   return (
     <div className="screen" data-testid="spectator">
       <header className="screen__rail">
         <div className="round-mark">
-          <span className="round-mark__label">Round</span>
+          <span className="round-mark__label">{t('spectator.round')}</span>
           <span className="round-mark__value">{String(board.round).padStart(2, '0')}</span>
         </div>
 
         <div className="alive alive--a">
           <span className="team-dot team-dot--a" />
           <span className="alive__count">{board.alive.A}</span>
-          <span className="alive__label">Team A 存活</span>
+          <span className="alive__label">{t('spectator.alive', { team: 'A' })}</span>
         </div>
 
         <div className="alive alive--b">
           <span className="team-dot team-dot--b" />
           <span className="alive__count">{board.alive.B}</span>
-          <span className="alive__label">Team B 存活</span>
+          <span className="alive__label">{t('spectator.alive', { team: 'B' })}</span>
         </div>
 
         {first && first !== 'none' ? (
           <div className="round-mark">
-            <span className="round-mark__label">First solver</span>
+            <span className="round-mark__label">{t('spectator.firstSolver')}</span>
             <span className="round-mark__value" style={{ color: first === 'A' ? 'var(--a)' : first === 'B' ? 'var(--b)' : 'var(--muted)' }}>
-              {first === 'tie' ? '同时' : `TEAM ${first}`}
+              {first === 'tie' ? t('spectator.tie') : `TEAM ${first}`}
             </span>
           </div>
         ) : null}
@@ -107,7 +108,7 @@ export function SpectatorPage(): JSX.Element {
         */}
         {board.arena.emitters ? (
           <div className="round-mark" data-testid="spectator-emitters">
-            <span className="round-mark__label">本场发射锚点</span>
+            <span className="round-mark__label">{t('spectator.emitters')}</span>
             <span className="round-mark__value num">
               <span className="team-dot team-dot--a" /> {board.arena.emitters.A.id}
               {'　'}
@@ -116,9 +117,10 @@ export function SpectatorPage(): JSX.Element {
           </div>
         ) : null}
 
-        <span style={{ marginLeft: 'auto' }}>
+        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
+          <LanguageSwitch />
           <span className={`tag ${connected ? 'tag--live' : 'tag--down'}`}>
-            {connected ? '● 实时' : '○ 未连接'}
+            {connected ? t('common.live') : t('common.offline')}
           </span>
         </span>
       </header>
@@ -140,7 +142,9 @@ export function SpectatorPage(): JSX.Element {
               className={`verdict__winner ${board.verdict.winner === 'draw' ? '' : `verdict__winner--${board.verdict.winner.toLowerCase()}`}`}
               style={board.verdict.winner === 'draw' ? { color: 'var(--muted)' } : undefined}
             >
-              {board.verdict.winner === 'draw' ? '平局 DRAW' : `TEAM ${board.verdict.winner} 获胜`}
+              {board.verdict.winner === 'draw'
+                ? t('spectator.verdict.draw')
+                : t('replay.winner', { team: board.verdict.winner })}
             </span>
             <span className="verdict__reason">{board.verdict.endReason}</span>
           </div>

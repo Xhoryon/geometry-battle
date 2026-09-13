@@ -15,6 +15,10 @@
 
 import { MAX_UPLOAD_BYTES } from '../../../src/server/protocol';
 
+// 只从**纯**模块取翻译：zip.ts 被 Node 单测直接 import，
+// 而根 tsconfig 没有 `jsx` —— 一旦这里间接依赖到 .tsx，那个单测就编译不过。
+import { t } from '../i18n/translations';
+
 export interface UploadedFile {
   path: string;
   contentBase64: string;
@@ -101,7 +105,7 @@ async function inflateRaw(bytes: Uint8Array, budget: number): Promise<Uint8Array
     total += value.byteLength;
     if (total > budget) {
       await reader.cancel();
-      throw new Error(`解压后体积超过上限 ${budget} 字节 —— 疑似 ZIP 炸弹`);
+      throw new Error(t('zip.bomb', { bytes: budget }));
     }
     chunks.push(value);
   }
@@ -123,11 +127,11 @@ async function inflateRaw(bytes: Uint8Array, budget: number): Promise<Uint8Array
 export async function unzipToFiles(zipBytes: ArrayBuffer): Promise<UploadedFile[]> {
   const dv = new DataView(zipBytes);
   const eocd = findEocd(dv);
-  if (eocd < 0) throw new Error('不是合法的 ZIP 文件');
+  if (eocd < 0) throw new Error(t('zip.notZip'));
 
   const count = u16(dv, eocd + 10);
   const cdOffset = u32(dv, eocd + 16);
-  if (count > 4096) throw new Error(`ZIP 内条目过多（${count}）`);
+  if (count > 4096) throw new Error(t('zip.tooManyEntries', { n: count }));
 
   const raw = new Uint8Array(zipBytes);
   const out: UploadedFile[] = [];
@@ -136,7 +140,7 @@ export async function unzipToFiles(zipBytes: ArrayBuffer): Promise<UploadedFile[
   let p = cdOffset;
 
   for (let i = 0; i < count; i++) {
-    if (u32(dv, p) !== SIG_CENTRAL) throw new Error('ZIP 中央目录损坏');
+    if (u32(dv, p) !== SIG_CENTRAL) throw new Error(t('zip.centralCorrupt'));
     const method = u16(dv, p + 10);
     const declaredCrc = u32(dv, p + 16);
     const compressedSize = u32(dv, p + 20);
@@ -153,7 +157,7 @@ export async function unzipToFiles(zipBytes: ArrayBuffer): Promise<UploadedFile[
       continue;
     }
 
-    if (u32(dv, localOffset) !== SIG_LOCAL) throw new Error(`ZIP 局部头损坏: ${name}`);
+    if (u32(dv, localOffset) !== SIG_LOCAL) throw new Error(t('zip.localCorrupt', { name }));
     const lNameLen = u16(dv, localOffset + 26);
     const lExtraLen = u16(dv, localOffset + 28);
     const dataAt = localOffset + 30 + lNameLen + lExtraLen;
@@ -162,30 +166,30 @@ export async function unzipToFiles(zipBytes: ArrayBuffer): Promise<UploadedFile[
     // 快路：声明值本身就超预算的，不必解压。**只是快路** —— 声明值是攻击者可控的，
     // 真防线是下面 inflateRaw 的流式计数与逐条 CRC。
     if (declaredSize > MAX_UPLOAD_BYTES) {
-      throw new Error(`ZIP 内文件声明体积过大: ${name}`);
+      throw new Error(t('zip.declaredTooBig', { name }));
     }
 
     let content: Uint8Array;
     if (method === 0) content = compressed;
     else if (method === 8) content = await inflateRaw(compressed, MAX_UPLOAD_BYTES - totalOut);
-    else throw new Error(`不支持的 ZIP 压缩方式 ${method}（仅支持 stored / deflate）`);
+    else throw new Error(t('zip.unsupportedMethod', { method }));
 
     totalOut += content.byteLength;
     if (totalOut > MAX_UPLOAD_BYTES) {
-      throw new Error(`ZIP 解压后总体积超过上限 ${MAX_UPLOAD_BYTES} 字节`);
+      throw new Error(t('zip.totalTooBig', { bytes: MAX_UPLOAD_BYTES }));
     }
 
     // CRC 不只是「更早发现损坏」：它能在浏览器里就说清「这个 zip 是坏的」，
     // 而不是上传之后得到一句难懂的 Preflight 失败。服务端哈希 + Preflight 仍是权威兜底。
     if (crc32(content) !== declaredCrc) {
-      throw new Error(`ZIP 校验和不匹配: ${name}（文件已损坏）`);
+      throw new Error(t('zip.crcMismatch', { name }));
     }
 
     out.push({ path: name, contentBase64: bytesToBase64(content) });
     p += 46 + nameLen + extraLen + commentLen;
   }
 
-  if (out.length === 0) throw new Error('ZIP 里没有任何文件');
+  if (out.length === 0) throw new Error(t('zip.empty'));
   return out;
 }
 

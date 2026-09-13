@@ -43,12 +43,16 @@ const SUITES = [
   'judge-console',
   'operator-e2e',
   'server-team',
+  // 「连续跑完余下回合」的阶段契约（V1.3 窄口径复评 P1）：runToEndBlocker 允许的
+  // 每个阶段都必须真的能推进到终局，且已揭晓的本轮不得被重放或打回 PUBLIC。
+  'run-to-end-phases',
   'runtime-manifest',
   'competitor-kit',
   'demo-repro',
   // Web UI（V1.1 Local Web UI）—— 投影层纯函数 + 真 HTTP/WS 端到端。
   // 浏览器演练（Playwright）不在这里：它需要构建前端与真实浏览器，
   // 由 `npm run e2e` 单独跑。
+  'i18n',
   'web-projection',
   'web-zip',
   'web-server',

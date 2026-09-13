@@ -1,3 +1,26 @@
+## V1.3.0 (2026-09-12) — Bilingual Tournament Experience
+
+V1.3 brings a comprehensive bilingual (Chinese / English) localized user experience,
+cross-phase run-to-end execution fixes, and robust end-to-end test synchronization.
+
+Prepared from independently audited internal snapshot `febf1c69fb6cb78624811513149f477c4e30fac6`.
+
+### Highlights
+
+- **Bilingual Interface (i18n)**: Full Chinese (zh-CN) and English (en-US) support across
+  the web application (Judge console, Team pages `/team/a` & `/team/b`, Spectator screen,
+  Replay viewer).
+- **Persistent Language Selection**: Language preference switches seamlessly with instant
+  locale state persistence in `localStorage`.
+- **Bilingual Documentation**: Comprehensive bilingual README with mirrored rulebooks,
+  protocol specifications, and route maps.
+- **Run-to-End Correctness Fix**: Resolved execution stall when advancing multiple rounds
+  from non-initial phases (`REVEAL` / `PUBLIC`), ensuring seamless multi-round autoplay.
+- **Protocol & Server Hardening**: Localized API error keys and message propagation; client
+  transparently passes localized reasons.
+
+---
+
 # Release Notes
 
 ## V1.2 — Interactive Tournament Platform
