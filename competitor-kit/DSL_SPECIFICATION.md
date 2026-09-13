@@ -174,6 +174,13 @@ Team B：x ∈ [-20, x_e]
 `x = 20` (increasing x), Team B from `x_e` towards `x = -20` (decreasing x); the function itself is still a
 plain `y = f(x)` — the team only decides which segment the platform looks at, and in which direction.
 
+数值校验的**采样网格**也从本队 Emitter 出发、沿进攻方向以步长 `h` 推进到场地边界（V1.4 起对双方一致）：
+两队的采样点互为精确镜像，因此同一条打法写成 A 的函数与写成 B 的镜像函数，合法性结论与错误码相同。
+**English.** The numerical checks sample on a grid that also starts at your own Emitter and walks in the attack
+direction with step `h` to the field edge (identical for both sides since V1.4): the two teams' sample points are
+exact mirrors of each other, so the same shot written as an A function or as its B mirror gets the same verdict
+and the same error code.
+
 | 要求 | 判定 | 错误码 |
 |---|---|---|
 | 必须经过自己的固定 Emitter | `|f(x_e) − y_e| ≤ 1e-6` | `NOT_THROUGH_SHOOTER` |

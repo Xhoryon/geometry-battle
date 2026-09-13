@@ -117,14 +117,20 @@ export function sampleStepFor(ast: CanonicalNode, domain: [number, number]): { h
 export function countConvexityChanges(
   ast: CanonicalNode,
   domain: [number, number],
-  h: number
+  h: number,
+  dir: 1 | -1 = 1
 ): { count: number; maxAbsCurvature: number } {
   const f = (x: number) => evaluateNode(ast, x);
   let prevSign = 0;
   let count = 0;
   let maxAbsCurvature = 0;
 
-  for (let x = domain[0]; x <= domain[1] + 1e-12; x += h) {
+  // 网格从 Emitter 所在的端点出发、沿进攻方向推进（dir=1 从 domain[0] 向上，
+  // dir=−1 从 domain[1] 向下）。两个方向的采样点互为精确镜像，镜像函数在两边
+  // 数出的变号次数因此相同 —— 为什么必须这样，见 validateAttackFunction 第 4 步。
+  const start = dir === 1 ? domain[0] : domain[1];
+  const within = (x: number) => (dir === 1 ? x <= domain[1] + 1e-12 : x >= domain[0] - 1e-12);
+  for (let x = start; within(x); x += dir * h) {
     const f0 = f(x);
     const fm = f(x - h);
     const fp = f(x + h);
@@ -132,7 +138,8 @@ export function countConvexityChanges(
 
     const scale = Math.max(1, Math.abs(f0), Math.abs(fm), Math.abs(fp));
     const curvEps = 1e-8 * scale / (h * h);
-    const d2 = (fp - 2 * f0 + fm) / (h * h);
+    // 先加 fp + fm 再减 2·f0：镜像网格上 fp/fm 互换角色，加法可交换才能让 d2 逐位相同
+    const d2 = ((fp + fm) - 2 * f0) / (h * h);
     if (!Number.isFinite(d2)) continue;
 
     maxAbsCurvature = Math.max(maxAbsCurvature, Math.abs(d2));
@@ -220,10 +227,24 @@ export function validateAttackFunction(
     return { valid: false, issues, metrics };
   }
 
-  // ---- 4. 有限性扫描 ----
+  // ---- 4. 采样网格：从 Emitter 出发，沿进攻方向推进 ----
+  //
+  // 网格**不能**从 domain[0] 起步：A 的 domain[0] 是 Emitter，B 的却是场地边 −20
+  // （Rules.firingDomain）。同一个镜像函数在两边会被采到两组不同的 x，阈值附近
+  // （凸性 100 次、|f| ≤ 1e6、贴边的 tan 极点）就会出现「A 非法、B 合法」——
+  // tests/mirror-fairness.ts 的定向探针给出了确定性复现（凸性计数 101 vs 100）。
+  // 生产路径里 shooter.x 恒为区间的一个端点（firingDomain 的契约）；这里按更近的
+  // 端点判方向，旧测试里「shooter 在区间中央」的写法仍从 domain[0] 起步，行为不变。
+  // 镜像精确性：min(sx + i·h, 20) 与 max(−sx − i·h, −20) 在 IEEE-754 下互为精确取负。
+  const dir: 1 | -1 = Math.abs(shooter.x - domain[1]) < Math.abs(shooter.x - domain[0]) ? -1 : 1;
+  const anchor = dir === 1 ? domain[0] : domain[1];
+  const far = dir === 1 ? domain[1] : domain[0];
+  const gridX = (i: number) => (dir === 1 ? Math.min(anchor + i * h, far) : Math.max(anchor - i * h, far));
+
+  // 有限性扫描
   const f = (x: number) => evaluateNode(ast, x);
   for (let i = 0; i < n; i++) {
-    const x = Math.min(domain[0] + i * h, domain[1]);
+    const x = gridX(i);
     const y = f(x);
     if (!Number.isFinite(y)) {
       issues.push({ code: 'NOT_FINITE', message: `x=${x.toFixed(6)} 处 f(x)=${y}`, at: x });
@@ -253,9 +274,9 @@ export function validateAttackFunction(
   // 网格上抽样检测（步长 8h），避免 O(n·2^depth)
   const stride = 8;
   for (let i = 0; i + stride < n; i += stride) {
-    const a = Math.min(domain[0] + i * h, domain[1]);
-    const b = Math.min(domain[0] + (i + stride) * h, domain[1]);
-    if (b <= a) break;
+    const a = gridX(i);
+    const b = gridX(i + stride);
+    if (a === b) break;
 
     if (detectJump(f, a, b, jumpTolF)) {
       issues.push({
@@ -285,7 +306,7 @@ export function validateAttackFunction(
 
   // 斜率上界（用于异常陡峭判定）
   for (let i = 0; i < n; i += 4) {
-    const x = Math.min(domain[0] + i * h, domain[1]);
+    const x = gridX(i);
     const s = Math.abs(d1(x));
     if (Number.isFinite(s)) metrics.maxAbsSlope = Math.max(metrics.maxAbsSlope, s);
   }
@@ -298,7 +319,7 @@ export function validateAttackFunction(
   }
 
   // ---- 6. 凸性变化 ≤ 100 ----
-  const convexity = countConvexityChanges(ast, domain, h);
+  const convexity = countConvexityChanges(ast, domain, h, dir);
   metrics.convexityChanges = convexity.count;
   metrics.maxAbsCurvature = convexity.maxAbsCurvature;
 
