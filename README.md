@@ -590,6 +590,9 @@ and "whose machine has more cores" would become a timing advantage.
 - 场地：`x ∈ [-20, 20]`，`y ∈ [-12, 12]`
 - 队伍区域：A 队 `x ∈ [-20, -4]`，B 队 `x ∈ [4, 20]`
 - 攻击方向：A 向 `+x`，B 向 `-x`
+- **遍历方向**：判定沿攻击方向遍历函数图像 —— A 从 `x_e` 向 `x = 20`（x 增大），B 从 `x_e` 向 `x = -20`（x 减小）；遍历区间即有效攻击范围，函数合法性只在这段上校验。「首次接触之前」是相对遍历方向而言的：对 B 来说「之前」= x 更大的一侧
+- **数组顺序**：`points` 先列 A 队再列 B 队，组内按生成顺序，整场每轮相同；死点留在原位（`alive: false`），被锁定为 Emitter 的两个点被移除且**不重新编号**（`A1` 可能不存在）；`obstacles` 为 `O1..On` 生成顺序、整场不变。**不要假设数组顺序代表几何顺序**（不按 x、不按距离排序）
+- **两侧兼容**：同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。自检：`python3 competitor-kit/tools/validate_submission.py <目录>`（与官方 Preflight 同一份判定代码，A、B 各跑一次）与 `python3 competitor-kit/tools/check_mirror.py <目录>`（镜像一致性 —— 开发诊断，官方 Preflight 不运行）
 - **命中**：`|f(x_p) − y_p| ≤ 1e-6`，且该点位于攻击方向上、且位于**首次障碍物接触之前**
 - **障碍物**：轨迹在第一次与任何障碍物接触处终止；接触点之前的点可被击杀，接触点及其之后的点不受影响
 - **先手**：先输出合法解的一方先开火，后手随后开火
@@ -615,6 +618,9 @@ and "whose machine has more cores" would become a timing advantage.
 - Field: `x ∈ [-20, 20]`, `y ∈ [-12, 12]`
 - Team zones: A `x ∈ [-20, -4]`, B `x ∈ [4, 20]`
 - Attack direction: A toward `+x`, B toward `-x`
+- **Traversal direction:** the Judge walks the graph in the attack direction — A from `x_e` towards `x = 20` (increasing x), B from `x_e` towards `x = -20` (decreasing x); that interval is the firing domain and function legality is checked only there. "Before the first contact" is direction-relative: for B, "before" means larger x
+- **Array order:** `points` lists Team A first, then Team B, each in generation order, identical every round; dead points stay in place (`alive: false`), the two points locked as Emitters are removed and ids are **not renumbered** (`A1` may be absent); `obstacles` are `O1..On` in generation order and never change. **Do not assume array order is geometric order** (not sorted by x or by distance)
+- **Both sides:** the same formal submission MUST run correctly as Team A and as Team B. Self-check with `python3 competitor-kit/tools/validate_submission.py <dir>` (the same judging code as the official Preflight, run once per team) and `python3 competitor-kit/tools/check_mirror.py <dir>` (mirror consistency — a development diagnostic the official Preflight does not run)
 - **Hit:** `|f(x_p) − y_p| ≤ 1e-6`, the point is in the attack direction, and it lies **before the first obstacle contact**
 - **Obstacles:** the trajectory ends at the first contact with any obstacle; points before the contact can be killed, the contact point and everything after it are unaffected
 - **First mover:** whichever side returns a legal solution first fires first; the other fires afterwards

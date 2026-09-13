@@ -19,6 +19,9 @@ cp -r competitor-kit/starter ./my-algorithm
 # 2) 自检（必须全 PASS 再提交）
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm
 
+# 2b) 可选：镜像自检 —— 同一份代码在 Team A / Team B 两侧是否一致（开发诊断）
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm
+
 # 3) 改 solver.py，重复第 2 步
 ```
 
@@ -27,7 +30,7 @@ python3 competitor-kit/tools/validate_submission.py ./my-algorithm
 ```text
 ── Team A ──
   Entrypoint         PASS 包根目录存在 solver.py
-  Package            PASS 2 个文件 / 6949 字节 / hash=0149cc81f781…
+  Package            PASS 2 个文件 / 6964 字节 / hash=0be87671344d…
   Runtime            PASS sandbox-exec 可用，算法将在与官方比赛相同的沙箱内运行
   CLI / startup      PASS READY 握手成功，GO 已释放（release_ns=…）
   Input              PASS public_state.json (1389 B) + reveal_state.json (681 B)，sha256 绑定已由启动壳复核
@@ -62,12 +65,20 @@ PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
 | [starter/solver.py](starter/solver.py) | 官方 starter（接口正确、可直接运行） | 一开始 |
 | [examples/](examples/) | 真实引擎产出的输入/输出样例 | 想对照格式时 |
 | [tools/validate_submission.py](tools/validate_submission.py) | 本地自检工具 | 每次提交前 |
+| [tools/check_mirror.py](tools/check_mirror.py) | 镜像自检（开发诊断）：同一份代码在 A / B 两侧是否一致 | 提交前、以及每次改了方向 / 选目标逻辑之后 |
 
 ---
 
 ## 3. 你只需要记住的六件事
 
 1. **入口固定**：包根目录的 `solver.py`，四个参数 `--team / --public / --reveal / --output`。
+   **同一正式提交必须能够在 Team A 与 Team B 两侧正确运行**：A 的前进方向是 x 增大、B 是 x 减小；
+   `points` 的顺序**不是**几何顺序（先 A 组后 B 组、组内按生成顺序、整场每轮相同、死点留在原位、
+   被锁定为 Emitter 的点被移除且不重新编号）—— 详见 [ALGORITHM_REQUIREMENTS.md](ALGORITHM_REQUIREMENTS.md) §6.2。
+   **English.** The same formal submission MUST run correctly as Team A and as Team B: A moves forward towards increasing x,
+   B towards decreasing x, and the order of `points` is not geometric order (A group first, then B, each in
+   generation order, identical every round, dead points kept in place, Emitter points removed without
+   renumbering) — see ALGORITHM_REQUIREMENTS.md §6.2.
 2. **输入只走文件**：两份 JSON，由参数给出路径；stdin 不是输入通道。
 3. **结果只走文件**：`{"schema_version":"1.1","dsl":<AST>}` 写进 `--output`；顶层只有这两个键，stdout 不是结果通道。
 4. **函数必须经过自己的固定 Emitter**：`|f(x_e) − y_e| ≤ 1e-6`。**Emitter 坐标逐场不同** —— 每队开赛前从自己的点里选一个并锁定，因此必须从 `public_state.emitters[team]` 读，**不要写死 `-18` / `18`**。用 `f(x) = y_e + g(x − x_e)` 这种增量写法最稳（换锚点不用改代码）。
@@ -120,6 +131,42 @@ parseCanonicalDSL / validateAttackFunction
 
 需要 Node.js（比赛仓库自带）；Python 前端只是调用它。
 
+### 5.1 镜像自检 `check_mirror.py`（开发诊断） / Mirror self-check (development diagnostic)
+
+```bash
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm --json
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm --timeout 500
+```
+
+它把同一份代码放进 decoy 世界及其**镜像世界**（x → −x、A/B 互换、编号互换、障碍物按序镜像）里各跑一遍
+（A@原世界 ↔ B@镜像世界，再反过来一对），然后比较两侧**规范化后的几何**（`f_A(x)` 对 `f_B(−x)`）与
+Judge 的结算结果 —— 不比 AST 字节。合法性与结算调用的仍是生产模块（`parseCanonicalDSL` /
+`validateAttackFunction` / `judgeShot`），Python 前端只负责调用 `src/operator/check-mirror.ts`。
+
+结论：`PASS` 一致；`WARN` 两侧都合法但几何不同（合法 —— 你的算法不是镜像对称的，确认这是有意的即可）；
+`FAIL` 一侧合法而镜像侧崩溃 / 超时 / 非法（经典的「只会打 Team A」bug）；两侧都失败同样记 `FAIL`
+（那不是镜像问题 —— 先跑 `validate_submission.py`）。退出码 0 = PASS / WARN，1 = FAIL，2 = 用法 / 环境错误。
+**注意**：`WARN` 若两对配对都报「结算不一致」（命中 / 阻挡 / 终止原因不同），那是同一个「只会打 Team A」bug
+的不崩溃形态（B 侧交出了退化但合法的函数）—— 退出码虽是 0，请像 `FAIL` 一样认真对待；工具会在这种情况下额外提示。
+相对路径（算法目录、`--sandbox-root`）相对**仓库根目录**解析，与 `validate_submission.py` 一致。
+
+**它是开发诊断，不是正式的拒绝规则：官方 Preflight 不运行它。** 正式的接口与函数合法性仍以
+`validate_submission.py`（== 官方 Preflight）为准。
+
+**English.** `check_mirror.py` runs the same code in the decoy world and in its **mirror** (x → −x, teams
+swapped, ids swapped, obstacles mirrored in order) — A on the original vs B on the mirror, and the reverse
+pair — then compares **normalised geometry** (`f_A(x)` against `f_B(−x)`) and the Judge outcome, not AST
+bytes. `PASS` = consistent; `WARN` = both sides legal but the geometry differs (legal — your solver is not
+mirror-symmetric; make sure it is intentional); `FAIL` = one side legal while its mirror crashes / times out /
+is illegal (the classic Team-A-only bug); both sides failing is also `FAIL` (not a mirror issue — run
+`validate_submission.py` first). Exit codes: 0 = PASS / WARN, 1 = FAIL, 2 = usage / environment.
+**Note:** a `WARN` whose two pairs both report a different judge outcome (hits / blocked / end reason) is the
+non-crashing form of the same Team-A-only bug (the B side emitted a degenerate but legal function) — the exit
+code is 0, but treat it as seriously as `FAIL`; the tool prints an extra hint in that case. Relative paths (the
+package directory, `--sandbox-root`) resolve against the **repository root**, as with `validate_submission.py`.
+**It is a development diagnostic, not an official rejection rule — the official Preflight does not run it.**
+
 ---
 
 ## 6. 官方 Preflight 与本地自检的关系
@@ -131,6 +178,7 @@ parseCanonicalDSL / validateAttackFunction
 | 世界 | 固定 decoy 种子（可复现） | `matchId` 派生的 decoy 世界 |
 | 队别 | A、B 各跑一次 | 按你的槽位跑一次 |
 | 结论 | `PRE-FLIGHT PASS` / `FAIL` | `Preflight: PASS` / `FAIL` |
+| 镜像自检 | `check_mirror.py`（开发诊断，可选） | **不运行** |
 
 两者都**不会**泄漏比赛信息：decoy 世界与正式比赛的种子无关。
 
@@ -149,7 +197,8 @@ DSL           14 个白名单节点，节点 ≤128 / 深度 ≤12 / 常数 ≤1
 
 `competitor-kit/` 里的每一份文件都由平台测试持续核对：
 
-- `tests/competitor-kit.ts` —— 文档示例、引用完整性、examples 防漂移、CRASH 可读性、starter 首跑
+- `tests/competitor-kit.ts` —— 文档示例、引用完整性、examples 防漂移、CRASH 可读性、starter 首跑、
+  §6.2 方向 / 数组顺序 / 双侧兼容的措辞防漂移、`tools/check_mirror.py` 的 PASS / WARN / FAIL 三条路径
 - `tests/runtime-manifest.ts` —— Manifest 声称可 import 的模块，在真实沙箱里必须真的可 import
 
 也就是说：**这一页写的东西，有测试在盯着它不许过期。**

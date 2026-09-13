@@ -24,10 +24,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { CanonicalNode, parseCanonicalDSL } from '../core/Ast';
-import { buildPublicState, buildRevealState } from '../core/InputProtocol';
+import { PublicStatePoint, buildPublicState, buildRevealState } from '../core/InputProtocol';
 import { COMPUTE_TIMEOUT_MS, MEMORY_LIMIT_MB, firingDomain } from '../core/Rules';
 import { validateAttackFunction } from '../core/Validator';
+import { Point } from '../field/Field';
 import { decoyEmitters, generateMapOrNull } from '../map/MapGenerator';
+import { Obstacle } from '../obstacle/Obstacle';
 import {
   cleanupSandbox,
   defaultSandboxRoot,
@@ -380,6 +382,39 @@ export async function validateSubmission(
 
   const ok = teamsReport.every((t) => t.checks.every((c) => c.status !== 'FAIL'));
   return { ok, dir: target, world, teams: teamsReport, inspection };
+}
+
+/**
+ * 本地自检的 decoy 世界（地图 + 锚点 + 点表 + 障碍物），供镜像自检等外围工具**复用同一构造**。
+ *
+ * 与上面 `validateSubmission()` 里的 decoy 构造逐行同义（同一个种子、同一条 `decoyEmitters`
+ * 规则、同样把锚点从 `points` 里剔除）—— 单独抽出来是为了让 `src/operator/check-mirror.ts`
+ * 不必再抄一遍这段逻辑；抄一遍就意味着两个工具眼里的「样例世界」迟早分叉。
+ * `seed` 可指定，默认仍是 `LOCAL_PREFLIGHT_SEED`。
+ */
+export interface LocalDecoyWorld {
+  seed: number;
+  mapSeed: number;
+  emitters: { A: Point; B: Point };
+  points: PublicStatePoint[];
+  obstacles: Obstacle[];
+}
+
+export function buildLocalDecoyWorld(seed: number = LOCAL_PREFLIGHT_SEED): LocalDecoyWorld | null {
+  const map = generateMapOrNull({ seed, pointCount: LOCAL_POINT_COUNT, difficulty: LOCAL_DIFFICULTY });
+  if (!map) return null;
+  const emitters = decoyEmitters(map);
+  const points: PublicStatePoint[] = [
+    ...map.teamA.map((p, i) => ({ id: `A${i + 1}`, team: 'A' as const, x: p.x, y: p.y, alive: true })),
+    ...map.teamB.map((p, i) => ({ id: `B${i + 1}`, team: 'B' as const, x: p.x, y: p.y, alive: true })),
+  ].filter((p) => p.id !== emitters.A.id && p.id !== emitters.B.id);
+  return {
+    seed,
+    mapSeed: map.seed,
+    emitters: { A: emitters.A.position, B: emitters.B.position },
+    points,
+    obstacles: map.obstacles,
+  };
 }
 
 /** 报告的一行式摘要（CLI / 测试共用） */

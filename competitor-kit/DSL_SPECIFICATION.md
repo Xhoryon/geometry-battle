@@ -167,6 +167,13 @@ Team A：x ∈ [x_e, 20]（x_e 为 Emitter 的 x 坐标）
 Team B：x ∈ [-20, x_e]
 ```
 
+校验区间就是 Judge 的**遍历区间**：Team A 从 `x_e` 向 `x = 20` 遍历（x 增大），Team B 从 `x_e` 向
+`x = -20` 遍历（x 减小）；函数本身仍是普通的 `y = f(x)`，队别只决定平台看哪一段、往哪边走
+（见 [ALGORITHM_REQUIREMENTS.md](ALGORITHM_REQUIREMENTS.md) §6.2）。
+**English.** The validation interval is the Judge's traversal interval: Team A traverses from `x_e` towards
+`x = 20` (increasing x), Team B from `x_e` towards `x = -20` (decreasing x); the function itself is still a
+plain `y = f(x)` — the team only decides which segment the platform looks at, and in which direction.
+
 | 要求 | 判定 | 错误码 |
 |---|---|---|
 | 必须经过自己的固定 Emitter | `|f(x_e) − y_e| ≤ 1e-6` | `NOT_THROUGH_SHOOTER` |
