@@ -1,8 +1,9 @@
 /**
  * 完整赛事演练（浏览器）—— V1.2 §八
  *
- *     启动应用 → 两队**真实上传** → 各自选 Emitter 并 Lock → 未锁定不泄漏
- *     → 裁判向导 → 多 Round → 终局 → 大屏 → 回放 → 刷新恢复 → Reset → 第二场
+ *     启动应用 → 首页选择身份（粘贴访问链接）→ 两队**真实上传** → 各自选 Emitter 并 Lock
+ *     → 未锁定不泄漏 → 裁判向导 → 多 Round → 终局 → 大屏 → 回放播放器 → 刷新恢复
+ *     → Reset（两步确认，含取消）→ 第二场
  *
  * 目标：**正常比赛全过程不需要 Terminal 或开发者介入**。
  *
@@ -274,8 +275,23 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
 
   const clock = new StepClock();
 
+  // ---- 0. 首页：选择身份（V1.4）。`/` 不再重定向到 /judge —— 那次 replaceState 会丢掉 #t= ----
+  await page.goto(`${baseURL}/`);
+  await expect(page).toHaveURL(`${baseURL}/`);
+  await expect(page.locator('[data-testid="home"]')).toBeVisible();
+  for (const id of ['judge', 'team-a', 'team-b', 'spectator']) {
+    await expect(page.locator(`[data-testid="home-role-${id}"]`)).toBeVisible();
+  }
+  // 裁判从首页粘贴访问链接进裁判台：令牌**只进 fragment**，地址栏里不得出现 ?t=
+  await page.locator('[data-testid="access-input-judge"]').fill(judgeURL);
+  await page.locator('[data-testid="access-go-judge"]').click();
+  await expect(page).toHaveURL(judgeURL);
+  expect(page.url(), '令牌不得进查询串').not.toContain('?t=');
+  clock.mark('首页选择身份 → 粘贴访问链接进裁判台（令牌只在 fragment）');
+
   // ---- 1. 裁判台起步：SETUP ----
-  await page.goto(judgeURL);
+  // 先等权威 board 到达（data-board 是机器可读的同步点，不是文案、不是睡眠）
+  await expect(page.locator('[data-testid="judge"]')).toHaveAttribute('data-board', 'ready');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP');
   await expect(page.locator('[data-testid="wizard"]')).toBeVisible();
   // 组织者的第一件事就是从这里把两条链接发给两队 —— 所以先核对这块面板
@@ -352,7 +368,17 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   await expect(page.locator('[data-testid="phase"]')).toHaveText('MATCH_END', { timeout: 600000 });
   const matchId = (await page.locator('[data-testid="match-id"]').innerText()).replace(/^MATCH\s*/, '');
   await expect(page.locator('[data-testid="verdict"]')).toBeVisible({ timeout: 60000 });
-  clock.mark(`跑到终局（${matchId}）`);
+  // 终局的主位置是「打开回放」（V1.4）；换场是危险动作，不再是主按钮 —— 收在 Advanced 里、两步确认
+  await expect(page.locator('[data-testid="judge-open-replay"]')).toBeVisible();
+  await expect(page.locator('[data-testid="judge-open-replay"]')).toHaveAttribute(
+    'href',
+    `/replay/${encodeURIComponent(matchId)}`
+  );
+  await expect(page.locator('[data-testid="primary-action"]')).toHaveCount(0);
+  // `reset` 只出现在 Advanced 折叠区里（clickAction 为了点到里面的按钮可能已把它展开，
+  // 所以这里断言的是「在哪」而不是「可见否」）
+  await expect(page.locator('details.adv [data-action="reset"]')).toHaveCount(1);
+  clock.mark(`跑到终局（${matchId}）· 终局主位置是回放链接，换场收在 Advanced`);
 
   // ---- 8. 刷新恢复（WS 重连自恢复，不需要任何点击）----
   await page.reload();
@@ -362,6 +388,10 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   // ---- 9. 观众大屏：不泄漏诊断，也没有任何按钮 ----
   await page.goto(`${baseURL}/spectator`);
   await expect(page.locator('[data-testid="spectator"]')).toBeVisible();
+  await expect(page.locator('[data-testid="spectator"]')).toHaveAttribute('data-board', 'ready');
+  // 终局：独立的一条判决带（不压在竞技场上），根元素带 data-terminal
+  await expect(page.locator('[data-testid="spectator"]')).toHaveAttribute('data-terminal', 'true');
+  await expect(page.locator('[data-testid="spectator-verdict"]')).toBeVisible();
   const screenText = await page.locator('body').innerText();
   for (const bad of FORBIDDEN_ON_SCREEN) {
     expect(screenText, `大屏不得出现 ${bad}`).not.toContain(bad);
@@ -384,17 +414,56 @@ test('完整赛事演练：两队真实上传 → 独立选锚点 → 裁判向�
   expect(screenText).toContain(idA);
   clock.mark('观众大屏（无诊断 / 无命令控件 / 锚点已公开）');
 
-  // ---- 10. 回放 ----
+  // ---- 10. 回放播放器：上一轮 / 播放·暂停 / 下一轮 / 计数 / 速度（V1.4；不重跑任何算法）----
   await page.goto(`${baseURL}/replay/${encodeURIComponent(matchId)}`);
+  const player = page.locator('[data-testid="replay-player"]');
+  await expect(player).toBeVisible({ timeout: 60000 });
   const frames = page.locator('.frame-btn');
   await expect(frames.first()).toBeVisible({ timeout: 60000 });
-  expect(await frames.count()).toBeGreaterThan(0);
-  clock.mark('打开回放');
+  const frameCount = await frames.count();
+  expect(frameCount).toBeGreaterThan(0);
+  await expect(player).toHaveAttribute('data-total', String(frameCount));
+  await expect(player).toHaveAttribute('data-index', '0');
+  await expect(page.locator('[data-testid="replay-counter"]')).toHaveText(`第 1 / ${frameCount} 轮`);
+  await expect(page.locator('[data-testid="replay-prev"]')).toBeDisabled();
+  if (frameCount > 1) {
+    await page.locator('[data-testid="replay-next"]').click();
+    await expect(player).toHaveAttribute('data-index', '1');
+    await expect(page.locator('[data-testid="replay-counter"]')).toHaveText(`第 2 / ${frameCount} 轮`);
+    await expect(frames.nth(1)).toHaveAttribute('aria-current', 'true');
+    await page.locator('[data-testid="replay-prev"]').click();
+    await expect(player).toHaveAttribute('data-index', '0');
+    // 2× 只缩短动画时长与换帧间隔；按播放后播放器自己走到下一帧 —— 等的是 DOM 状态，不是睡眠
+    await page.locator('[data-testid="replay-speed-2"]').click();
+    await expect(player).toHaveAttribute('data-speed', '2');
+    await page.locator('[data-testid="replay-play"]').click();
+    await expect(player).toHaveAttribute('data-playing', 'true');
+    await expect(page.locator('[data-testid="replay-play"]')).toHaveAttribute('aria-pressed', 'true');
+    await expect(player).toHaveAttribute('data-index', '1', { timeout: 30000 });
+    await page.locator('[data-testid="replay-play"]').click();
+    await expect(player).toHaveAttribute('data-playing', 'false');
+  }
+  // 回放页同样不得泄漏诊断
+  const replayText = await page.locator('body').innerText();
+  for (const bad of FORBIDDEN_ON_SCREEN) {
+    expect(replayText, `回放不得出现 ${bad}`).not.toContain(bad);
+  }
+  clock.mark(`回放播放器（${frameCount} 帧：切帧 / 2× 自动播放 / 暂停）`);
 
   // ---- 11. Reset → 第二场（不重新上传，直接再走一遍）----
   await page.goto(judgeURL);
   const linkABeforeReset = await teamURL('A');
+  // 换场是**危险动作**（V1.4）：第一次点只亮出影响（清 Emitter 锁定、换 matchId 与参赛者链接），
+  // 第二次 `reset-confirm` 才真的执行。演练走的就是裁判的这两下。
   await clickAction(page, 'reset');
+  await expect(page.locator('[data-testid="judge-confirm-reset"]')).toBeVisible();
+  // 先取消一次：确认块消失、阶段不变 —— 第一下永远不执行
+  await page.locator('[data-testid="judge-confirm-reset-cancel"]').click();
+  await expect(page.locator('[data-testid="judge-confirm-reset"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="phase"]')).toHaveText('MATCH_END');
+  await clickAction(page, 'reset');
+  await expect(page.locator('[data-testid="judge-confirm-reset"]')).toBeVisible();
+  await clickAction(page, 'reset-confirm');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP', { timeout: 60000 });
 
   // 换场 ⇒ 队伍令牌随 matchId 轮换：旧链接立即失效，裁判台的两条链接必须跟着更新。
@@ -510,6 +579,7 @@ test('裁判：揭晓本轮后直接「连续跑完余下回合」，必须跑�
   // **比赛中途冻结槽位**，MATCH_END 下替换算法包会被服务端当场拒绝。
   await page.goto(judgeURL);
   await clickAction(page, 'reset');
+  await clickAction(page, 'reset-confirm');
   await expect(page.locator('[data-testid="phase"]')).toHaveText('SETUP', { timeout: 60000 });
 
   const pageA = await page.context().newPage();

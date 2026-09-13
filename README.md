@@ -78,7 +78,7 @@ point can produce a match that never terminates — see
 
 ## 能力与版本 / Capabilities & versions
 
-**中文.** 当前是 **V1.3 Platform**。三层能力叠在一起：
+**中文.** 当前是 **V1.4 Platform**。四层能力叠在一起：
 
 - **V1.1 —— 规则与判定冻结。** 两阶段输入协议（`public_state.json` → `reveal_state.json`）、
   14 个算子的 DSL 白名单、500 ms 计算预算、沙箱隔离与公平启动、四类终止保证。
@@ -90,11 +90,18 @@ point can produce a match that never terminates — see
 - **V1.3 —— Bilingual Localization。** 裁判台 / 参赛者页 / 观众大屏 / 回放四屏的
   中英双语界面，每屏常驻同一个语言开关（选择写入 `localStorage`，跨刷新与跨路由保持），
   以及本 README 的双语化。
+- **V1.4 —— Platform Fairness · Handbook · UX Refresh。** 平台镜像公平性的永久测试
+  （Level 1–6，`tests/mirror-*.ts`）与同包自战 / 先手 / 地图分布战役（结论：镜像公平 PASS，
+  槽位 / 先手 / 地图偏差均 DISPROVEN，见 `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`）；
+  修复了唯一发现的平台不对称（Validator 采样网格锚点）；选手手册新增「坐标方向与镜像」
+  与镜像自检工具 `check_mirror.py`；前端重构为赛事系统：首页 `/`（选择身份 + 最近比赛）、
+  七步裁判向导、参赛者页四块六步与显式 LOCKED、观众记分板式大屏、回放播放器，统一状态
+  设计系统与连接状态，双语 406 条文案，四种视口巡检。
 
 **规格支持 `zh-CN` 与 `en-US` 两种语言，解析顺序是：已保存的选择 → 浏览器语言 →
 兜底。** 浏览器语言是 `zh-*` 时用中文，**其余一律英文**；手动选择覆盖自动检测。
 
-**English.** The platform is currently **V1.3**, which stacks three layers:
+**English.** The platform is currently **V1.4**, which stacks four layers:
 
 - **V1.1 — frozen rules and judging.** The two-phase input protocol
   (`public_state.json` → `reveal_state.json`), the 14-operator DSL whitelist, the 500 ms
@@ -110,6 +117,16 @@ point can produce a match that never terminates — see
   participant, spectator, replay), with one shared language switch on each screen
   (persisted to `localStorage`, surviving refresh and route changes), plus this bilingual
   README.
+- **V1.4 — Platform Fairness · Handbook · UX Refresh.** Permanent mirror-fairness tests
+  (Levels 1–6, `tests/mirror-*.ts`) plus same-solver self-play / first-solver / map-distribution
+  campaigns (verdict: mirror fairness PASS; slot, first-solver and map bias all DISPROVEN — see
+  `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`); the one platform asymmetry found (the
+  Validator's sampling-grid anchor) is fixed; the competitor handbook gains "Orientation &
+  Symmetry" and the `check_mirror.py` self-check; the frontend becomes a tournament system: a
+  Home page `/` (choose your role + recent matches), a seven-stage judge wizard, a four-block /
+  six-step participant page with an explicit LOCKED state, a scoreboard-style spectator screen,
+  a replay player, one status design system and connection-state model, 406 bilingual strings
+  per locale, and a four-viewport sweep.
 
 **Exactly two locales are supported, `zh-CN` and `en-US`, resolved in this order: saved
 choice → browser language → fallback.** A `zh-*` browser gets Chinese; **everything else
@@ -142,8 +159,9 @@ runs/slots/                     ← 运行期槽位根（正式投递点；被 .
 >   运行期槽位根若为空会从它**播种一次**；之后**再也不看它** —— 改
 >   `algorithms/` 不会改变比赛用的算法。
 > - 入口（`npm run app` / `npm run judge` / `npm run operator`）默认都用
->   `runs/slots`，可以用 `--slots <dir>` 换。裁判台的「算法槽位」面板会显示
->   **投递点路径 + 算法名 + 来源 + 哈希**，投的是什么一眼可对。
+>   `runs/slots`，可以用 `--slots <dir>` 换。裁判台顶部的两张队伍卡会显示
+>   **算法名 + 密封哈希（短形式）+ 来源状态 + Preflight + Emitter 锁定 + 计算状态**，
+>   文件清单与源码在「审计 · 源码核对」里逐个可读；界面**不显示**任何服务端绝对路径。
 
 - **入口被冻结为包根目录的 `solver.py`**：`main.py` / `run.py` / `my_solver.py`
   都不再被接受，平台**不读取** `manifest.entry` 来决定执行什么。
@@ -590,6 +608,9 @@ and "whose machine has more cores" would become a timing advantage.
 - 场地：`x ∈ [-20, 20]`，`y ∈ [-12, 12]`
 - 队伍区域：A 队 `x ∈ [-20, -4]`，B 队 `x ∈ [4, 20]`
 - 攻击方向：A 向 `+x`，B 向 `-x`
+- **遍历方向**：判定沿攻击方向遍历函数图像 —— A 从 `x_e` 向 `x = 20`（x 增大），B 从 `x_e` 向 `x = -20`（x 减小）；遍历区间即有效攻击范围，函数合法性只在这段上校验。「首次接触之前」是相对遍历方向而言的：对 B 来说「之前」= x 更大的一侧
+- **数组顺序**：`points` 先列 A 队再列 B 队，组内按生成顺序，整场每轮相同；死点留在原位（`alive: false`），被锁定为 Emitter 的两个点被移除且**不重新编号**（`A1` 可能不存在）；`obstacles` 为 `O1..On` 生成顺序、整场不变。**不要假设数组顺序代表几何顺序**（不按 x、不按距离排序）
+- **两侧兼容**：同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。自检：`python3 competitor-kit/tools/validate_submission.py <目录>`（与官方 Preflight 同一份判定代码，A、B 各跑一次）与 `python3 competitor-kit/tools/check_mirror.py <目录>`（镜像一致性 —— 开发诊断，官方 Preflight 不运行）
 - **命中**：`|f(x_p) − y_p| ≤ 1e-6`，且该点位于攻击方向上、且位于**首次障碍物接触之前**
 - **障碍物**：轨迹在第一次与任何障碍物接触处终止；接触点之前的点可被击杀，接触点及其之后的点不受影响
 - **先手**：先输出合法解的一方先开火，后手随后开火
@@ -615,6 +636,9 @@ and "whose machine has more cores" would become a timing advantage.
 - Field: `x ∈ [-20, 20]`, `y ∈ [-12, 12]`
 - Team zones: A `x ∈ [-20, -4]`, B `x ∈ [4, 20]`
 - Attack direction: A toward `+x`, B toward `-x`
+- **Traversal direction:** the Judge walks the graph in the attack direction — A from `x_e` towards `x = 20` (increasing x), B from `x_e` towards `x = -20` (decreasing x); that interval is the firing domain and function legality is checked only there. "Before the first contact" is direction-relative: for B, "before" means larger x
+- **Array order:** `points` lists Team A first, then Team B, each in generation order, identical every round; dead points stay in place (`alive: false`), the two points locked as Emitters are removed and ids are **not renumbered** (`A1` may be absent); `obstacles` are `O1..On` in generation order and never change. **Do not assume array order is geometric order** (not sorted by x or by distance)
+- **Both sides:** the same formal submission MUST run correctly as Team A and as Team B. Self-check with `python3 competitor-kit/tools/validate_submission.py <dir>` (the same judging code as the official Preflight, run once per team) and `python3 competitor-kit/tools/check_mirror.py <dir>` (mirror consistency — a development diagnostic the official Preflight does not run)
 - **Hit:** `|f(x_p) − y_p| ≤ 1e-6`, the point is in the attack direction, and it lies **before the first obstacle contact**
 - **Obstacles:** the trajectory ends at the first contact with any obstacle; points before the contact can be killed, the contact point and everything after it are unaffected
 - **First mover:** whichever side returns a legal solution first fires first; the other fires afterwards
@@ -653,19 +677,23 @@ npm run app          # 构建前端 → 起服务 → 绑定 127.0.0.1:17800 →
 
 | 路由 | 需要令牌 | 用途 |
 |---|---|---|
-| `/team/a` `/team/b` | **是**（该队的） | **参赛者页**（V1.2）：上传自己的算法包（ZIP / 目录 / 单个 `solver.py`）→ 只读浏览自己的源码 → 从自己的点里选定并锁定本场 Fixed Emitter |
-| `/judge` | **是**（裁判的） | 裁判台（phase-driven 向导）：载入算法 → 校验 → **双方锁定 Emitter** → 揭晓 → START → 结算 → 终局 → 重置 → 下一场。可查看双方上传的算法源码 |
-| `/spectator` | 否 | 观众大屏：满屏竞技场 + 轨迹动画 + 存活数 + 计算状态 + 双方锚点。**只读**，无任何诊断信息 |
-| `/replay/:matchId` | 否 | 回放：用已落盘的 match/audit/replay 重放，**不重新运行任何算法** |
+| `/` | 否 | **首页**（V1.4）：选择身份（裁判 / Team A / Team B / 观众）+ 最近比赛列表。裁判与参赛者入口提示需要本场访问链接（可粘贴链接或令牌，只经 URL fragment 导航，不存储、不进查询串）；**入口可见 ≠ 已授权** |
+| `/team/a` `/team/b` | **是**（该队的） | **参赛者页**：四块（算法包 / 源码 / Emitter / 状态）、六步（上传 → 校验 → Preflight → 选择 → 锁定 → 等待开赛）；上传 ZIP / 目录 / 单个 `solver.py` → 只读浏览自己的源码 → 从自己的点里选定并锁定本场 Fixed Emitter，锁定后显式 **LOCKED · 本场比赛中不可更改** |
+| `/judge` | **是**（裁判的） | 裁判台（七步 phase-driven 向导：比赛筹备 → 算法就绪 → 锚点锁定 → 就绪 → 揭晓 → 进行中 → 终局）：每一步只有一个主动作，其余收在 Advanced；终局主位置是「本场回放」，**换场 / 重置需两步确认**（会清除双方 Emitter 锁定并更换 matchId 与参赛者链接）。可查看双方上传的算法源码 |
+| `/spectator` | 否 | 观众大屏（记分板式：Team A 存活 · 锚点 │ 回合 · 阶段 │ Team B 存活 · 锚点；竞技场居中；页脚 A 计算 │ 先手 │ B 计算；终局横带 TEAM X WINS / DRAW · 原因 · ROUND N 不遮挡最后一帧）。**只读**，除语言开关外无任何按钮，无任何诊断信息 |
+| `/replays` | 否 | 已结束比赛的列表（胜者 / 终局原因 / 回合数 / 结束时间），点进回放 |
+| `/replay/:matchId` | 否 | 回放播放器：上一轮 / 播放·暂停 / 下一轮 / 第 N / 共 M 轮 / 时间轴 / 0.5× 1× 2×（只改动画速度）；用已落盘的 match/replay 重放，**不重新运行任何算法、不重算函数、不重新裁判** |
 
 **English.** No terminal needed for the normal flow.
 
 | Route | Token | Purpose |
 |---|---|---|
-| `/team/a` `/team/b` | **Yes** (that team's) | **Participant page**: upload your package (ZIP / folder / a single `solver.py`) → read-only browse of your own source → pick and lock this match's Fixed Emitter |
-| `/judge` | **Yes** (the judge's) | Judge console (phase-driven wizard): load algorithms → validate → **both sides lock their Emitter** → reveal → START → settle → match end → reset → next match. The uploaded source can be read here |
-| `/spectator` | No | Spectator screen: full-bleed arena + trajectory animation + alive counts + compute state + both anchors. **Read-only**, no diagnostics at all |
-| `/replay/:matchId` | No | Replay: replays the stored match/audit/replay, **without re-running any algorithm** |
+| `/` | No | **Home** (V1.4): choose your role (Judge / Team A / Team B / Spectator) + recent matches. The judge and team cards say an access link is required (paste a link or token — it navigates via the URL fragment only, is never stored and never enters the query string); **navigation visibility ≠ authorization** |
+| `/team/a` `/team/b` | **Yes** (that team's) | **Participant page**: four blocks (Algorithm / Source / Emitter / Status), six steps (Upload → Validate → Preflight → Pick → Lock → Wait for start); upload ZIP / folder / a single `solver.py` → read-only browse of your own source → pick and lock this match's Fixed Emitter; after locking the block reads **LOCKED · cannot be changed for this match** |
+| `/judge` | **Yes** (the judge's) | Judge console (seven-stage phase-driven wizard: Match Setup → Algorithm Ready → Emitter Lock → Ready → Reveal → Running → Match End): exactly one primary action per stage, everything else under Advanced; at Match End the primary control is "This match's replay", and **reset / new match needs a two-step confirm** (it clears both Emitter locks and rotates the matchId and participant links). The uploaded source can be read here |
+| `/spectator` | No | Spectator screen (scoreboard layout: Team A alive · Emitter │ Round · phase │ Team B alive · Emitter; arena centred; footer A compute │ first solver │ B compute; a terminal band TEAM X WINS / DRAW · reason · ROUND N that never covers the last frame). **Read-only**, no button other than the language switch, no diagnostics at all |
+| `/replays` | No | List of finished matches (winner / end reason / rounds / ended at), linking into replays |
+| `/replay/:matchId` | No | Replay player: previous / play·pause / next / Round N of M / timeline / 0.5× 1× 2× (animation speed only); replays the stored match/replay **without re-running any algorithm, recomputing any function or re-judging** |
 
 
 ### 访问令牌（V1.2，每场轮换） / Access tokens (V1.2, rotated every match)
@@ -694,8 +722,9 @@ npm run app          # 构建前端 → 起服务 → 绑定 127.0.0.1:17800 →
 
 裁判台的**正式主流程是「使用槽位算法」** —— 选手把算法投进**运行期槽位**
 `runs/slots/team-a|team-b` 之后，裁判点两下就能开赛，不需要知道任何文件路径。
-`/judge` 的「算法槽位」面板会写出**投递点路径、算法名、来源与包哈希**，
-投的是不是选手那份，一眼可对；文件清单可以逐一点开**直接看源码**。
+`/judge` 顶部的两张队伍卡会写出**算法名、密封哈希（短形式）、来源状态、Preflight、
+Emitter 锁定与计算状态**，投的是不是选手那份，一眼可对；「审计 · 源码核对」里的文件清单
+可以逐一点开**直接看源码**。界面上**没有**任何服务端绝对路径。
 
 换算法有两条路：往运行期槽位根投递（正式流程），或在
 `Advanced · 替换算法与比赛设置` 里填**服务端**上的目录绝对路径（临时换）。
@@ -730,10 +759,11 @@ How to use it:
 
 The judge console's **main flow is "use the algorithm in the slot"**: once players have
 delivered to the **runtime slots** `runs/slots/team-a|team-b`, the judge starts a match
-in two clicks without knowing any file path. The "Algorithm slots" panel prints the
-**delivery-point path, algorithm name, origin and package hash**, so "is this the
-players' package?" is answerable at a glance; the file list can be opened file by file
-to **read the source directly**.
+in two clicks without knowing any file path. The two team cards at the top of `/judge`
+show the **algorithm name, sealed hash (short form), source status, Preflight, Emitter
+lock and compute state**, so "is this the players' package?" is answerable at a glance;
+the file list under "Audit · Source review" can be opened file by file to **read the
+source directly**. No server absolute path is shown anywhere in the UI.
 
 There are two ways to swap an algorithm: deliver to the runtime slot root (the formal
 flow), or type an absolute directory path **on the server** under
@@ -880,13 +910,13 @@ map-generator stress check.
 │   ├── visualizer/    # 函数与轨迹可视化
 │   └── server/        # 本地 Web UI 的服务端（HTTP + WS + MatchSession）
 ├── web/               # 本地 Web UI 的前端（React + Vite + Canvas 2D）
-│   ├── src/           #   参赛者页 / 裁判台 / 观众大屏 / 回放四页 + Arena 画布
-│   └── e2e/           #   Playwright 完整赛事演练
+│   ├── src/           #   首页 / 回放列表 / 参赛者页 / 裁判台 / 观众大屏 / 回放播放器 + Arena 画布
+│   └── e2e/           #   Playwright 完整赛事演练（中英）+ 四视口双语巡检
 ├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
 ├── demo/              # 参考解（reference-solver-v2）
 ├── tests/             # 回归测试套件 + 算法 fixture
 ├── docs/
-│   └──  # 给接手的 AI/开发者的**当前有效事实**（状态、架构、规矩）
+│   └── agent-context/ # 给接手的 AI/开发者的**当前有效事实**（状态、架构、规矩）
 └── Plans/
     ├── Input/         # 人输入的 Plan、规范与任务书
     └── Output/        # 审计报告、工作日志与交接文档
@@ -898,7 +928,7 @@ git-ignored). `algorithms/` is the tracked factory fixture — first start seeds
 match runs. `src/core/` holds the engine and the canonical Judge; `src/server/` is the
 local Web server (HTTP + WS + MatchSession); `web/` is the frontend (React + Vite +
 Canvas 2D); `tests/` holds the regression suites and algorithm fixtures;
-`docs/` records the current valid facts for whoever takes over next.
+`docs/agent-context/` records the current valid facts for whoever takes over next.
 
 
 ---

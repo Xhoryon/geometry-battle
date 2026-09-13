@@ -31,6 +31,7 @@
 | [starter/solver.py](starter/solver.py) | 可直接运行的最小模板 |
 | [examples/](examples/) | 真实引擎产出的样例输入输出 |
 | [tools/validate_submission.py](tools/validate_submission.py) | 本地自检工具 |
+| [tools/check_mirror.py](tools/check_mirror.py) | 镜像自检（开发诊断：同一份代码在 A / B 两侧是否一致，见 §6.2） |
 
 ---
 
@@ -232,7 +233,7 @@ f(x) = y_emitter + g(u)，g(0) = 0
 | A 队区域 | `x ∈ [-20, -4]` |
 | B 队区域 | `x ∈ [4, 20]` |
 | **固定 Emitter** | 每队**开赛前从自己的初始点选定一个**并锁定；整场比赛不变。坐标见 `public_state.emitters[team]` |
-| 攻击方向 | A 向 `+x`；B 向 `-x` |
+| 攻击方向 | A 向 `+x`；B 向 `-x`（方向、遍历与数组顺序的完整说明见 §6.2） |
 | 有效攻击范围 | A：`x ∈ [x_e, 20]`；B：`x ∈ [-20, x_e]`，其中 `x_e` 是本队 Emitter 的 x 坐标 |
 | 命中判定 | `|f(x_p) − y_p| ≤ 1e-6`，且目标点在该方向上、且位于**首次终止事件之前** |
 | 障碍物 | 轨迹**第一次**接触障碍物即终止；接触点**之前**的点可被命中，接触点及其之后不受影响 |
@@ -298,6 +299,161 @@ x_e, y_e = s["x"], s["y"]
 > **现行 V1.2 规则**把锚点**交还给队伍**：开赛前双方各自从本方点里选一个并锁定，
 > 整场不变 —— 于是「从哪里开火」重新成为一个可以经营的策略维度，
 > 而「逐轮选点」那套流程仍然不存在。
+
+## 6.2 坐标方向与镜像 / Orientation & Symmetry
+
+> V1.4 新增的**说明**，不改变任何规则 —— 它只是把引擎一直以来的行为写清楚。
+> 上面 §6 表格里「攻击方向」「有效攻击范围」两行就是本节的浓缩版。
+> **English.** Added in V1.4 as an explanation only — no rule changes; it spells out what the engine has always done.
+
+```text
+Team A 的前进方向 = x 增大 / Team A forward direction = increasing x
+Team B 的前进方向 = x 减小 / Team B forward direction = decreasing x
+```
+
+### 6.2.1 函数 vs 遍历 / Function vs traversal
+
+你交出的始终是一个普通的数学函数 `y = f(x)`：它对任何 `x` 都有定义，本身**没有方向**。
+方向来自 Judge 的**遍历**方式：
+
+- Team A：从 `x = x_e` 出发向 `x = 20` 遍历（x 增大）；遍历区间 `[x_e, 20]`。
+- Team B：从 `x = x_e` 出发向 `x = -20` 遍历（x 减小）；遍历区间 `[-20, x_e]`。
+- 遍历区间就是「有效攻击范围」—— 函数合法性（§5）只在这段区间上校验，区间之外的 `f(x)` 平台不看。
+  合法性校验的采样也从本队 Emitter 出发、沿进攻方向推进（V1.4 起对双方一致）。
+- 遍历在**首次终止事件**处停止：第一次接触任何障碍物，或第一次离开场地
+  （`y ∉ [-12, 12]` 或 `x ∉ [-20, 20]`）；之后即使函数重新回到场内，攻击也不恢复。
+- 「首次接触**之前**」是相对于遍历方向说的：对 A 是 `x` 更小的一侧，对 B 是 `x` 更**大**的一侧。
+  同理，「目标位于攻击方向上」对 A 意味着 `x_p ≥ x_e`，对 B 意味着 `x_p ≤ x_e`。
+
+**English.** What you submit is always an ordinary function `y = f(x)` — it is defined for every `x`
+and has no direction of its own. Direction comes from how the Judge **traverses** it: Team A walks from
+`x = x_e` towards `x = 20` (increasing x) over `[x_e, 20]`; Team B walks from `x = x_e` towards `x = -20`
+(decreasing x) over `[-20, x_e]`. That traversal interval is the firing domain — function legality (§5) is
+checked only there — and its sampling also starts at your own Emitter and walks in the attack direction (identical for both sides since V1.4). Traversal stops at the **first termination event**: the first contact with any obstacle,
+or the first exit from the field (`y ∉ [-12, 12]` or `x ∉ [-20, 20]`); the attack does not resume even if the
+graph re-enters the field. "Before the first contact" is direction-relative: for A it means smaller x, for B
+it means **larger** x. Likewise "in the attack direction" means `x_p ≥ x_e` for A and `x_p ≤ x_e` for B.
+
+**建议（SHOULD，不是强制 API）**：在算法内部统一用一个**局部前进坐标** `u`，让两侧共用同一套代码：
+
+```text
+Team A：u = x − x_e          Team B：u = x_e − x
+前进方向恒为 +u；敌人 / 障碍物的坐标先换算到 u，再做几何
+```
+
+把 `u` 空间里算好的多项式（或任何满足 `g(0) = 0` 的 `g(u)`）换回 `x` 的 AST 时，
+**只有 `u` 这个节点随队别变化**：
+
+```python
+def u_node(team, x_e):
+    X = {"type": "variable", "value": "x"}
+    E = {"type": "number", "value": x_e}
+    # A: u = x − x_e        B: u = x_e − x
+    return {"type": "sub", "args": [X, E]} if team == "A" else {"type": "sub", "args": [E, X]}
+
+def poly_in_u(team, x_e, y_e, coeffs):
+    """f(x) = y_e + c1·u + c2·u² + …（没有常数项，所以 f(x_e) = y_e 恒成立）"""
+    u = u_node(team, x_e)
+    node = {"type": "number", "value": y_e}
+    for k, c in enumerate(coeffs, start=1):
+        term = {"type": "mul", "args": [{"type": "number", "value": c},
+                                        {"type": "pow", "args": [u, {"type": "number", "value": k}]}]}
+        node = {"type": "add", "args": [node, term]}
+    return node
+```
+
+**English.** Recommended (SHOULD — not a mandatory API): work internally in a local forward coordinate
+`u` — `u = x − x_e` for Team A, `u = x_e − x` for Team B — so that "forward" is always `+u` and both sides
+share one code path. When turning a `u`-space polynomial (or any `g(u)` with `g(0) = 0`) back into an `x`
+AST, the only team-dependent node is `u` itself: `sub(x, x_e)` for A versus `sub(x_e, x)` for B, exactly as
+in the sketch above.
+
+Team B 的直线示例（`f(x) = y_e + 0.3·(x_e − x)`，举例取 `x_e = 18`、`y_e = 0`；
+**实际数值请从 `public_state.emitters.B` 取**）：
+
+<!-- AST-PARSE-OK -->
+```json
+{
+  "type": "add",
+  "args": [
+    { "type": "number", "value": 0 },
+    {
+      "type": "mul",
+      "args": [
+        { "type": "number", "value": 0.3 },
+        {
+          "type": "sub",
+          "args": [
+            { "type": "number", "value": 18 },
+            { "type": "variable", "value": "x" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+> 与 §5 的 Team A 示例对照：同样是「沿前进方向每单位上升 0.3」的直线，用 `x` 写出来斜率符号相反。
+> **English.** Compare with the Team A example in §5: the same "rises 0.3 per unit forward" line has the
+> opposite slope once it is written in `x`.
+
+### 6.2.2 数组顺序保证 / Array-order guarantees
+
+引擎对 `public_state.points` 与 `reveal_state.obstacles` 的顺序**只**保证下面这些：
+
+| 数组 | 保证 |
+|---|---|
+| `points` | 先是 Team A 的全部条目，再是 Team B 的全部条目；组内按地图**生成 / 放置顺序**（`A1, A2, …`、`B1, B2, …`），**不**按 x、不按到 Emitter 的距离、不按任何几何量排序 |
+| `points` | 整场比赛**每一轮顺序相同、条目数相同**：被击杀的点**留在原位**，只把 `alive` 置为 `false` |
+| `points` | 被锁定为 Emitter 的两个点被**移除**，其余编号**不重新编号** —— 所以 `A1` 可能从头到尾不存在，编号也不一定连续 |
+| `obstacles` | 按生成顺序编号 `O1..On`，整场每轮都是同一个数组 |
+
+**不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。**
+要按几何选目标，就自己按 `x` / `u` / 距离排序。
+
+**English.** The engine guarantees exactly this about `public_state.points` and `reveal_state.obstacles`:
+`points` lists all Team A entries first, then all Team B entries, each group in map **generation / placement
+order** (`A1, A2, …`, `B1, B2, …`) — **not** sorted by x, by distance to the Emitter, or by any other
+geometric quantity; the order and the entry count are identical every round of the match (killed points stay
+in place with `alive: false`); the two points locked as Emitters are removed and the remaining ids are **not
+renumbered**, so `A1` may be absent for the whole match and ids need not be contiguous; `obstacles` are
+numbered `O1..On` in generation order and the array is the same every round.
+**Do not assume array order is geometric order.** If you want targets by geometry, sort by `x` / `u` /
+distance yourself.
+
+### 6.2.3 双侧兼容（MUST） / Both-side compatibility (MUST)
+
+**同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。** 槽位由赛事方分配，你的代码只会通过
+`--team` 得知自己在哪一侧；两份输入 JSON 对双方逐字节相同。只在 A 侧调试过的算法换到 B 侧，
+最常见的症状是：筛选敌人时写了 `p["x"] > x_e`（B 侧一个都筛不到 → 崩溃或交出退化函数）、
+把「前进」写死成 `+x`、或把首次接触的「之前 / 之后」写反。
+
+**English.** **The same formal submission MUST run correctly as Team A and as Team B.** Slots are assigned by the
+organisers; your code learns its side only through `--team`, and both input JSON files are byte-identical for
+the two sides. The classic symptoms of a solver that was only ever debugged as Team A: filtering enemies with
+`p["x"] > x_e` (which matches nothing on the B side and then crashes or emits a degenerate function),
+hard-coding "forward" as `+x`, or inverting "before / after" the first contact.
+
+两件事都要自检 / Check both:
+
+```bash
+python3 competitor-kit/tools/validate_submission.py ./my-algorithm   # 默认 A、B 各跑一次（同一个世界）
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm          # 镜像世界：A@原世界 ↔ B@镜像，反之亦然
+```
+
+`check_mirror.py` 是**开发诊断**，官方 Preflight 不运行它：`FAIL`（一侧合法、镜像侧崩溃 / 超时 / 非法）
+几乎总是 bug；两侧都失败同样记 `FAIL`（那不是镜像问题 —— 先跑 `validate_submission.py`）；
+`WARN`（两侧都合法但几何不同）是合法的，只是提醒你确认不对称是有意为之。
+**但若 `WARN` 的两对配对都报「结算不一致」（命中 / 阻挡 / 终止原因不同），那就是同一个「只会打 Team A」bug
+的不崩溃形态（B 侧交出了退化但合法的函数）—— 退出码虽是 0，请像 `FAIL` 一样认真对待。**
+**English.** `check_mirror.py` is a development diagnostic; the official Preflight does not run it. `FAIL`
+(one side legal, its mirror crashing / timing out / illegal) is almost always a bug; both sides failing is also
+`FAIL` (not a mirror issue — run `validate_submission.py` first); `WARN` (both legal, but the geometry differs)
+is legal — it only asks you to confirm that the asymmetry is intentional. **But a `WARN` whose two pairs both
+report a different judge outcome (hits / blocked / end reason) is the non-crashing form of the same Team-A-only
+bug (the B side emitted a degenerate but legal function) — the exit code is 0, but treat it as seriously as
+`FAIL`.**
 
 ---
 
@@ -407,6 +563,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 | M12 | 不跨轮保存状态（沙箱每轮重建） |
 | M13 | 不洪泛 stdout / stderr |
 | M14 | 只用 [RUNTIME_MANIFEST.md](RUNTIME_MANIFEST.md) 列出的模块 |
+| M15 | 同一正式提交必须能够在 Team A 与 Team B 两侧正确运行（只有 `--team` 不同；见 §6.2.3） |
 
 ## SHOULD（强烈建议，不影响接口合法性）
 
@@ -455,7 +612,24 @@ Timeout           PASS
 
 失败时会给出可读原因（例如 `NOT_THROUGH_SHOOTER` 会打印残差与容差）。
 
-> 该工具需要 Node.js（比赛仓库自带）。它在仓库根目录运行时可用。
+再跑一次镜像自检（开发诊断，见 §6.2.3；官方 Preflight 不运行它）：
+
+```bash
+python3 competitor-kit/tools/check_mirror.py ./my-algorithm
+```
+
+它把同一份代码放进 decoy 世界及其镜像世界里各跑一遍（A@原世界 ↔ B@镜像世界，反之亦然），
+比较两侧规范化后的几何与结算：`PASS` 一致、`WARN` 两侧都合法但不对称、`FAIL` 一侧合法而镜像侧失败
+（两侧都失败同样记 `FAIL`，那不是镜像问题 —— 先跑 `validate_submission.py`）。两对都「结算不一致」的
+`WARN` 要像 `FAIL` 一样认真对待（见 §6.2.3）。
+**English.** Run the mirror self-check as well (a development diagnostic, see §6.2.3; the official Preflight
+does not run it). It runs the same code once in the decoy world and once in its mirror (A on the original ↔ B
+on the mirror, and the reverse pair) and compares the normalised geometry and the Judge outcome of the two
+sides: `PASS` consistent, `WARN` both legal but asymmetric, `FAIL` one side legal while its mirror fails (both
+sides failing is also `FAIL` — not a mirror issue, run `validate_submission.py` first). A `WARN` whose two
+pairs both differ in judge outcome deserves the same attention as `FAIL` (see §6.2.3).
+
+> 两个工具都需要 Node.js（比赛仓库自带）。它们在仓库根目录运行时可用。
 
 ---
 
@@ -563,7 +737,8 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 [ ] 结果用原子替换写入
 [ ] 单轮耗时留有余量（< 500 ms）
 [ ] 不访问网络、不创建进程
-[ ] 本地自检 PASS
+[ ] 本地自检 PASS（默认 A、B 各跑一次 —— 两队都要 PASS）
+[ ] 以 --team A 与 --team B 都能正确运行：check_mirror.py 无 FAIL（WARN 需确认不对称是有意为之）
 ```
 
 ---

@@ -20,7 +20,7 @@ V1.1 启动契约（见 competitor-kit/ALGORITHM_REQUIREMENTS.md §2 与 §3）�
                        map{xmin,xmax,ymin,ymax} / **emitters{A,B}** /
                        points[{id,team,x,y,alive}]
                        —— 含死点（alive=false），但**不含**障碍物。
-                       Emitter 是**公开**结构（Revision 3 §6）：它是常量、整场不变、
+                       Emitter 是**公开**结构（Revision 3 §6）：它由本队开赛前选定、整场不变、
                        不可击杀、不计入存活数，因此**不在 points 里**，要从
                        `public["emitters"][team]` 取。
     reveal_state.json  揭盲增量：public_state_sha256 / obstacles[]。

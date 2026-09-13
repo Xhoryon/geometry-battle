@@ -65,8 +65,8 @@ First Solver + Shooter Cancellation 把策略空间压扁了？
 不采信第一轮报告的结论，只用 `ROUND1_BASELINE_SHA` 的内容重算：
 
 ```
-git archive 6f987bf | tar -x -C <workspace>/round1-verify
-python3 playtest/harness/reproduce_round1.py --results <workspace>/round1-verify/playtest/results
+git archive 6f987bf | tar -x -C /tmp/round1-verify
+python3 playtest/harness/reproduce_round1.py --results /tmp/round1-verify/playtest/results
 ```
 
 **exit 0，全部对账通过**。唯一事实源为 `raw/*/match.json`（平台自己落盘的产物）：
@@ -843,8 +843,8 @@ playtest/results/round-2/cf/verify-fast-vs-hybrid.json
 git log --oneline -3
 
 # 1. 复现 Round 1
-git archive 6f987bfb | tar -x -C <workspace>/round1-verify
-python3 playtest/harness/reproduce_round1.py --results <workspace>/round1-verify/playtest/results
+git archive 6f987bfb | tar -x -C /tmp/round1-verify
+python3 playtest/harness/reproduce_round1.py --results /tmp/round1-verify/playtest/results
 
 # 2. Hybrid 自检
 npx --no-install ts-node src/operator/validate-submission.ts playtest/competitors/solver-hybrid
@@ -866,16 +866,16 @@ for p in fast-vs-optimizer optimizer-vs-hybrid fast-vs-hybrid; do
       --raw playtest/results/round-2/raw/$p \
       --out playtest/results/round-2/cf/verify-$p.json
   python3 playtest/harness/gb_counterfactual.py rounds --pair $p \
-      --raw playtest/results/round-2/raw/$p --cache <workspace>/fn-$p.json \
+      --raw playtest/results/round-2/raw/$p --cache /tmp/fn-$p.json \
       --out playtest/results/round-2/cf/rounds-$p.json
   python3 playtest/harness/gb_counterfactual.py simulate --pair $p \
       --conditions playtest/harness/conditions-round2.json \
-      --out playtest/results/round-2/cf/sim-$p --cache <workspace>/fn-$p.json
+      --out playtest/results/round-2/cf/sim-$p --cache /tmp/fn-$p.json
 done
 
 # 7. 吸收态检验（提高上限）
 python3 playtest/harness/gb_round2.py run --pair fast-vs-hybrid \
-    --conditions <workspace>/cond-cap60.json --out <workspace>/cap60 --max-rounds 60
+    --conditions /tmp/cond-cap60.json --out /tmp/cap60 --max-rounds 60
 ```
 
 ### 产物索引

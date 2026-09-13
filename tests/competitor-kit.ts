@@ -11,6 +11,7 @@
  *   §22  引用完整性：0 个缺失文件、0 条坏链接、0 个不存在的命令
  */
 
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
@@ -28,6 +29,7 @@ import { cleanupSandbox, prepareSandbox, spawnRunner } from '../src/runner/Sandb
 import { validateSubmission } from '../src/submission/LocalPreflight';
 import { inspectPackage } from '../src/submission/Package';
 import { generateKitExamples } from '../src/operator/generate-kit-examples';
+import { formatReport, judgeDiffersOnEveryPair, type MirrorReport } from '../src/operator/check-mirror';
 import { assert, assertEqual, runAll, test, tmpDir } from './harness';
 
 const KIT = path.join(PLATFORM_ROOT, 'competitor-kit');
@@ -65,6 +67,7 @@ test('competitor-kit: §3 规定的文件全部存在', () => {
     'examples/reveal_state.json',
     'examples/result.json',
     'tools/validate_submission.py',
+    'tools/check_mirror.py',
   ];
   const missing = required.filter((rel) => !fs.existsSync(path.join(KIT, rel)));
   assertEqual(missing, [], `competitor-kit 缺少规定文件: ${missing.join(', ')}`);
@@ -113,6 +116,8 @@ test('competitor-kit: 文档中提到的命令都指向真实入口', () => {
   const commands: Array<{ pattern: RegExp; entry: string }> = [
     { pattern: /competitor-kit\/tools\/validate_submission\.py/, entry: 'competitor-kit/tools/validate_submission.py' },
     { pattern: /src\/operator\/validate-submission\.ts/, entry: 'src/operator/validate-submission.ts' },
+    { pattern: /competitor-kit\/tools\/check_mirror\.py/, entry: 'competitor-kit/tools/check_mirror.py' },
+    { pattern: /src\/operator\/check-mirror\.ts/, entry: 'src/operator/check-mirror.ts' },
     { pattern: /src\/operator\/generate-kit-examples\.ts/, entry: 'src/operator/generate-kit-examples.ts' },
     { pattern: /starter\/solver\.py/, entry: 'starter/solver.py' },
   ];
@@ -778,6 +783,213 @@ test('competitor-kit: 文档不得再把 Emitter 写成平台常量（V1.2 §一
     /写死/.test(req) && /decoy 地图/.test(req),
     '选手手册必须点明「decoy 锚点取自 decoy 地图，写死坐标会被拦下」'
   );
+});
+
+// ============================================================================
+// V1.4 §6.2：坐标方向 / 数组顺序 / 双侧兼容必须写进选手手册，且措辞可被机器核对
+//
+// 这一节的存在理由：引擎里 A 向 +x、B 向 −x、points 先 A 后 B 按生成顺序、Emitter 编号
+// 被移除且不重新编号 —— 这些事实一直成立，但此前没有一份选手文档把它们说全，
+// JSON_SCHEMA 甚至写着「编号会随击杀减少」（与代码相反）。措辞一旦被「顺手精简」掉，
+// 选手就会重新写出只会打 Team A 的算法。所以这里钉的是**原句**，不是「大意」。
+// ============================================================================
+
+test('competitor-kit: 手册写明坐标方向 / 数组顺序 / 双侧兼容，中英文原句都在（V1.4 §6.2）', () => {
+  const req = readDoc('ALGORITHM_REQUIREMENTS.md');
+  const schema = readDoc('JSON_SCHEMA.md');
+  const kitReadme = readDoc('README.md');
+  const rootReadme = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+
+  // 章节本身（双语标题）
+  assert(/## 6\.2 坐标方向与镜像 \/ Orientation & Symmetry/.test(req), 'ALGORITHM_REQUIREMENTS 必须有 §6.2「坐标方向与镜像 / Orientation & Symmetry」');
+
+  // 前进方向：中英文各一句，A / B 都要
+  assert(req.includes('Team A 的前进方向 = x 增大'), '手册必须写明「Team A 的前进方向 = x 增大」');
+  assert(req.includes('Team B 的前进方向 = x 减小'), '手册必须写明「Team B 的前进方向 = x 减小」');
+  assert(req.includes('Team A forward direction = increasing x'), '手册必须写明 "Team A forward direction = increasing x"');
+  assert(req.includes('Team B forward direction = decreasing x'), '手册必须写明 "Team B forward direction = decreasing x"');
+
+  // 数组顺序警告：中英文原句
+  const ORDER_ZH = '不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。';
+  const ORDER_EN = 'Do not assume array order is geometric order.';
+  assert(req.includes(ORDER_ZH), `手册必须原句写出「${ORDER_ZH}」`);
+  assert(req.includes(ORDER_EN), `手册必须原句写出 "${ORDER_EN}"`);
+  assert(schema.includes(ORDER_ZH), 'JSON_SCHEMA §4 必须原句写出数组顺序警告（中文）');
+  assert(schema.includes(ORDER_EN), 'JSON_SCHEMA §4 必须原句写出数组顺序警告（英文）');
+  // 顺序保证本身也要写出来，否则「全都不保证」也能让上面那句成立
+  assert(/先是 Team A 的全部条目，再是 Team B 的全部条目/.test(req), '手册必须写明 points 先 A 组后 B 组');
+  assert(/不重新编号/.test(req) && /`A1` 可能/.test(req), '手册必须写明 Emitter 编号被移除且不重新编号（A1 可能缺席）');
+  assert(/O1\.\.On/.test(req), '手册必须写明 obstacles 按生成顺序编号 O1..On');
+
+  // 双侧兼容 MUST：中英文原句，且进入 §11 表与 §17 清单
+  const BOTH_ZH = '同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。';
+  const BOTH_EN = 'The same formal submission MUST run correctly as Team A and as Team B.';
+  assert(req.includes(BOTH_ZH), `手册必须原句写出「${BOTH_ZH}」`);
+  assert(req.includes(BOTH_EN), `手册必须原句写出 "${BOTH_EN}"`);
+  // 中文是「必须」，英文不得退化成 may（可能性陈述）—— 三处文档一起盯
+  for (const [name, text] of [['ALGORITHM_REQUIREMENTS', req], ['competitor-kit/README', kitReadme], ['README', rootReadme]] as const) {
+    assert(!/may run as Team A or Team B/.test(text), `${name} 的英文半边不得把 MUST 写成 "may run as Team A or Team B"`);
+  }
+  // 两侧都失败也记 FAIL：手册与 kit README 都得写明，免得参赛者把它当镜像问题
+  assert(/两侧都失败同样记 `FAIL`/.test(req) && /both sides failing is also\s+`FAIL`/.test(req), '手册 §6.2.3 必须写明两侧都失败同样记 FAIL（中英）');
+  assert(/两侧都失败同样记 `FAIL`/.test(kitReadme) && /both sides failing is also `FAIL`/.test(kitReadme), 'kit README §5.1 必须写明两侧都失败同样记 FAIL（中英）');
+  assert(/\| M15 \| 同一正式提交必须能够在 Team A 与 Team B 两侧正确运行/.test(req), '§11 MUST 表必须有双侧兼容那一行（M15）');
+  assert(/\[ \] [^\n]*check_mirror\.py/.test(req), '§17 提交前清单必须包含 check_mirror.py');
+
+  // Team B 的 DSL 示例要真的存在（且只标 PARSE-OK：AST-VALID 是按 Team A 锚点校验的）
+  assert(/Team B 的直线示例[\s\S]{0,300}<!-- AST-PARSE-OK -->/.test(req), '手册必须给出标为 AST-PARSE-OK 的 Team B 示例');
+
+  // JSON_SCHEMA 不得再说编号「会随击杀减少」—— 与代码相反（击杀只翻 alive，条目与编号都不动）
+  assert(!schema.includes('会随击杀减少'), 'JSON_SCHEMA 不得再写「会随击杀减少」');
+  assert(/Array-order guarantees/.test(schema), 'JSON_SCHEMA 必须有「数组顺序保证 / Array-order guarantees」');
+
+  // 工具索引与「诊断而非规则」的定性
+  assert(/\| \[tools\/check_mirror\.py\]\(tools\/check_mirror\.py\) \|/.test(kitReadme), 'competitor-kit/README.md §2 文件索引必须有 tools/check_mirror.py 那一行');
+  assert(/官方 Preflight 不运行它/.test(kitReadme), 'competitor-kit/README.md 必须说明官方 Preflight 不运行镜像自检');
+  assert(/the official Preflight does not run it/.test(kitReadme), 'competitor-kit/README.md 的英文半边也要说明官方 Preflight 不运行镜像自检');
+
+  // 仓库根 README 的「场地与判定」两半都要讲遍历方向与数组顺序
+  assert(/不要假设数组顺序代表几何顺序/.test(rootReadme), '仓库 README（中文）必须写明不要假设数组顺序代表几何顺序');
+  assert(rootReadme.includes(ORDER_EN.replace(/\.$/, '')), '仓库 README（英文）必须写明 Do not assume array order is geometric order');
+  assert(/遍历方向/.test(rootReadme) && /Traversal direction/.test(rootReadme), '仓库 README 两半都必须写明遍历方向');
+  assert(/check_mirror\.py/.test(rootReadme), '仓库 README 必须列出 check_mirror.py');
+});
+
+// ============================================================================
+// V1.4 §6.2.3：镜像自检工具本身 —— 对称算法 PASS / 只会打 Team A 的算法 FAIL
+// ============================================================================
+
+const CHECK_MIRROR = path.join(PLATFORM_ROOT, 'src', 'operator', 'check-mirror.ts');
+
+interface MirrorCliResult {
+  status: number | null;
+  /** `--json` 的完整报告（与内核导出的 MirrorReport 同一形态），解析失败为 null */
+  report: MirrorReport | null;
+  stderr: string;
+}
+
+/** 走参赛者会走的那条路（CLI 进程 + 退出码），沙箱根目录落在临时目录 */
+function runCheckMirrorCli(dir: string): MirrorCliResult {
+  const r = spawnSync(
+    'npx',
+    ['ts-node', CHECK_MIRROR, dir, '--json', '--sandbox-root', tmpDir('mirror-sandbox')],
+    { cwd: PLATFORM_ROOT, encoding: 'utf8' }
+  );
+  let report: MirrorCliResult['report'] = null;
+  try {
+    report = JSON.parse(r.stdout);
+  } catch {
+    report = null;
+  }
+  return { status: r.status, report, stderr: r.stderr };
+}
+
+test('competitor-kit: check_mirror 对镜像对称的算法（precision-line）报 PASS，退出码 0', () => {
+  const dir = path.join(PLATFORM_ROOT, 'tests', 'fixtures', 'algos', 'precision-line');
+  const { status, report, stderr } = runCheckMirrorCli(dir);
+  assert(report, `check-mirror 应输出 JSON 报告，stderr:\n${stderr.slice(0, 600)}`);
+  assertEqual(status, 0, `对称算法的退出码应为 0（verdict=${report!.verdict}）`);
+  assertEqual(report!.pairs.length, 2, '应有两对镜像比较');
+  for (const p of report!.pairs) {
+    assert(p.original.ok && p.mirror.ok, `两侧都应合法：${p.original.team}=${p.original.stage} / ${p.mirror.team}=${p.mirror.stage}`);
+    assert(p.geometry, '两侧都合法时必须有几何比对');
+  }
+  // precision-line 的选目标 / 画线逻辑是按 |Δy| 与距离写的，与队别无关 —— 它应当**精确**对称
+  assertEqual(report!.verdict, 'PASS', 'precision-line 应当是镜像对称的（PASS 而非 WARN）');
+});
+
+/**
+ * 把「前进」写死成 +x 的 starter 变体：只在 x > x_e 的敌人里选目标（测试反例）。
+ * Team A 侧毫无问题；Team B 侧一个敌人都筛不到 ——
+ *   degenerateFallback=false：enemies[0] 抛 IndexError → CRASH（FAIL 路径）；
+ *   degenerateFallback=true： 交出过 Emitter 的水平线 —— 合法但退化（WARN 路径，同一个 bug 的不崩溃形态）。
+ */
+function writeTeamAOnlySolver(dir: string, degenerateFallback: boolean): void {
+  fs.writeFileSync(
+    path.join(dir, 'solver.py'),
+    [
+      '"""只在 Team A 侧调试过的算法（测试反例）：前进方向写死为 +x。"""',
+      'import argparse, hashlib, json, os, sys',
+      '',
+      'ap = argparse.ArgumentParser()',
+      'ap.add_argument("--team", required=True, choices=["A", "B"])',
+      'ap.add_argument("--public", required=True)',
+      'ap.add_argument("--reveal", required=True)',
+      'ap.add_argument("--output", required=True)',
+      'a = ap.parse_args()',
+      'raw = open(a.public, "rb").read()',
+      'public = json.loads(raw.decode("utf-8"))',
+      'reveal = json.load(open(a.reveal))',
+      'if hashlib.sha256(raw).hexdigest() != reveal["public_state_sha256"]:',
+      '    raise SystemExit(2)',
+      's = public["emitters"][a.team]',
+      'sx, sy = s["x"], s["y"]',
+      '# 错误假设：敌人一定在 +x 方向',
+      'enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"] and p["x"] > sx]',
+      ...(degenerateFallback
+        ? ['if enemies:', '    t = enemies[0]', '    m = max(-2.0, min(2.0, (t["y"] - sy) / (t["x"] - sx)))', 'else:', '    m = 0.0']
+        : ['t = enemies[0]', 'm = max(-2.0, min(2.0, (t["y"] - sy) / (t["x"] - sx)))']),
+      'dsl = {"type": "add", "args": [{"type": "number", "value": sy}, {"type": "mul", "args": [',
+      '    {"type": "number", "value": m},',
+      '    {"type": "sub", "args": [{"type": "variable", "value": "x"}, {"type": "number", "value": sx}]}]}]}',
+      'tmp = a.output + ".tmp"',
+      'with open(tmp, "w", encoding="utf-8") as f:',
+      '    json.dump({"schema_version": "1.1", "dsl": dsl}, f)',
+      '    f.flush()',
+      '    os.fsync(f.fileno())',
+      'os.replace(tmp, a.output)',
+      '',
+    ].join('\n')
+  );
+}
+
+test('competitor-kit: check_mirror 对只会打 Team A 的算法报 FAIL，退出码 1', () => {
+  const mine = tmpDir('team-a-only');
+  writeTeamAOnlySolver(mine, false);
+
+  const { status, report, stderr } = runCheckMirrorCli(mine);
+  assert(report, `check-mirror 应输出 JSON 报告，stderr:\n${stderr.slice(0, 600)}`);
+  assertEqual(status, 1, `只会打 Team A 的算法退出码应为 1（verdict=${report!.verdict}）`);
+  assertEqual(report!.verdict, 'FAIL', 'verdict 应为 FAIL');
+  for (const p of report!.pairs) {
+    assertEqual(p.status, 'FAIL', '两对都应 FAIL（B 侧在原世界与镜像世界里都崩）');
+    assert(p.original.ok !== p.mirror.ok, '经典症状是「一侧合法、镜像侧失败」，而不是两侧都失败');
+    const bad = p.original.ok ? p.mirror : p.original;
+    assertEqual(bad.team, 'B', '失败的一侧必须是 Team B');
+  }
+});
+
+test('competitor-kit: check_mirror 对「B 侧交退化函数」的只会打 Team A 算法报 WARN（退出码 0），并额外点名', () => {
+  // 同一个 bug 的不崩溃形态：B 侧筛不到敌人就交一条过 Emitter 的水平线。两侧都合法，
+  // 所以按契约只能是 WARN / 退出码 0 —— 但两对的结算（命中 / 阻挡 / 终止原因）都不一致，人类可读报告必须点名。
+  const mine = tmpDir('team-a-degenerate');
+  writeTeamAOnlySolver(mine, true);
+
+  const { status, report, stderr } = runCheckMirrorCli(mine);
+  assert(report, `check-mirror 应输出 JSON 报告，stderr:\n${stderr.slice(0, 600)}`);
+  assertEqual(status, 0, `两侧都合法时退出码应为 0（verdict=${report!.verdict}）`);
+  assertEqual(report!.verdict, 'WARN', 'verdict 应为 WARN（不是 FAIL：B 侧的函数是合法的）');
+  for (const p of report!.pairs) {
+    assert(p.original.ok && p.mirror.ok, `两侧都应合法：${p.original.team}=${p.original.stage} / ${p.mirror.team}=${p.mirror.stage}`);
+    assert(p.judge && !p.judge.same, `配对 ${p.index} 的结算应不一致（A 侧瞄准敌人，B 侧水平线）`);
+  }
+  assert(judgeDiffersOnEveryPair(report!), 'judgeDiffersOnEveryPair 必须为 true');
+  const text = formatReport(report!);
+  assert(/MIRROR WARN/.test(text), '结论行应为 MIRROR WARN');
+  assert(/不崩溃形态/.test(text) && /non-crashing form of the Team-A-only bug/.test(text), '人类可读报告必须点名「只会打 Team A」bug 的不崩溃形态（中英）');
+  // 对照：真正对称的算法不该被点名
+  const symmetric = runCheckMirrorCli(path.join(PLATFORM_ROOT, 'tests', 'fixtures', 'algos', 'precision-line')).report;
+  assert(symmetric && !/不崩溃形态/.test(formatReport(symmetric)), '对称算法的报告不得出现「不崩溃形态」提示');
+});
+
+test('competitor-kit: check_mirror.py 前端只是转发（无参 → 用法 / 退出码 2；--help → 0）', () => {
+  const tool = path.join(KIT, 'tools', 'check_mirror.py');
+  const noArgs = spawnSync('python3', [tool], { cwd: PLATFORM_ROOT, encoding: 'utf8' });
+  assertEqual(noArgs.status, 2, '无参数时应打印用法并以 2 退出');
+  assert(/check-mirror\.ts/.test(noArgs.stderr), '用法说明必须指向 TS 内核（判定不在 Python 里）');
+  const help = spawnSync('python3', [tool, '--help'], { cwd: PLATFORM_ROOT, encoding: 'utf8' });
+  assertEqual(help.status, 0, '--help 应以 0 退出');
+  assert(/开发诊断/.test(help.stderr) && /Preflight 不运行/.test(help.stderr), '前端说明必须点明它是开发诊断、官方 Preflight 不运行');
 });
 
 void runAll('competitor-kit');

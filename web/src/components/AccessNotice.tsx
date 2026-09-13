@@ -8,7 +8,8 @@
  *   - 服务连不上         → 服务可能退出了，去看进程。
  *
  * 判据由 `useBoard` 的 REST 探测 + WS 关闭码 4401 给出（服务端权威），
- * 不是前端猜的。
+ * 不是前端猜的。外观走 V1.4 的分层提示块（`.notice`，范围 = 连接），
+ * `data-access` 保留原始状态给演练读。
  */
 
 import { useI18n } from '../i18n/useI18n';
@@ -37,9 +38,19 @@ export function AccessNotice({
   if (access === 'ok') return null;
   const key = TEXT_KEY[access];
   return (
-    <div className="errors" data-testid={testId} data-access={access}>
-      <p>⚠ {t(key.title)}</p>
-      <p>{t(key.body)}</p>
+    <div
+      className="notice"
+      role="alert"
+      data-scope="connection"
+      data-severity="error"
+      data-testid={testId}
+      data-access={access}
+    >
+      <p className="notice__title">
+        <span className="notice__scope">{t('notice.scope.connection')}</span>
+        <span>{t(key.title)}</span>
+      </p>
+      <p className="notice__body">{t(key.body)}</p>
     </div>
   );
 }

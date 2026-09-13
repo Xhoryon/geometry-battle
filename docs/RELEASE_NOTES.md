@@ -1,3 +1,56 @@
+## V1.4.0 (2026-09-13) — Platform Fairness & Tournament UX
+
+V1.4 addresses platform fairness (Team A/B mirror symmetry), expands tournament participant
+orientation, and delivers a comprehensive UX overhaul across all web roles.
+
+Prepared from independently audited internal snapshot `7f6e39d0d4faaa34ca48981aaee44f0213a52337`.
+
+### Highlights
+
+#### Platform Fairness
+
+- **Fixed Team A/B Mirror Asymmetry in Validator**: Corrected numerical sampling bias in
+  coordinate validation that broke mirror invariance between Team A and Team B slots.
+- **Permanent Mirror Fairness Regression Testing**: Added automated mirror-paired test suite
+  to detect future platform slot bias.
+- **Full-Match Symmetry Testing**: Validates that swapping teams produces swapped outcomes
+  under controlled conditions.
+- **Participant Mirror Self-Check Tooling**: Competitor-kit includes `check_mirror.py` and
+  server-side `check-mirror.ts` for independent verification.
+
+**Fairness Statement**: No platform slot bias was detected under tested mirror-paired
+conditions (30 map seeds, same-solver pairs, n=60 matches). The old Validator bug is fixed,
+and regression tests now guard the mirror invariant. See `docs/V1.4_FAIRNESS_REPORT.md` for
+methodology and limitations.
+
+#### Competition Protocol Hardening
+
+- **Clarified Team Orientation Requirements**: Team A faces +x (right), Team B faces -x (left).
+  Input coordinate ordering must respect team orientation to avoid breaking mirror symmetry.
+- **Expanded Competitor-Kit Orientation Guidance**: Algorithm requirements document now
+  explicitly states coordinate-ordering expectations and provides mirror diagnostic tools.
+- **Host Operator Sleep-Timing Guidance**: Added documentation warning against system sleep
+  during matches due to process-timer skew risks.
+
+#### Frontend & UX Overhaul
+
+- **Role-Based Home Page** (`/`): Entry point with Judge / Team A / Team B / Spectator /
+  Replays navigation cards.
+- **Redesigned Judge Workflow** (`/judge`): Improved phase-driven wizard with clearer
+  step-by-step progression, better status visibility, and streamlined controls.
+- **Improved Team Submission Flow** (`/team/a`, `/team/b`): Enhanced upload experience,
+  preflight progress feedback, emitter selection workflow, and lock confirmation.
+- **Redesigned Spectator Experience** (`/spectator`): Clean read-only tournament view with
+  better match state presentation and localized phase descriptions.
+- **Authoritative Replay Player** (`/replay/:matchId`): New timeline-based replay controls
+  with round scrubbing, play/pause, and synchronized state visualization.
+- **Expanded Bilingual UI**: Comprehensive Chinese/English localization across all new
+  components and workflows.
+- **Accessibility Improvements**: Enhanced keyboard navigation, ARIA labels, focus management,
+  and screen-reader support across web application.
+
+---
+
 ## V1.3.0 (2026-09-12) — Bilingual Tournament Experience
 
 V1.3 brings a comprehensive bilingual (Chinese / English) localized user experience,
@@ -118,7 +171,7 @@ V1.1 中 A/B 队锚点恒为 `(-18, 0)` / `(18, 0)`；V1.2 中双方各自从**�
 | `npm install` | PASS |
 | `npm run typecheck` | PASS |
 | `npm run typecheck:web` | PASS |
-| `npm test` | **36 / 37 套件**（唯一失败见下） |
+| `npm test` | **38 / 39 套件**（唯一失败见下） |
 | `competitor-kit/tools/validate_submission.py starter` | PASS（`PRE-FLIGHT PASS`，2 队别 × 9 分节） |
 
 ### 唯一失败用例
@@ -157,21 +210,38 @@ V1.1 中 A/B 队锚点恒为 `(-18, 0)` / `(18, 0)`；V1.2 中双方各自从**�
 
 ## 版本来源
 
+### V1.4
+
+本公开 V1.4 发行版准备自**内部经独立审计的**竞赛源码快照：
+
+```text
+7f6e39d0d4faaa34ca48981aaee44f0213a52337
+```
+
+该内部快照的最终审计结论为 `PASS — APPROVED FOR V1.4 RELEASE`。
+
+### V1.3
+
+本公开 V1.3 发行版准备自**内部经独立审计的**竞赛源码快照：
+
+```text
+febf1c69fb6cb78624811513149f477c4e30fac6
+```
+
+该内部快照的最终审计结论为 `CONDITIONAL PASS — APPROVED FOR V1.3 RELEASE`。
+
+### V1.2
+
 本公开 V1.2 发行版准备自**内部经独立审计的**竞赛源码快照：
 
 ```text
 94a0788231c62f2e72abaa719609a70031a41433
 ```
 
-该内部快照的最终审计结论为
-`PASS — APPROVED FOR V1.2 RELEASE`。
+该内部快照的最终审计结论为 `PASS — APPROVED FOR V1.2 RELEASE`。
+
+---
 
 本公开仓库使用**独立的、经过脱敏的发行历史**，因此**公开 Git 提交标识与内部开发
-提交标识刻意不同** —— 公开侧不存在与内部 SHA 一一对应的提交，
-请不要把公开提交 SHA 当作内部审计 SHA。
-
-公开副本与内部快照的差异**仅限于**：许可与公开文档、内部过程材料的剔除、
-以及 playtest 证据的精简与机器路径脱敏。**产品逻辑未作任何改动**
-（引擎、服务端授权、上传解析、Emitter 语义、锦标赛模式、Web 行为、回放、观众板、裁判台）。
-
-证据范围与复现方法见 [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md)。
+仓库的提交标识不互通**。上述 SHA-1 标识是内部审计快照的来源证据，
+公开仓库的版本标签（`v1.2.0`、`v1.3.0`、`v1.4.0`）指向对应的公开发行提交。

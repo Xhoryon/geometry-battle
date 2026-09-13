@@ -571,7 +571,7 @@ python3 playtest/harness/gb_counterfactual.py simulate \
 # 5. 吸收态检验（cap 60）—— 条件子集由 §13.1 的方法从归档导出
 for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
   python3 playtest/harness/gb_round2.py run --pair $p \
-      --conditions <workspace>/cond-cap60.json --out <workspace>/cap60-srr/$p --max-rounds 60
+      --conditions /tmp/cond-cap60.json --out /tmp/cap60-srr/$p --max-rounds 60
 done
 ```
 

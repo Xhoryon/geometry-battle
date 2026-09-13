@@ -8,7 +8,7 @@
  *     走 `GET /api/trajectory/:id` 补一次 —— 这是恢复路径，不是常规路径。
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { bytesToBase64, unzipToFiles } from './zip';
 import { t } from '../i18n/useI18n';
 import { JUDGE_READ_PATHS, WS_INVALID_TOKEN, teamOfTopic } from '../../../src/server/protocol';
@@ -171,18 +171,63 @@ async function probeAccess(topic: Topic): Promise<AccessState> {
 // WS board 订阅
 // ============================================================================
 
+/**
+ * 连接状态（V1.4）—— 给 `ConnectionTag` 用的一个词。
+ *
+ * `connected: boolean` 不够：现场看到「未连接」时，背后可能是七种不同的事，
+ * 而且处置完全不同 ——
+ *   - `connecting`     第一次连接还没建立；
+ *   - `waiting`        WS 已开、但第一条 board 还没到（这时页面上的兜底值不是权威值）；
+ *   - `live`           WS 在线且已有 board；
+ *   - `reconnecting`   WS 掉线（服务重启 / 页面休眠），正在退避重连；
+ *   - `disconnected`   重连已经失败多次 —— 仍在重试，但该有人去看服务了；
+ *   - `unauthorized`   服务端明确说令牌不对 / 缺令牌（4401 或探测 401）：**不再重连**；
+ *   - `unreachable`    REST 探测都连不上：服务没起或端口变了。
+ */
+export type ConnectionStatus =
+  | 'connecting'
+  | 'waiting'
+  | 'live'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'unauthorized'
+  | 'unreachable';
+
+/** 连续重连失败到这个次数，就从「重连中」改口为「已断开」（退避此时已到 1s 一次） */
+const DISCONNECTED_AFTER_RETRIES = 4;
+
+function deriveStatus(
+  connected: boolean,
+  hasBoard: boolean,
+  access: AccessState,
+  retries: number
+): ConnectionStatus {
+  // 令牌问题最优先：这时重连再多次也没用，页面该讲的是「换链接」
+  if (access === 'unauthorized' || access === 'missing') return 'unauthorized';
+  if (connected) return hasBoard ? 'live' : 'waiting';
+  if (access === 'unreachable') return 'unreachable';
+  if (retries === 0) return 'connecting';
+  return retries >= DISCONNECTED_AFTER_RETRIES ? 'disconnected' : 'reconnecting';
+}
+
 export interface BoardFeed<T> {
   board: T | null;
   /** WS 是否在线。断线时页面自己决定怎么显示（三条板都显示同一个「未连接」标记） */
   connected: boolean;
   /** 这一页的访问状态 —— 页面据此给出「缺令牌 / 令牌过期 / 服务没起来」三种不同的下一步 */
   access: AccessState;
+  /** 连接状态的一个词（由上面三者 + 重连次数推出），给 `ConnectionTag` 用 */
+  status: ConnectionStatus;
+  /** 当前这一轮掉线以来的重连次数；连上就归零 */
+  retries: number;
 }
 
 export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFeed<T> {
   const [board, setBoard] = useState<T | null>(null);
   const [connected, setConnected] = useState(false);
   const [access, setAccess] = useState<AccessState>('ok');
+  /** 重连次数要进 state：它要显示在 ConnectionTag 上，闭包局部变量改了不会触发渲染 */
+  const [retries, setRetries] = useState(0);
   /** 令牌换代计数：fragment 变了就 +1，逼下面的 effect 重连 */
   const [tokenVersion, setTokenVersion] = useState(0);
 
@@ -205,6 +250,7 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
 
     // 先探一次 REST，拿到服务端的权威判据 —— 别让前端去猜是哪一种失败
     setAccess('ok');
+    setRetries(0);
     void probeAccess(topic).then((a) => {
       if (!disposed && a !== 'ok') setAccess(a);
     });
@@ -219,6 +265,7 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
 
       ws.onopen = () => {
         retry = 0;
+        setRetries(0);
         setConnected(true);
         setAccess('ok'); // 连上了就说明令牌是好的（也覆盖「服务重启后恢复」）
       };
@@ -246,12 +293,16 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
         // 而下面是无上限退避重连 —— 不区分的话，换场之后队伍页会带着过期令牌
         // 永久狂刷，现场只看到一句「未连接」，真实原因被藏起来。
         if (ev.code === WS_INVALID_TOKEN) {
-          setAccess('unauthorized');
+          // 链接里**根本没带**令牌时，服务端同样回 4401 —— 但给用户的话不同：
+          // 「缺令牌」是打开了错的链接，「令牌失效」是拿着上一场的链接。
+          // 此前这里一律写 unauthorized，把 REST 探测刚判出的 missing 覆盖掉了。
+          setAccess(getAccessToken() ? 'unauthorized' : 'missing');
           // 上一场的轨迹不要留在这一场
           trajCache.clear();
           return;
         }
         retry += 1;
+        setRetries(retry);
         // 服务重启 / 页面休眠都会走到这里；退避重连，最长 5s
         retryTimer = window.setTimeout(open, Math.min(5000, 250 * retry));
       };
@@ -273,7 +324,13 @@ export function useBoard<T = JudgeBoard | SpectatorBoard>(topic: Topic): BoardFe
     // tokenVersion 变化（fragment 换代）→ 重跑整个 effect：重新探测 + 换新令牌重连
   }, [topic, tokenVersion]);
 
-  return { board, connected, access };
+  return {
+    board,
+    connected,
+    access,
+    status: deriveStatus(connected, board !== null, access, retries),
+    retries,
+  };
 }
 
 // ============================================================================
@@ -314,24 +371,47 @@ export interface ReplayIndexEntry {
   teamBName: string;
 }
 
-export function useReplayList(): { replays: ReplayIndexEntry[]; error: string | null } {
+export interface ReplayListFeed {
+  replays: ReplayIndexEntry[];
+  /** 读不到列表时的人话；成功后清空 */
+  error: string | null;
+  /** 首次读取或重试进行中 */
+  loading: boolean;
+  /** 重试（首页 / 回放列表页的「重试」按钮）—— 列表**只在挂载与显式重试时**读，不轮询 */
+  reload: () => void;
+}
+
+/** `GET /api/replays`（匿名端点）—— 每次调用服务端都要扫产物目录，所以这里不做定时刷新 */
+export function useReplayList(): ReplayListFeed {
   const [replays, setReplays] = useState<ReplayIndexEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
+  const reload = useCallback(() => setTick((v) => v + 1), []);
   useEffect(() => {
     let alive = true;
+    setLoading(true);
     void fetch('/api/replays')
-      .then((r) => r.json())
-      .then((j: { replays: ReplayIndexEntry[] }) => {
-        if (alive) setReplays(j.replays ?? []);
+      .then(async (r) => {
+        if (!r.ok) throw new Error(t('err.httpFailed', { status: r.status }));
+        return (await r.json()) as { replays?: ReplayIndexEntry[] };
+      })
+      .then((j) => {
+        if (!alive) return;
+        setReplays(j.replays ?? []);
+        setError(null);
       })
       .catch((e: Error) => {
-        if (alive) setError(e.message);
+        if (alive) setError(t('err.unreachable', { message: e.message }));
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, []);
-  return { replays, error };
+  }, [tick]);
+  return { replays, error, loading, reload };
 }
 
 // ============================================================================

@@ -5,156 +5,232 @@
  * 没有哈希、没有文件路径、没有 JSON、没有审计、没有控制台。
  *
  * 这条保证不是靠这一页「记得别渲染」——它靠的是服务端根本不发那些字段
- * （观众板是白名单投影）。这一页能画的，就是它能收到的。
+ * （观众板是白名单投影，恰好十个顶层键）。这一页能画的，就是它能收到的。
+ *
+ * 版面（V1.4）—— 一块记分牌：
+ *
+ *   头部    Team A 存活 · 锚点 | 回合 · 阶段 | Team B 存活 · 锚点
+ *   终局带  TEAM X WINS · 原因 · ROUND N        —— 只在终局出现，是**独立的一条横带**，
+ *                                                  不压在竞技场上：最后一帧必须完整可见
+ *   舞台    竞技场（引擎轨迹）
+ *   底部    A 计算 | 先手 | B 计算，其下一行本轮说明（攻击 / 击杀，或本轮算法异常）
+ *
+ * 外壳用 `nav="none"`：除语言开关外不得有任何按钮，导航也一并省掉（演练钉死：
+ * 命令控件为零、除语言开关外的按钮为零）。
+ *
+ * 性能：board 每 100ms 一条，但一轮之内竞技场几乎不变 —— 画布拿到的是按**内容键**
+ * memo 过的稳定引用，只有内容真的变了才重画。
  */
 
+import { memo, useMemo } from 'react';
 import { ArenaCanvas } from '../arena/ArenaCanvas';
+import { AppShell } from '../components/AppShell';
 import { ComputeStatus } from '../components/ComputeStatus';
+import { ConnectionTag, pendingBodyKey } from '../components/ConnectionTag';
 import { useBoard, useTrajectory } from '../api/client';
-import { LanguageSwitch } from '../components/LanguageSwitch';
-import { PHASE_KEYS, localizeRoundErrors } from '../i18n/translations';
+import { endReasonLabel, firstSolverLabel, localizeRoundErrors, winnerLabel } from '../i18n/translations';
 import { useI18n } from '../i18n/useI18n';
-import type { SpectatorBoard } from '../../../src/server/protocol';
+import { arenaKey, bannerKey, coordText, firstTone } from './spectatorView';
+import type { ArenaView, SpectatorBoard, TrajectoryPayload } from '../../../src/server/protocol';
 import type { JSX } from 'react';
+
+const NO_KILLED: readonly string[] = [];
+
+/** 舞台：只在 arena / trajectory / killed 的**引用**变化时重渲染（三者都已按内容 memo） */
+const Stage = memo(function Stage({
+  arena,
+  trajectory,
+  killed,
+}: {
+  arena: ArenaView;
+  trajectory: TrajectoryPayload | null;
+  killed: readonly string[];
+}): JSX.Element {
+  return <ArenaCanvas arena={arena} trajectory={trajectory} killed={killed} />;
+});
+
+/** 头部两侧：色点 + 「Team X 存活」+ 大数 + 本场锚点 */
+function TeamSide({
+  team,
+  alive,
+  emitter,
+}: {
+  team: 'A' | 'B';
+  alive: number;
+  emitter: { id: string; position: { x: number; y: number } } | null;
+}): JSX.Element {
+  const { t } = useI18n();
+  return (
+    <div className="screen__team" data-team={team} data-testid={`spectator-team-${team}`}>
+      <div className="screen__alive">
+        <span className="screen__count num" data-testid={`spectator-alive-${team}`}>
+          {alive}
+        </span>
+        <span className="screen__caption">
+          <span className={`team-dot team-dot--${team.toLowerCase()}`} aria-hidden="true" />
+          {t('spectator.alive', { team })}
+        </span>
+      </div>
+      {/*
+        本场的开火点（V1.2 §一）。「双方都锁定」之前引擎根本不下发这两个坐标
+        （`emitters: null`），所以这里不是「前端记得别显示」—— 是收不到。
+      */}
+      <div
+        className="screen__emitter"
+        data-testid={`spectator-emitter-${team}`}
+        data-emitter={emitter ? emitter.id : ''}
+      >
+        <span className="screen__caption">{t('spectator.emitter')}</span>
+        <span className="num">
+          {emitter ? `${emitter.id} ${coordText(emitter.position)}` : t('spectator.emitterPending')}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export function SpectatorPage(): JSX.Element {
   const { t, locale } = useI18n();
-  const { board, connected } = useBoard<SpectatorBoard>('spectator');
+  const { board, status, retries } = useBoard<SpectatorBoard>('spectator');
   const trajectory = useTrajectory(board?.trajectoryHandle ?? null);
 
-  if (!board) {
+  // 内容键 memo：board 每条都是新对象，但一轮之内 arena / killed 几乎不变
+  const key = board ? arenaKey(board.arena) : '';
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const arena = useMemo<ArenaView | null>(() => board?.arena ?? null, [key]);
+  const killedKey = board?.lastRound?.killed.join(',') ?? '';
+  const killed = useMemo<readonly string[]>(
+    () => (killedKey ? killedKey.split(',') : NO_KILLED),
+    [killedKey]
+  );
+
+  const shellProps = {
+    role: 'spectator' as const,
+    eyebrow: t('nav.spectator'),
+    nav: 'none' as const,
+    connection: <ConnectionTag status={status} retries={retries} />,
+  };
+
+  if (!board || !arena) {
+    // 没拿到 board 之前不渲染任何兜底数值 —— 只说清楚现在是「连接中 / 已连接等状态 / 服务不可达」
     return (
-      <div className="screen">
-        <div className="empty">{t('common.connecting')}</div>
-      </div>
+      <AppShell {...shellProps}>
+        <div className="gate" data-testid="spectator-pending" data-board="pending" data-connection={status}>
+          <p className="empty">{t(pendingBodyKey(status))}</p>
+        </div>
+      </AppShell>
     );
   }
 
   const first = board.lastRound?.firstSolver;
+  const roundErrors = board.lastRound?.errors ?? [];
 
   /**
-   * 大屏横幅上的一句话。
-   *
-   * 阶段名来自引擎，这里只把它翻成**观众看得懂**的说法 —— 引擎的 `READY`
-   * 在开赛前是「等待开赛」、在第一轮之后是「等待下一轮」，直接印「就绪」
-   * 对一个刚走进场馆的人毫无信息量。判据只用引擎已经给的字段，不另算。
+   * 底部那一行说明：本轮算法异常（TIMEOUT / CRASH…）优先 —— 它解释了为什么这一轮
+   * 少了一条轨迹；否则是本轮攻击 / 击杀；还没打过就复述阶段。
+   * 错误由服务端给**键**，这里按当前语言取译文（V1.3）；认不出键时回退到它给的原文，
+   * 绝不把键本身渲染到大屏上。
    */
-  const statusText =
-    board.phase === 'READY' && board.round > 0
-      ? t('spectator.readyNextRound')
-      : t(PHASE_KEYS[board.phase]);
   const note = ((): string => {
-    if (board.verdict) {
-      const reason = board.verdict.endReason;
-      return board.verdict.winner === 'draw'
-        ? `${t('replay.draw')} · ${reason}`
-        : `${t('replay.winner', { team: board.verdict.winner })} · ${reason}`;
-    }
-    // 引擎给的人话错误：服务端给**键**，这里按当前语言取译文（V1.3）。
-    // 认不出键（服务端换了新错误码、界面还没跟上）时回退到它给的原文 ——
-    // 绝不把键本身渲染到大屏上。
-    if (board.lastRound?.errors.length) {
+    if (roundErrors.length) {
       return localizeRoundErrors(
         locale,
-        board.lastRound.errors,
-        board.lastRound.errorKeys,
-        board.lastRound.errorParams
+        roundErrors,
+        board.lastRound?.errorKeys,
+        board.lastRound?.errorParams
       ).join('   ');
     }
     if (board.lastRound) {
       const atk = board.lastRound.attacksExecuted;
-      const killed = board.lastRound.killed;
       return t('spectator.note.attacks', {
         attacks: atk.length ? `[${atk.join(' → ')}]` : t('spectator.note.noAttacks'),
         kills: killed.length ? killed.join(',') : t('common.none'),
       });
     }
-    return t(PHASE_KEYS[board.phase]);
+    return t(bannerKey(board.phase, board.round));
   })();
 
   return (
-    <div className="screen" data-testid="spectator">
-      <header className="screen__rail">
-        <div className="round-mark">
-          <span className="round-mark__label">{t('spectator.round')}</span>
-          <span className="round-mark__value">{String(board.round).padStart(2, '0')}</span>
-        </div>
+    <AppShell {...shellProps} meta={<span className="num muted">{board.matchId}</span>}>
+      <div
+        className="screen"
+        data-testid="spectator"
+        data-board="ready"
+        data-phase={board.phase}
+        data-round={board.round}
+        data-terminal={board.verdict ? 'true' : 'false'}
+      >
+        <header className="screen__head">
+          <TeamSide team="A" alive={board.alive.A} emitter={board.arena.emitters?.A ?? null} />
 
-        <div className="alive alive--a">
-          <span className="team-dot team-dot--a" />
-          <span className="alive__count">{board.alive.A}</span>
-          <span className="alive__label">{t('spectator.alive', { team: 'A' })}</span>
-        </div>
-
-        <div className="alive alive--b">
-          <span className="team-dot team-dot--b" />
-          <span className="alive__count">{board.alive.B}</span>
-          <span className="alive__label">{t('spectator.alive', { team: 'B' })}</span>
-        </div>
-
-        {first && first !== 'none' ? (
-          <div className="round-mark">
-            <span className="round-mark__label">{t('spectator.firstSolver')}</span>
-            <span className="round-mark__value" style={{ color: first === 'A' ? 'var(--a)' : first === 'B' ? 'var(--b)' : 'var(--muted)' }}>
-              {first === 'tie' ? t('spectator.tie') : `TEAM ${first}`}
+          {/* 中央：回合大数 + 阶段一句话 —— 走进来的人一眼就知道现在是什么状态 */}
+          <div className="screen__center" data-testid="spectator-round" data-round={board.round}>
+            <span className="screen__caption">{t('spectator.round')}</span>
+            <span className="screen__count screen__count--round num">{String(board.round).padStart(2, '0')}</span>
+            <span className="screen__phase" data-testid="spectator-status" data-phase={board.phase}>
+              {t(bannerKey(board.phase, board.round))}
             </span>
           </div>
-        ) : null}
+
+          <TeamSide team="B" alive={board.alive.B} emitter={board.arena.emitters?.B ?? null} />
+        </header>
 
         {/*
-          本场双方的开火点（V1.2 §一）。
-          「双方都锁定」之前，引擎根本不下发这两个坐标（`emitters: null`），
-          所以这里不是「前端记得别显示」——是收不到。
+          终局带：独立的一行，不是压在竞技场上的遮罩 —— 判决出来之后最后一帧
+          （谁打中了谁）仍然整张可见。颜色只是补充：文字、`data-winner`、
+          `data-end-reason` 都在。
         */}
-        {board.arena.emitters ? (
-          <div className="round-mark" data-testid="spectator-emitters">
-            <span className="round-mark__label">{t('spectator.emitters')}</span>
-            <span className="round-mark__value num">
-              <span className="team-dot team-dot--a" /> {board.arena.emitters.A.id}
-              {'　'}
-              <span className="team-dot team-dot--b" /> {board.arena.emitters.B.id}
-            </span>
-          </div>
-        ) : null}
-
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-          <LanguageSwitch />
-          <span className={`tag ${connected ? 'tag--live' : 'tag--down'}`}>
-            {connected ? t('common.live') : t('common.offline')}
-          </span>
-        </span>
-      </header>
-
-      <main className="screen__stage">
-        {/*
-          阶段横幅 —— 大屏的第一职责：**走进来的人一眼就知道现在是什么状态**。
-          此前阶段只出现在 rail 的小字里，现场隔几米根本看不清。
-          这里显示的仍然是引擎的原始阶段（经同一张中文表翻译），不是前端猜的。
-        */}
-        <div className="screen__banner" data-testid="spectator-status">
-          <span className="screen__phase">{statusText}</span>
-        </div>
-
-        <ArenaCanvas arena={board.arena} trajectory={trajectory} killed={board.lastRound?.killed ?? []} />
         {board.verdict ? (
-          <div className="verdict" data-testid="spectator-verdict">
-            <span
-              className={`verdict__winner ${board.verdict.winner === 'draw' ? '' : `verdict__winner--${board.verdict.winner.toLowerCase()}`}`}
-              style={board.verdict.winner === 'draw' ? { color: 'var(--muted)' } : undefined}
-            >
-              {board.verdict.winner === 'draw'
-                ? t('spectator.verdict.draw')
-                : t('replay.winner', { team: board.verdict.winner })}
+          <div
+            className="screen__verdict"
+            role="status"
+            data-testid="spectator-verdict"
+            data-winner={board.verdict.winner}
+            data-end-reason={board.verdict.endReason}
+            data-round={board.round}
+          >
+            <span className="screen__winner">{winnerLabel(locale, board.verdict.winner)}</span>
+            {/* 分隔点是真实文本：读屏与 innerText 读到的是一句话，不是三个词粘在一起 */}
+            <span className="screen__reason" aria-hidden="true">
+              ·
             </span>
-            <span className="verdict__reason">{board.verdict.endReason}</span>
+            <span className="screen__reason">{endReasonLabel(locale, board.verdict.endReason)}</span>
+            <span className="screen__reason" aria-hidden="true">
+              ·
+            </span>
+            <span className="screen__reason num">{t('spectator.verdictRound', { n: board.round })}</span>
           </div>
         ) : null}
-      </main>
 
-      <footer className="screen__rail screen__rail--bottom">
-        <ComputeStatus computes={board.computes} budgetMs={board.computeBudgetMs} />
-        <span className="screen__note">{note}</span>
-      </footer>
-    </div>
+        <main className="screen__stage">
+          <Stage arena={arena} trajectory={trajectory} killed={killed} />
+        </main>
+
+        <footer className="screen__foot">
+          <ComputeStatus
+            computes={board.computes}
+            budgetMs={board.computeBudgetMs}
+            center={
+              <div
+                className="screen__first"
+                data-testid="spectator-first"
+                data-first-solver={first ?? 'none'}
+                data-tone={firstTone(first)}
+              >
+                <span className="screen__caption">{t('spectator.firstSolver')}</span>
+                <span className="screen__firstvalue num">{first ? firstSolverLabel(locale, first) : '—'}</span>
+              </div>
+            }
+          />
+          <p
+            className="screen__note"
+            data-testid="spectator-note"
+            data-severity={roundErrors.length ? 'warning' : 'info'}
+          >
+            {note}
+          </p>
+        </footer>
+      </div>
+    </AppShell>
   );
 }

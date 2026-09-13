@@ -19,6 +19,9 @@ const SUITES = [
   'map-fairness',
   'obstacle-block',
   'obstacle-geometry',
+  // 平台镜像公平性（V1.4 §6/§7 Level 1–5，纯函数、不起沙箱）：x'=−x、A↔B 下
+  // Judge / Validator / resolveOrderedShots 的语义结果必须逐位镜像。
+  'mirror-fairness',
   'fixed-emitter',
   'locked-attack-right',
   'termination',
@@ -31,6 +34,9 @@ const SUITES = [
   'result-ipc',
   'algorithm-slot',
   'full-match-e2e',
+  // 镜像公平性 Level 6（真沙箱）：symmetry-probe 自战，在 map(seed) 与 M(map(seed))
+  // 上整场结果必须互为镜像；高负载下以 environment/probe 明确失败而非静默通过。
+  'mirror-match',
   'runner-isolation',
   'cross-round-cheat',
   'package-tamper',
@@ -54,6 +60,8 @@ const SUITES = [
   // 由 `npm run e2e` 单独跑。
   'i18n',
   'web-projection',
+  // 裁判向导的纯模型（V1.4）：阶段表 / 主动作挑选 / 标签助手，不开浏览器即可回归。
+  'web-wizard',
   'web-zip',
   'web-server',
   // 调用方身份绑定（V1.2 Final RC Audit 的 P1）：参赛者面 / 裁判面的令牌门禁，

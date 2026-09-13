@@ -66,7 +66,7 @@
 | `emitters` | object | 双方**固定 Emitter** 的坐标（整场不变） |
 | `emitters.A` / `emitters.B` | object | `{ "x": number, "y": number }` —— 你本轮的发射锚点 |
 | `points` | array | **全部战斗点**，**包含死点**（**不含 Emitter**） |
-| `points[].id` | string | 如 `"A1"` / `"B3"`（编号不固定，见 §4） |
+| `points[].id` | string | 如 `"A1"` / `"B3"`（整场稳定，但不一定连续、`A1` 可能缺席，见 §4） |
 | `points[].team` | string | `"A"` 或 `"B"` |
 | `points[].x` / `points[].y` | number | 坐标 |
 | `points[].alive` | boolean | `false` 表示该点已被击杀 |
@@ -248,14 +248,35 @@ assert hashlib.sha256(public_bytes).hexdigest() == reveal["public_state_sha256"]
 ## 4. 不要假设的事情
 
 - **不要假设点数固定**：每队点数在 6–10 之间变化。
-- **不要假设点位编号固定**：`A1` / `B1` 只是初始编号，会随击杀减少。
+- **不要假设某个编号一定存在**：`A1` / `B1` 只是初始编号。编号整场**稳定**、不会因击杀消失
+  （死点以 `"alive": false` 留在原位），但被锁定为 Emitter 的那两个编号**不在 `points` 里** ——
+  例如 `A1` 可能从头到尾都不存在，编号也不一定连续。
 - **不要假设 Emitter 坐标固定**：它是每队开赛前从**自己点里选定**的一个点，
   逐场不同 —— 必须读 `public_state.emitters`，不能写死 `-18` / `18`。
   被选为 Emitter 的那个点**不在 `points` 里**（它已经不是战斗点了）。
 - **不要假设障碍物数量或类型固定**：可能 0 个，可能多个；当前类型为 `rectangle` / `circle`。
 - **不要根据 JSON 字段顺序推断语义**：解析用键名，不要用位置。
-- **不要根据数组顺序推断策略信息**：`points` 的顺序不携带含义。
+- **不要根据数组顺序推断几何**：`points` 的顺序**不是** x 从小到大、也不是离 Emitter 从近到远
+  （引擎保证的只有 §4.1 那几条）。
 - **不要依赖地图种子**：它不在 public 里，你拿不到。
+
+### 4.1 数组顺序保证 / Array-order guarantees
+
+引擎对顺序**只**保证这些（其余一概不保证）：
+
+- `points`：先 Team A 的全部条目，再 Team B 的全部条目；组内按地图生成 / 放置顺序（`A1, A2, …`、`B1, B2, …`）。
+- `points`：整场每一轮**顺序相同、条目数相同** —— 被击杀的点留在原位，只把 `alive` 置为 `false`；条目**不会**因击杀而消失。
+- `points`：被锁定为 Emitter 的两个点被移除，其余编号**不重新编号**（所以 `A1` 可能缺席）。
+- `obstacles`：按生成顺序编号 `O1..On`，整场每轮都是同一个数组。
+
+**不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。**
+
+**English.** The engine guarantees only the following about order: `points` lists every Team A entry first,
+then every Team B entry, each group in map generation / placement order (`A1, A2, …`, `B1, B2, …`); the order
+and the entry count are identical every round — killed points stay in place with `alive: false` and entries
+never disappear on a kill; the two points locked as Emitters are removed and the remaining ids are not
+renumbered (so `A1` may be absent); `obstacles` are numbered `O1..On` in generation order and the array is the
+same every round. **Do not assume array order is geometric order.**
 
 ---
 
