@@ -1,7 +1,7 @@
 # PROJECT_STATE —— 当前有效事实
 
 > 这份文件只记录**此刻为真的事实**，不记录过程与历史。
-> 最后更新：2026-09-12（V1.3 RC 修复波见 §1.1；复评后的 `run-to-end` 阶段契约修复见 §1.2）。
+> 最后更新：2026-09-13（**V1.4 波次**见 §1.3：平台公平性结论、Validator 网格锚点修复、选手手册与前端重构；V1.3 的 §1.1 / §1.2 保留为历史事实）。
 >
 > 与本文件配套的还有：[V1.2_CURRENT_HANDOFF.md](V1.2_CURRENT_HANDOFF.md)（本轮交接）、
 > [V1.2_REQUIREMENTS.md](V1.2_REQUIREMENTS.md)（要做什么）、
@@ -15,15 +15,16 @@
 
 | 项 | 值 |
 |---|---|
-| 分支 | `feature/v1.3-localization`（V1.3 命名分支，从 `v1.2.0-competition` 的提交分出） |
+| 分支 | `feature/v1.4-platform-ux`（从 V1.3 批准 RC `febf1c6` 分出；V1.3 分支 `feature/v1.3-localization` 停在同一 SHA） |
 | HEAD | 见 `git log -1` —— 本文件自己也会产生提交，写死 SHA 就永远差一个 |
 | V1.2 平台工作 | **13 个提交，位于 `b439e10` 之下**（`7b11a4f`…`9b44610`） |
 | V1.2 发布基线 | `94a0788` —— 打了 `v1.2.0-competition` 的那一个提交，V1.3 从它分出，**未再改动** |
 | V1.3 本地化基线 | `b0f2751` —— 独立终审的被审候选，**未 amend、未改写**（终审结论：CONDITIONAL PASS） |
 | V1.3 RC 修复基线 | `f294c0e` —— 竞态稳定化提交；紧随其后的本地化收口提交见 §1.1 |
 | V1.3 复评修复 | `1c889e1` 之上的**两笔** —— `fix(server): continue run-to-end from the current match phase` 与其后的 `test: … realistic wait budget`，见 §1.2 |
-| 工作树 | **干净** —— V1.3 本地化与 RC 修复均已提交（含本文件自身的更新） |
-| 版本标签 | **三个** release tag（`v1.0.0-competition` / `v1.1.0-competition` / `v1.2.0-competition`）**均未移动**；V1.3 **尚未打 tag**（按要求） |
+| 工作树 | 跟踪文件**干净**；另有 `experiments/algo-a/`（A-v1 会话残留的 1296 个未跟踪文件，不属于任何分支，本轮不删不提交） |
+| V1.4 提交 | `git log --oneline febf1c6..HEAD`：feat(competitor) / fix(starter) / fix(core) Validator / test(platform) mirror-match / feat(web) / test(web) / test(platform) campaign / docs(state) |
+| 版本标签 | **三个** release tag（`v1.0.0-competition` / `v1.1.0-competition` / `v1.2.0-competition`）**均未移动**；V1.3 与 V1.4 **均未打 tag**（按要求，留给发布负责人） |
 | 推送 | **尚未推送** —— 合并/推送由人类决定 |
 | 公开仓库 | <https://github.com/Xhoryon/geometry-battle> —— **独立脱敏导出历史**，与本地研发仓库 SHA 不互见 |
 
@@ -138,6 +139,57 @@ judgeStartRound() phase !== 'REVEAL' → { ok: false }
 
 ---
 
+## 1.3 V1.4 波次（2026-09-13）—— 平台公平性 · 选手手册 · 前端 UX
+
+任务书 `Plans/Input/GEOMETRY_BATTLE_V1.4_PLATFORM_FAIRNESS_HANDBOOK_FRONTEND_TASK.md`；过程见 `V1.4_DEVELOPMENT_LOG.md`。
+
+### 平台公平性（`Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`）
+
+```text
+PLATFORM MIRROR FAIRNESS:  PASS        （修复 Validator 网格锚点后；L1–L6 永久测试全绿；probe 自战 119/120 对逐回合精确镜像，唯一例外是宿主休眠，复跑通过）
+SLOT WIN BIAS:             DISPROVEN   （probe / solver-fast / B-v1 共 167 对分胜负镜像配对，换槽后胜者 167/167 互换）
+FIRST-SOLVER BIAS:         DISPROVEN   （4465 个非并列回合 P(A 先)=0.491 [0.476, 0.506]；且 Locked Attack Right 下先手顺序不改变击杀集合）
+MAP DISTRIBUTION BIAS:     DISPROVEN   （27,000 张图 × 14 个配对指标，最小 p 0.16，最大 |d_z| 0.009）
+```
+
+- **唯一发现并修复的平台不对称**（`f24ffa7`，`src/core/Validator.ts`）：四条采样循环原本从 `domain[0]` 起步 —— A 是 Emitter、B 是场地边 −20，
+  镜像函数在两侧被采到不同的 x，阈值附近合法性会翻转（复现：凸性 101 vs 100）。修复后网格从本队 Emitter 出发沿进攻方向推进：
+  **A 侧采样逐位不变**（6000 个边缘函数结论 / 错误码 / 计数全同，仅信息性 `maxAbsCurvature` 末位 ulp 可能不同），B 侧成为 A 的精确镜像。
+  **不改任何规则常量。** 手册已写明（`competitor-kit/ALGORITHM_REQUIREMENTS.md §6.2.1`、`DSL_SPECIFICATION.md §7`）。
+- **永久测试**：`tests/mirror-helpers.ts`（变换 M）、`tests/mirror-fairness.ts`（L1–L5，纯函数 ≈18 s：2400 随机 AST + 198 定向探针 + 5,812,510 个轨迹点逐位镜像 + 先手顺序无关性）、
+  `tests/mirror-match.ts`（L6，真沙箱 ≈65 s：symmetry-probe 自战，用 CommonJS 导出替换 `generateMapOrNull` 让引擎拿到镜像地图；高负载下以 environment/probe **明确失败**而非静默通过）。
+- **探针** `tests/fixtures/algos/symmetry-probe/`（哈希 `86f59fe2d6a6…`）：在局部前进坐标 u 里算，镜像输入 ⇒ 逐位镜像输出；**审计 fixture，不得进 Tournament Mode**。
+- **实验脚本与结果摘要**：`experiments/v1.4-fairness/`（`stats` / `mapstats` / `selfplay` / `summary` / `analyze`.ts + `results/*.json`）；原始产物在仓库外。
+- **先手顺序为什么不影响胜负**：`resolveOrderedShots` 里先手方只能击杀对方的点，后手方的目标集合不受影响，没有取消分支（Rule Rev 3 §3/§8）。
+  `firstSolver` 只是被记录与显示的量。
+
+### 选手手册与工具（`0b5f671`、`f965cf0`）
+
+- `ALGORITHM_REQUIREMENTS.md §6.2 坐标方向与镜像 / Orientation & Symmetry`（双语）：A 前进 = x 增大、B = x 减小；函数 vs 遍历；建议的局部坐标 u；
+  **数组顺序保证**（points：A 组在前、组内为放置顺序、每轮相同、死点原位 `alive:false`、被锁定为 Emitter 的两点移除且**不重编号**；obstacles：`O1..On` 生成顺序）；
+  **双侧兼容 MUST**（同一提交必须能在 A、B 两侧正确运行）。`JSON_SCHEMA.md §4` 修正「id 会随击杀减少」（错的）。
+- `competitor-kit/tools/check_mirror.py` → `src/operator/check-mirror.ts`（判定全在 TS）：同一 solver A@世界 ↔ B@镜像世界（两对），比较规范化几何与 `judgeShot` 结算；
+  PASS / WARN / FAIL，exit 0/1/2；两侧都失败也是 FAIL；不崩溃的 Team-A-only（B 侧退化合法函数）只得 WARN 但会被点名。**开发诊断，官方 Preflight 不运行。**
+- starter 四份副本同步去掉「Emitter 是常量」的过期措辞；starter 包哈希变为 `0be87671344d…`（bundled 名单是运行期算哈希，不受影响）。
+
+### 前端（`web/`，只动 `web/**` 与 `tests/web-wizard.ts`，服务端零改动）
+
+| 能力 | 落点 |
+|---|---|
+| 首页 `/`：选择身份 + 最近比赛；令牌只经 fragment 导航、不存储；`/replays` 列表 | `pages/HomePage.tsx`、`ReplaysPage.tsx`、`pages/accessLink.ts`、`components/ReplayTable.tsx` |
+| AppShell（品牌 / 导航 / 语言 / 连接标签）+ 状态设计系统（neutral/waiting/ready/active/warning/error/terminal） | `components/AppShell.tsx`、`StatusBadge` / `StatusLine` / `SectionHeader` / `PrimaryAction` / `TeamLabel` / `ErrorNotice` / `ConnectionTag` / `PreflightBadge` |
+| 七态连接状态（connecting / waiting / live / reconnecting / disconnected / unauthorized / unreachable），三块板都带 `data-board="pending\|ready"` | `api/client.ts` `BoardFeed.status` |
+| 裁判台七步向导（比赛筹备 → 算法就绪 → 锚点锁定 → 就绪 → 揭晓 → 进行中 → 终局），每步一个主动作；终局主位置 = 回放链接；`reset` 只在 Advanced 且**两步确认**；危险动作不绑 ⌘/Ctrl+Enter；队伍卡不显示任何服务端路径 | `pages/JudgePage.tsx`、纯模型 `pages/judgeWizard.ts` |
+| 参赛者页四块（算法包 / 源码 / Emitter / 状态）六步（上传 → 校验 → Preflight → 选择 → 锁定 → 等待）；锁定后 `data-locked` + 显式 LOCKED 文案 | `pages/TeamPage.tsx`、纯模型 `pages/teamSteps.ts` |
+| 观众记分板式大屏，终局横带不遮最后一帧；除语言开关外零按钮 | `pages/SpectatorPage.tsx`、`pages/spectatorView.ts` |
+| 回放播放器（prev / play·pause / next / 第 N / 共 M / 时间轴 / 0.5× 1× 2× 只改动画速度 / 键盘 ←→ Space Home End）；只用已落盘帧 | `pages/ReplayPage.tsx`、纯模型 `pages/replayPlayer.ts` |
+| §33 残留：`firstSolver` / `endReason` / winner 全部走翻译键（机器枚举留在 `data-*`），`difficultyLabel` 加 own-property 守卫 | `i18n/translations.ts`（406 键/语言） |
+| 单测 `tests/web-wizard.ts`（22 条：向导表 / pickPrimary / 标签助手 / 步骤模型 / 播放器模型 / 源码扫描含 `data-board` 与减弱动效）；e2e 新增 `web/e2e/viewports.spec.ts`（zh/en × 1024×768 / 1280×720 / 1440×900 / 1920×1080 × 7 路线：无溢出 / 无裸键 / 无占位 / 画布可见 / 零页面错误） | `tests/web-wizard.ts`、`web/e2e/*.spec.ts`（11 条） |
+
+浏览器 QA 报告：`Plans/Output/V1.4_BROWSER_QA_REPORT.md`（macOS Chrome 实测；Windows / Safari **未测试**）。
+
+---
+
 ## 2. 唯一权威：MatchEngine
 
 **比赛判定只有一个来源：`src/core/Match.ts` 的 `MatchEngine`。**
@@ -226,7 +278,7 @@ judgeStartRound() phase !== 'REVEAL' → { ok: false }
 | 能力 | 落点 | 验证 |
 |---|---|---|
 | 集中式 i18n 层（**无散落的 `locale === 'zh' ? … : …`**） | `web/src/i18n/`：`types.ts` / `translations.ts` / `I18nContext.tsx` / `useI18n.ts` | `i18n`、`e2e/i18n.spec` |
-| 支持 `zh-CN` / `en-US`，每语言 **278** 条文案 | `translations.ts`（中文表是唯一事实来源，英文表键不全**编译不过**） | `i18n` |
+| 支持 `zh-CN` / `en-US`，每语言 **406** 条文案（V1.4） | `translations.ts`（中文表是唯一事实来源，英文表键不全**编译不过**） | `i18n` |
 | 一个共享语言开关（**不是五个独立选择器**） | `web/src/components/LanguageSwitch.tsx`，五条路由头部共用 | `e2e/i18n.spec` |
 | 解析顺序：已保存 → 浏览器语言 → 兜底；`localStorage` 键 `geometry-battle.locale` | `I18nContext.tsx#resolveInitialLocale` | `i18n`、`e2e/i18n.spec` |
 | 选择跨刷新、跨路由保持；`<html lang>` 与 `document.title` 同步 | `I18nProvider`（挂在路由**之上**）；`index.html` 只放兜底初值 | `e2e/i18n.spec` |
@@ -241,24 +293,10 @@ judgeStartRound() phase !== 'REVEAL' → { ok: false }
 WebSocket 载荷、回放产物、任何哈希，也不进入参赛算法的输入。因此**服务端文案不按语言渲染**
 （那会让同一个 board 因客户端而异）—— 服务端给 **key**，客户端翻译。
 
-### 界面（本波 UX 走查）
+### 界面
 
-| 能力 | 落点 | 验证 |
-|---|---|---|
-| 参赛者四步进度条「上传 → 校验 → 选锚点 → 锁定」（判据只来自服务端） | `TeamPage.tsx` 的 `steps` | 浏览器截图核对 |
-| 上传入口（文件夹 / 文件 / ZIP）可样式化且文案明确 | `TeamPage.tsx` + `.upload` | `zip-upload` |
-| 裁判台常驻双方状态条（算法名 / 就绪 / 锚点 / 密封哈希） | `JudgePage.tsx` 的 `judge__teams` | 浏览器截图核对 |
-| 观众大屏阶段横幅（说人话，不只印引擎阶段名） | `SpectatorPage.tsx` 的 `screen__banner` | 浏览器截图核对 |
-| 按钮 UA 默认外观全局重置 | `styles.css` | 截图（修掉文件清单的浅色底） |
-
-> **浏览器验收演练 `npm run e2e` 现在是通的**（8 passed：双语界面 5 + 中文完整赛事 2 +
-> ZIP 上传 1）。它此前**从未跑完过** —— V1.2 重写 spec 时 `clickAction`
-> 直接点收进 `Advanced` 折叠区的按钮，隐藏元素永远等不到可见性。
-> 详见 development_log 阶段 12.6。
->
-> ZIP 的**两条解析分支都有覆盖**：`stored(0)` 在 `zip-upload` 里由测试现打，
-> `deflate(8)` 用已提交的 `tests/fixtures/uploads/valid-deflate.zip`；
-> 后者还有一条**不需要浏览器**的回归（`tests/web-zip`）守着 fixture 的真伪。
+V1.3 的四屏走查已被 V1.4 前端重构整体取代，见 §1.3「前端」表与 `Plans/Output/V1.4_BROWSER_QA_REPORT.md`。
+`npm run e2e` 现为 **11 条**（双语 5 + 中文赛事 3 + ZIP 1 + 视口巡检 2），仍需系统 Chrome。
 
 ### 访问模型（capability token）
 
@@ -424,6 +462,26 @@ V1.2 把锚点改成逐场选定之后，preflight 的 decoy 世界一度仍在�
 
 ---
 
+### 5.4 宿主 idle sleep 会让当轮双方 TIMEOUT（运行手册项，不是引擎缺陷）
+
+V1.4 自战战役里唯一一次异常：裁判机进入 Idle/Maintenance Sleep 475 s，当轮双方 TIMEOUT（`TECHNICAL_INVALID`），
+按零击杀计入 STALEMATE 计数。引擎按规则处理正确；**正式比赛前用 `caffeinate -dims` 或关闭自动睡眠。**
+
+### 5.5 B-v1 自然地图下的 A 侧劣势 —— solver 观察项
+
+B-v1 自战两组共 180 场原局 P(A 胜 | 分胜负) = 0.397（p = 0.029），但其镜像配对胜者 68/68 互换 ⇒ **不是槽位效应**；第二组 90 seed 未复现（0.472）。
+归属 solver 与几何交互研究，与平台无关。
+
+### 5.6 回放列表 / 侧栏的队名是「Team A / Team B」
+
+`src/server/replays.ts` 写入的 `teamAName` 目前是队别名而非算法名（产物 `match.json` 如此）；前端在等于队别标签时去重显示。
+若要显示算法名，是服务端改动，本轮未做。
+
+### 5.7 服务端自由文案仍不随语言（延续 5.3）
+
+`CommandResult.errors` / `JudgeBoard.lastError` / `runToEndBlocker` 仍是中文自由文本；V1.4 前端把它们按**来源**分层放置（package / preflight / round / judge / connection / server），
+标题句翻译、正文原样透传。要真正双语化需服务端给 key（另一波）。
+
 ## 6. 怎么验证（按改动范围挑，不要每次都跑全量）
 
 ```bash
@@ -434,23 +492,28 @@ npx ts-node tests/run-all.ts web-projection    # 前端投影与观众板白名�
 npx ts-node tests/run-all.ts competitor-kit     # 选手文档 + examples 防漂移
 npx ts-node tests/run-all.ts judge-console     # 终端裁判屏文案
 npx ts-node tests/run-all.ts <suite> [...]     # 任意组合，只跑指定套件
-npm test                                       # 全量 39 套件（含 timing-fairness，约 10 分钟）
+npx ts-node tests/run-all.ts mirror-fairness    # 平台镜像公平性 L1–L5（纯函数，≈18 s）
+npx ts-node tests/run-all.ts mirror-match       # L6 真沙箱（≈65 s，高负载会以 environment/probe 明确失败）
+npx ts-node tests/run-all.ts web-wizard         # 裁判向导 / 参赛者步骤 / 回放播放器的纯模型
+npm test                                       # 全量 42 套件（含 timing-fairness 与 mirror-match，约 15 分钟）
 npm run e2e                                    # Playwright 浏览器演练（约 15 秒，需要 Chrome）
 ```
 
 `tests/run-all.ts` 在失败时**正确**地 `exit 1`。
 
-**最近一次完整验证（2026-09-12，全部通过）：**
+**最近一次完整验证（2026-09-13，V1.4 最终门禁，全部通过）：**
 
 ```text
 npm run typecheck / typecheck:web   → 0 错误
-npm test                            → 39/39 套件通过，318 个用例（另有 timing-fairness
-                                      的环境敏感性记录，见 §1.2 末）
-                                      （i18n 13 条，含 README 围栏/锚点自洽、
-                                        两表占位符一致、td() 必须透传插值参数）
-npm run e2e                         → 9 passed（双语 5 + 中文赛事 3 + ZIP 1）
-                                      （完整赛事演练 + 揭晓后连续推进 + ZIP 上传演练）
+npm test                            → 42/42 套件通过，357 个用例，20 分 33 秒（load 1.5–3.0；
+                                      timing-fairness 806 s 通过、mirror-match 67 s、mirror-fairness 18 s、
+                                      competitor-kit 14 s、web-wizard 0.5 s）
+npm run e2e                         → 11 passed（50.1 s）：双语 5 + 中文赛事 3 + ZIP 1 + 视口巡检 2
+                                      （中英各一次完整赛事演练：首页 → 上传 → Preflight → 选锁 → 揭晓 → START →
+                                        连续跑完 → 大屏 → 终局 → 回放播放器 → 两步确认换场 → 第二场）
 ```
+
+V1.3 那次（2026-09-12）的记录：39/39 套件 318 用例、e2e 9 passed —— 作为对照保留在 `V1.4_DEVELOPMENT_LOG.md` 阶段 1。
 
 > 上述全量是在 **`BTLEServer` 占满一个核、load average 一度到 14.5** 的情况下跑完的，
 > 仍然零假红 —— 但这是运气好，不是你下次可以照抄的前提：见下面第二条警告。
@@ -472,7 +535,11 @@ npm run e2e                         → 9 passed（双语 5 + 中文赛事 3 + Z
 |---|---|
 | `README.md` | 对外总览：规则、协议、Runtime、路由、锦标赛模式 |
 | `competitor-kit/` | **面向选手**的手册（他们只读这个） |
-| `docs/development_log.md` | 阶段式开发日志（**停在 V1.1 阶段 11**，无 V1.2 条目） |
+| `docs/development_log.md` | 阶段式开发日志（V1.1 阶段 0 → V1.2 阶段 13；V1.3 起的记录见 `docs/agent-context/`） |
+| `docs/agent-context/V1.4_DEVELOPMENT_LOG.md` | **V1.4 波次的完整过程记录**（各 Track 子代理原文 + 审核 + lead 收尾） |
+| `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md` | V1.4 平台公平性报告（方法 / 数据 / 四条结论 / 缺陷 / 局限 / 复现） |
+| `Plans/Output/V1.4_BROWSER_QA_REPORT.md` | V1.4 浏览器 QA：路由 × 视口 × 语言矩阵、跨平台状态 |
+| `experiments/v1.4-fairness/` | 公平性实验脚本与结果摘要 JSON |
 | `docs/agent-context/` | **本目录** —— 给接手的 AI / 开发者的当前事实 |
 | `Plans/Input/` | 人写的 Plan、规范与任务书 |
 | `Plans/Output/` | 审计报告与历史交接文档（**历史**，可能与代码不符） |
