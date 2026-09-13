@@ -20,22 +20,25 @@ import { FALLBACK_LOCALE } from './types';
 import type { Locale, Params } from './types';
 // 只用到**类型**：`import type` 会被完全擦除，因此这个模块在运行时
 // 依然零依赖 —— zip.ts 那个 Node 单测正是靠这一点才能直接 import 它。
-import type { WireDifficulty, WirePhase } from '../../../src/server/protocol';
+import type { WireDifficulty, WireEndReason, WirePhase } from '../../../src/server/protocol';
 
 /** 中文表 —— 键的唯一事实来源 */
 const zh = {
   // ---------------------------------------------------------------- app / nav
   'app.notFound': '没有这个页面。',
   'app.title': '几何斗殴 — 本地比赛',
+  // 品牌名是标识，两种语言里都是同一串字母
+  'app.brand': 'GEOMETRY BATTLE',
 
+  // 全局导航（AppShell，V1.4）。都是整页链接：这个应用刻意没有站内路由。
+  'nav.label': '页面导航',
+  'nav.home': '首页',
   'nav.judge': '裁判台',
   'nav.teamA': '参赛者 A',
   'nav.teamB': '参赛者 B',
   'nav.spectator': '观众大屏',
-  'nav.openSpectator': '打开观众大屏 ↗',
-  'nav.spectatorArrow': '观众大屏 ↗',
-  'nav.replay': '回放',
-  'nav.backToJudge': '回到裁判台',
+  'nav.replays': '回放列表',
+  'nav.replay': '本场回放',
 
   'lang.switch': '语言',
   'lang.zh': '中文',
@@ -43,10 +46,6 @@ const zh = {
 
   // ---------------------------------------------------------------- common
   'common.connecting': '正在连接本地比赛服务…',
-  'common.connected': '已连接',
-  'common.connectingShort': '连接中…',
-  'common.live': '● 实时',
-  'common.offline': '○ 未连接',
   'common.readonly': '只读',
   'common.unnamed': '（未命名）',
   'common.unknown': '未知',
@@ -54,6 +53,55 @@ const zh = {
   'common.copied': '已复制',
   'common.none': '无',
   'common.noFiles': '（还没有文件）',
+
+  // ---------------------------------------------------------------- conn
+  // 连接状态（`useBoard().status`，V1.4）。七种状态**必须分开**：现场看到的
+  // 「未连接」背后可能是服务没起、令牌不对、或只是 board 还没到 —— 处置完全不同。
+  'conn.label': '连接状态',
+  'conn.connecting': '连接中…',
+  'conn.waiting': '已连接 · 等待比赛状态',
+  'conn.waitingBody': '已连接，正在等待服务端下发比赛状态…',
+  'conn.live': '实时',
+  'conn.reconnecting': '重连中 · 第 {n} 次',
+  'conn.disconnected': '已断开 · 仍在重试（{n}）',
+  'conn.unauthorized': '无访问权',
+  'conn.unreachable': '服务不可达',
+
+  // ---------------------------------------------------------------- status
+  // 状态徽章没给文字时的默认词（七种状态，对应 styles.css 的 --status-* token）
+  'status.neutral': '未设置',
+  'status.waiting': '等待中',
+  'status.ready': '就绪',
+  'status.active': '进行中',
+  'status.warning': '注意',
+  'status.error': '错误',
+  'status.terminal': '已结束',
+
+  // Preflight 结论（安装记录三态：从未跑过 / 通过 / 未通过）—— 裁判队卡与参赛者页共用
+  'preflight.never': '未运行',
+  'preflight.ok': '通过',
+  'preflight.fail': '未通过',
+
+  // ---------------------------------------------------------------- notice
+  // 分层错误提示的「谁受影响」眉标（ErrorNotice 的 data-scope）
+  'notice.scope.participant': '参赛者端',
+  'notice.scope.package': '算法包',
+  'notice.scope.preflight': 'Preflight',
+  'notice.scope.round': '本轮结算',
+  'notice.scope.judge': '裁判动作',
+  'notice.scope.connection': '连接',
+  'notice.scope.server': '服务端',
+  'notice.retry': '重试',
+
+  // ---------------------------------------------------------------- team label / primary
+  'teamLabel.A': 'Team A',
+  'teamLabel.B': 'Team B',
+  'primary.shortcut': '快捷键 {keys}',
+
+  // ---------------------------------------------------------------- verdict
+  // 判决文案只有这一处：三块板与回放都用 `winnerLabel()`，不再各自拼 `TEAM ` + 胜者。
+  'verdict.win': 'TEAM {team} 获胜',
+  'verdict.draw': '平局 DRAW',
 
   // ---------------------------------------------------------------- phase
   // 三块板（参赛者 / 裁判 / 观众）共用同一套阶段说法
@@ -112,7 +160,7 @@ const zh = {
   'team.source.binary': '二进制文件 —— 不提供预览',
   'team.source.truncated': '内容已截断（仅显示开头部分）',
 
-  'team.emitter.title': '本场 Fixed Emitter',
+  'team.emitter.title': '本场固定 Emitter',
   'team.emitter.locked': '已锁定',
   'team.emitter.selected': '已选择（未锁定）',
   'team.emitter.none': '未选择',
@@ -122,7 +170,6 @@ const zh = {
   'team.emitter.lockCaption': '选定之后锁定 —— 锁定后整场不可更换',
   'team.emitter.lockButton': '锁定 Emitter',
   'team.emitter.waiting': '比赛开始之后才能选择 —— 裁判在「筹备」一步生成地图，随后进入本阶段。',
-  'team.emitter.candidatesEmpty': '裁判尚未生成地图。',
   'team.emitter.revealedTitle': '双方锚点',
   'team.emitter.public': '已公开',
   'team.emitter.hidden': '未公开',
@@ -130,11 +177,10 @@ const zh = {
   'team.emitter.opponentLocked': '已锁定',
   'team.emitter.opponentUnlocked': '尚未锁定',
 
-  'team.candidate.selectedMark': '← 已选择',
+  'team.candidate.selectedMark': '已选择',
   'team.candidate.alive': '存活',
   'team.candidate.dead': '阵亡',
 
-  'team.arena.title': '场面',
   'team.arena.hint': '点击场上的点即可选为 Emitter（也可以在上面列表里点）。',
 
   'team.note.selected': '已选择 {id}',
@@ -146,6 +192,57 @@ const zh = {
   'team.err.uploadFailed': '上传失败',
   'team.err.readFailed': '读取失败',
 
+  // ---- V1.4 参赛者页：四个区块（算法包 / 源码 / Emitter / 状态）、六步进度、「下一步」提示 ----
+  // 区块名与步骤名是文案；Emitter / Preflight / solver.py 是产品术语与机器标识，原样。
+  'team.section.source': '源码',
+  'team.section.status': '状态',
+  'team.steps.preflight': 'Preflight',
+  'team.steps.wait': '等待开赛',
+  // 步骤状态的可读词：不只靠颜色与字形
+  'team.step.done': '已完成',
+  'team.step.now': '进行中',
+  'team.step.todo': '未开始',
+  'team.step.error': '未通过',
+  'team.status.round': '回合',
+  'team.status.opponent': '对方',
+  'team.status.opponentLocked': '已锁定',
+  'team.status.opponentUnlocked': '尚未锁定',
+  // 「下一步」：按服务端事实取第一条成立的（见 pages/teamSteps.ts）
+  'team.next.title': '下一步',
+  'team.next.upload': '在「算法包」区块上传本队的算法包：一个 .zip、整个目录，或单个 solver.py。',
+  'team.next.invalid': '算法包未通过结构校验 —— 按上传控件下方列出的错误修正后重新上传。',
+  'team.next.bundled': '锦标赛模式：槽位里是平台自带的模板算法，不算就绪 —— 请上传本队真实的算法包。',
+  'team.next.preflightFailed': 'Preflight 未通过 —— 修正算法后重新上传。',
+  'team.next.preflightPending': '这份包没有安装记录，Preflight 尚未运行 —— 裁判「筹备」时会在沙箱里真跑一次。',
+  'team.next.waitJudge': '算法已就绪。等待裁判筹备比赛并生成地图，随后在这里选择 Emitter。',
+  'team.next.select': '从「本场 Fixed Emitter」的候选点里选一个（也可以直接点场上的点）。',
+  'team.next.lock': '已选择 {id}。确认后锁定 —— 锁定后整场不可更换。',
+  'team.next.waitOpponent': 'Emitter 已锁定。等待对方锁定；双方都锁定后锚点公开。',
+  'team.next.waitStart': '双方锚点已公开。等待裁判开始比赛（揭晓 → START）。',
+  'team.next.running': '比赛进行中 —— 第 {round} 轮。本页无需操作，可在观众大屏观看。',
+  'team.next.ended': '比赛已结束。',
+  // 算法包区块：包的身份行与校验结果
+  'team.package.hash': '包哈希',
+  'team.package.validation': '结构校验',
+  'team.package.entry': '入口',
+  'team.package.files': '文件',
+  'team.package.invalidTitle': '算法包未通过校验',
+  'team.package.invalidNext': '修正后重新上传。上传不会改动槽位里已装好的包，除非新包通过全部校验。',
+  'team.upload.title': '上传算法包',
+  'team.upload.replaceTitle': '替换算法包',
+  'team.upload.replaceImpact':
+    '新包会重新走完整校验并跑一次 Preflight；被拒的上传不会改动槽位里现有的包。比赛筹备开始后，服务端会拒绝替换。',
+  'team.upload.busy': '正在安装并校验…（含一次沙箱 Preflight，可能需要几十秒）',
+  'team.source.pickHint': '点击文件名查看内容（只读）。',
+  // 锁定后的不可变提示：LOCKED 是任务书钉下的字面量，两种语言都出现
+  'team.emitter.lockedBadge': 'LOCKED · 已锁定',
+  'team.emitter.immutable': '本场比赛中不可更改。',
+  'team.emitter.yours': '本队锚点',
+  'team.arena.title': '场面',
+  'team.arena.note': '只画本队的点；障碍物在揭晓前不公开',
+  // 服务端后台推进失败（`TeamBoard.lastError`）：参赛者只需知道比赛停了、在等裁判
+  'team.serverError.title': '比赛服务报告了一次失败 —— 比赛停在当前阶段，等待裁判处理。',
+
   // ---------------------------------------------------------------- judge
   'judge.title': '裁判台',
   'judge.teamCard.unnamed': '（未命名）',
@@ -155,11 +252,6 @@ const zh = {
   'judge.teamCard.emitterLocked': '锚点 {id}',
   'judge.teamCard.emitterLockedNoId': '已锁定',
   'judge.teamCard.emitterUnlocked': '锚点未锁定',
-  'judge.teamCard.sealed': '本场密封 {hash}…',
-  'judge.teamCard.notSealed': '本场未密封',
-  'judge.teamCard.preflightNever': '未经本平台安装',
-  'judge.teamCard.preflightOk': 'Preflight ✓',
-  'judge.teamCard.preflightFail': 'Preflight ✕',
 
   'judge.links.title': '参赛者入口',
   'judge.links.subtitle': '本场链接 · 换场即更新',
@@ -174,7 +266,7 @@ const zh = {
   'judge.wizard.whyDisabled': '服务端判据：不可用 —— {hint}',
 
   'judge.step.SETUP':
-    '把双方的算法密封进本场比赛。选手要先把算法投进运行期槽位（见下方「投递点」）；两边都就绪时，下面这一步一次做完「封装 → 校验 → 建赛」。',
+    '把双方的算法密封进本场比赛。选手先在各自的参赛者页上传算法包；两边都就绪时，下面这一步一次做完「封装 → 校验 → 建赛」。',
   'judge.step.UPLOAD_A': 'Team A 已密封。Team B 的算法就绪后，同样一步就能完成筹备。',
   'judge.step.UPLOAD_B':
     '双方算法都在槽位里了：一次完成「封装双方算法 → 沙箱 Preflight → 建赛」，随后进入 Emitter 选择。',
@@ -187,7 +279,7 @@ const zh = {
   'judge.step.COUNTDOWN': 'START 已下达，倒计时归零后双方算法开始计算。',
   'judge.step.COMPUTING': '双方算法在各自沙箱里计算，本轮正在结算。',
   'judge.step.ROUND_RESULT': '本轮已结算，可以进入下一轮。',
-  'judge.step.MATCH_END': '比赛已终止。可以看回放，或开新的一场。',
+  'judge.step.MATCH_END': '比赛已终止。打开回放；要开新的一场，在 Advanced 里执行「重置比赛」（需确认）。',
 
   'judge.emitter.title': '双方 Emitter',
   'judge.emitter.revealed': '双方已锁定 · 锚点公开',
@@ -203,35 +295,28 @@ const zh = {
   'judge.header.round': '回合',
   'judge.header.seed': '种子',
 
-  'judge.slot.title': '算法槽位',
-  'judge.slot.settings': '{points} 点 · {difficulty}',
-  'judge.slot.deliveryPoint': '投递点',
-  'judge.slot.summary': '{files} 文件 · {bytes} B · preflight {state}',
   'judge.slot.empty': '槽位为空',
-  'judge.slot.installed': '已安装 · 来源 {source}',
-  'judge.slot.unrecorded': '无安装记录（出厂播种 / 手工放置）',
-  'judge.slot.hash': '包哈希 {hash}…',
-  'judge.slot.sealed': '本场已密封 {hash}',
-  'judge.slot.readonly': '只读',
+  // 键名沿用 V1.3（tests/i18n.ts 以它作占位符检查的锚点）；V1.4 用在「比赛状态」的地图一行
+  'judge.slot.settings': '{points} 点 · {difficulty}',
 
   'judge.adv.summary': 'Advanced Controls · 底层动作与比赛设置',
   'judge.adv.desc':
     '向导只突出「现在该做的那一个」；这里是服务端下发的全部动作（含向导未用到的底层步骤）。可用性同样只读服务端的判据 —— 灰掉的按钮把鼠标悬上去就是原因。',
   'judge.adv.installDesc':
-    '正式比赛请用向导里的「封装双方算法 → 校验 → 建赛」—— 算法要投进运行期槽位（见上方「投递点」）。这里只在需要临时换算法时使用，输入的是服务端上的目录绝对路径。',
+    '正式比赛请用向导里的「封装双方算法 → 校验 → 建赛」—— 算法由选手在参赛者页上传。这里只在需要临时换算法时使用，输入的是服务端上的目录绝对路径；替换前会再确认一次。',
   'judge.adv.teamDir': 'Team {team} 算法目录',
   'judge.adv.pathPlaceholder': '/绝对/路径/到/算法包',
   'judge.adv.install': '安装 Team {team} 算法',
+  // 目录安装按钮灰掉 / 可点的原因 —— 印在按钮下面，不只藏在 title 里
+  'judge.adv.installWhy': '填入服务端上的目录绝对路径后才能安装',
+  'judge.adv.installReady': '点击后会先确认影响，再替换槽位里的包',
   'judge.adv.settingsDesc': '比赛设置 —— 在下一次「重置 / 下一场」时生效。',
   'judge.adv.seed': '种子（留空 = 随机）',
   'judge.adv.points': '战斗点数（留空 = 沿用）',
   'judge.adv.difficulty': '难度（留空 = 沿用）',
   'judge.adv.keepDifficulty': '沿用 {value}',
 
-  'judge.audit.title': '审计',
   'judge.audit.events': '{n} 事件',
-  'judge.audit.artifacts': '产物：{dir}',
-  'judge.audit.noArtifacts': '尚未产生产物',
   'judge.audit.runtimeOk': '✓ 与冻结清单一致',
   'judge.audit.runtimeMismatch': '✕ 与冻结清单不符',
 
@@ -239,10 +324,43 @@ const zh = {
   'judge.lastRound.kills': '击杀',
   'judge.lastRound.alive': '存活',
   'judge.lastRound.verdict': '终局',
-  'judge.lastRound.draw': '平局',
-  'judge.lastRound.winner': 'TEAM {team} 获胜',
   'judge.lastRound.notConnected': '界面尚未接入该动作：{key}',
-  'judge.lastRound.headline': '第 {round} 轮 · TEAM {team} 先手',
+  'judge.lastRound.headline': '第 {round} 轮 · 先手 {first}',
+
+  // ---------------------------------------------------------------- judge V1.4 IA
+  // 裁判台的区块名与队卡字段。区块名是文案；`Preflight` / `Emitter` 是产品术语，原样。
+  'judge.section.matchStatus': '比赛状态',
+  'judge.section.audit': '审计 · 源码核对',
+  'judge.status.map': '地图',
+  'judge.teamCard.hashSealed': '密封哈希',
+  'judge.teamCard.hashSlot': '包哈希',
+  'judge.teamCard.source': '来源',
+  'judge.teamCard.compute': '计算',
+  'judge.teamCard.originInstalled': '本平台安装',
+  'judge.teamCard.originUnrecorded': '无安装记录',
+  // 后台推进（连续跑完余下回合）失败：比赛停在原地，说清楚怎么继续
+  'judge.lastError.title': '后台推进失败 —— 比赛停在当前阶段',
+  'judge.lastError.retryHint':
+    '排除原因后，在主动作处重新执行「连续跑完余下回合」即可继续；不需要换场，双方 Emitter 锁定不受影响。',
+  // 裁判动作被服务端拒绝：贴在按钮旁边，说明状态没变、可以再点
+  'judge.action.failed': '「{action}」未执行',
+  'judge.action.next': '服务端已拒绝，比赛状态未变。修正原因后可直接再点一次。',
+  // 危险动作的两步确认：第一次点只亮出影响，第二次才执行
+  'judge.danger.title': '需要确认',
+  'judge.danger.resetImpact':
+    '将清除双方 Emitter 锁定、生成新的 matchId 与参赛者链接；Advanced 里的比赛设置在此时生效。旧的参赛者链接立即失效。',
+  'judge.danger.installImpact':
+    '将替换 Team {team} 槽位里的算法包，新包需要重新 Preflight；比赛开始后服务端会拒绝替换。',
+  'judge.danger.confirm': '确认：{label}',
+  'judge.danger.cancel': '取消',
+  'judge.round.errorsTitle': '本轮有算法异常（已按规则结算）',
+  'judge.audit.runtime': '运行时',
+  'judge.audit.recent': '最近事件',
+  'judge.audit.files': '{n} 文件 · {bytes} B',
+  // 槽位状态是协议枚举（EMPTY / READY / INVALID）：枚举原样留在 data-slot-status 里，这里只翻给人看的词
+  'slotStatus.EMPTY': '空',
+  'slotStatus.READY': '就绪',
+  'slotStatus.INVALID': '无效',
 
   // ---------------------------------------------------------------- action
   // 服务端下发 labelKey / hintKey（见 boards.ts）。这里是它们的译文。
@@ -295,12 +413,14 @@ const zh = {
   'spectator.round': '回合',
   'spectator.alive': 'Team {team} 存活',
   'spectator.firstSolver': '先手',
-  'spectator.tie': '同时',
-  'spectator.emitters': '本场发射锚点',
+  // 头部两侧各自的「发射锚点」一行；双方都锁定之前引擎不下发坐标，此时写「未公开」
+  'spectator.emitter': '发射锚点',
+  'spectator.emitterPending': '未公开',
   'spectator.readyNextRound': '本轮已结算 · 等待下一轮',
   'spectator.note.attacks': '本轮攻击 {attacks}   击杀 {kills}',
   'spectator.note.noAttacks': '未执行',
-  'spectator.verdict.draw': '平局 DRAW',
+  // 终局带上判决后面的回合数
+  'spectator.verdictRound': '第 {n} 轮',
 
   // ---------------------------------------------------------------- replay
   'replay.title': '回放',
@@ -313,14 +433,24 @@ const zh = {
   'replay.prev': '上一轮',
   'replay.next': '下一轮',
   'replay.slider': '回合',
+  // 播放器（V1.4）
+  'replay.counter': '第 {n} / {total} 轮',
+  'replay.speed': '播放速度',
+  'replay.speedOption': '{x}× 速度',
+  'replay.player': '回放播放器 —— ← → 切换回合，空格 播放 / 暂停，Home / End 首末轮',
+  'replay.first': '先手',
+  'replay.attacks': '攻击',
+  'replay.kills': '击杀',
+  'replay.time': '用时',
+  'replay.frameEnd': '比赛在本轮终结 · {reason}',
+  'replay.loadTitle': '这场回放打不开',
+  'replay.backToList': '返回回放列表',
   'replay.meta': '{points} 点 · {difficulty} · seed {seed}',
   'replay.frameSummary': '先手 {first} · 攻击 {attacks} · 击杀 {kills}',
   // 回放里的回合标号。中文用「第 n 轮」，英文保持紧凑的 R+n —— 这两种写法
   // 各自是本语言的惯例，硬套同一个形状在任何一边都别扭。
   'replay.roundShort': '第 {n} 轮',
   'replay.roundsBadge': '{n} 回合',
-  'replay.draw': '平局',
-  'replay.winner': 'TEAM {team} 获胜',
   'replay.loadFailed': '读取失败（HTTP {status}）',
   // 回放打不开时的原因。服务端给键（`classifyMatch` 的 `reasonKey`），
   // 这里取译文；认不出键时客户端回退到服务端原文。
@@ -359,18 +489,75 @@ const zh = {
   'difficulty.medium': '中等',
   'difficulty.hard': '困难',
 
+  // ---------------------------------------------------------------- end reason
+  // 终局原因是**协议枚举**（`WireEndReason`）：枚举原样留在 `data-end-reason` 里，
+  // 这里只翻给人看的那个词。
+  'endReason.ELIMINATION': '歼灭',
+  'endReason.MUTUAL_ELIMINATION': '同归于尽',
+  'endReason.STALEMATE': '僵局',
+  'endReason.HARD_ROUND_LIMIT': '达到回合上限',
+  'endReason.NONE': '未结束',
+
+  // ---------------------------------------------------------------- first solver
+  // `firstSolver` 的四个取值。`tie` / `none` 此前被直接拼成 “TEAM TIE” —— 这里给它们译文。
+  'firstSolver.A': 'TEAM A',
+  'firstSolver.B': 'TEAM B',
+  'firstSolver.tie': '同时',
+  'firstSolver.none': '无',
+
+  // ---------------------------------------------------------------- home
+  'home.eyebrow': '本地比赛系统',
+  'home.title': '选择身份',
+  'home.lead':
+    '裁判、参赛者、观众各有一个入口。裁判台与参赛者页需要本场的访问链接（地址末尾的 #t=…），观众大屏与回放不需要。',
+  'home.role.judge.title': '裁判',
+  'home.role.judge.desc': '建赛、校验双方算法、揭晓、下达 START、连续跑完余下回合。一台机器只有一个裁判台。',
+  'home.role.team.desc': '上传算法包、通过校验、选择并锁定本场 Emitter。锁定后整场不可更换。',
+  'home.role.spectator.title': '观众大屏',
+  'home.role.spectator.desc': '只读的满幅竞技场：回合、存活、先手与判决。不需要令牌，也没有任何操作按钮。',
+  'home.role.enter': '进入',
+  'home.role.enterWithoutToken': '不带令牌打开（页面会提示缺少令牌）',
+  'home.access.required': '需要访问链接',
+  'home.access.teamNote':
+    '本页由裁判台「参赛者入口」发放的链接打开：地址末尾的 #t=… 就是本场令牌。它只留在地址栏里，不会被保存。',
+  'home.access.judgeNote': '裁判台链接印在启动服务的终端里（/judge#t=…）。令牌只留在地址栏里，不会被保存。',
+  'home.access.pasteLabel': '粘贴访问链接或令牌',
+  'home.access.pastePlaceholder': 'http://…#t=… 或令牌本身',
+  'home.access.go': '打开',
+  'home.access.invalid':
+    '识别不出这是一条访问链接或令牌。链接必须是本站地址且带 #t=…；令牌是一串字母、数字、- 与 _。',
+  'home.replays.title': '最近比赛',
+  'home.replays.all': '全部回放 →',
+
+  // ---------------------------------------------------------------- replays
+  'replays.title': '回放列表',
+  'replays.count': '{n} 场',
+  'replays.loading': '正在读取比赛列表…',
+  'replays.loadFailed': '读不到比赛列表',
+  'replays.empty': '还没有可回放的比赛 —— 第一场结束后会出现在这里。',
+  'replays.col.ended': '结束时间',
+  'replays.col.match': '场次',
+  'replays.col.teams': '双方',
+  'replays.col.result': '结果',
+  'replays.col.reason': '终局原因',
+  'replays.col.rounds': '回合',
+  'replays.vs': '{a} 对 {b}',
+  'replays.open': '打开回放',
+
   // ---------------------------------------------------------------- judge stage
   // 裁判向导那七格步骤条的显示文案。
   //
   // 这几格**不是** `WirePhase` —— 它们是向导自己的展示模型（一格可以覆盖好几个
   // 阶段，例如 ALGORITHM READY 同时对应 UPLOAD_A/B 与 PREFLIGHT）。
   // `data-stage` 仍写原始标识符，因此「高亮到哪一格」对测试与语言都无关。
-  'judge.stage.setup': '筹备',
+  // V1.4 的七个阶段名：Match Setup / Algorithm Ready / Emitter Lock / Ready / Reveal /
+  // Running / Match End。机器标识（`WIZARD_STAGES`，也就是 `data-stage`）保持不变。
+  'judge.stage.setup': '比赛筹备',
   'judge.stage.algorithmReady': '算法就绪',
   'judge.stage.emitterLock': '锚点锁定',
   'judge.stage.ready': '就绪',
-  'judge.stage.startMatch': '开赛',
-  'judge.stage.round': '回合',
+  'judge.stage.startMatch': '揭晓',
+  'judge.stage.round': '进行中',
   'judge.stage.matchEnd': '终局',
 
   // ---------------------------------------------------------------- round errors
@@ -408,25 +595,22 @@ export type TranslationKey = keyof typeof zh;
 const en: Record<TranslationKey, string> = {
   'app.notFound': 'No such page.',
   'app.title': 'Geometry Battle — local match',
+  'app.brand': 'GEOMETRY BATTLE',
 
+  'nav.label': 'Site navigation',
+  'nav.home': 'Home',
   'nav.judge': 'Judge',
   'nav.teamA': 'Team A',
   'nav.teamB': 'Team B',
   'nav.spectator': 'Spectator',
-  'nav.openSpectator': 'Open spectator view ↗',
-  'nav.spectatorArrow': 'Spectator ↗',
-  'nav.replay': 'Replay',
-  'nav.backToJudge': 'Back to judge',
+  'nav.replays': 'Replays',
+  'nav.replay': 'This match’s replay',
 
   'lang.switch': 'Language',
   'lang.zh': '中文',
   'lang.en': 'EN',
 
   'common.connecting': 'Connecting to the local match service…',
-  'common.connected': 'connected',
-  'common.connectingShort': 'connecting…',
-  'common.live': '● live',
-  'common.offline': '○ offline',
   'common.readonly': 'read-only',
   'common.unnamed': '(unnamed)',
   'common.unknown': 'unknown',
@@ -434,6 +618,44 @@ const en: Record<TranslationKey, string> = {
   'common.copied': 'Copied',
   'common.none': 'none',
   'common.noFiles': '(no files yet)',
+
+  'conn.label': 'Connection',
+  'conn.connecting': 'connecting…',
+  'conn.waiting': 'connected · waiting for match state',
+  'conn.waitingBody': 'Connected, waiting for match state…',
+  'conn.live': 'live',
+  'conn.reconnecting': 'reconnecting · attempt {n}',
+  'conn.disconnected': 'disconnected · still retrying ({n})',
+  'conn.unauthorized': 'no access',
+  'conn.unreachable': 'service unreachable',
+
+  'status.neutral': 'not set',
+  'status.waiting': 'waiting',
+  'status.ready': 'ready',
+  'status.active': 'active',
+  'status.warning': 'attention',
+  'status.error': 'error',
+  'status.terminal': 'ended',
+
+  'preflight.never': 'not run',
+  'preflight.ok': 'passed',
+  'preflight.fail': 'failed',
+
+  'notice.scope.participant': 'Participant',
+  'notice.scope.package': 'Package',
+  'notice.scope.preflight': 'Preflight',
+  'notice.scope.round': 'Round',
+  'notice.scope.judge': 'Judge action',
+  'notice.scope.connection': 'Connection',
+  'notice.scope.server': 'Server',
+  'notice.retry': 'Retry',
+
+  'teamLabel.A': 'Team A',
+  'teamLabel.B': 'Team B',
+  'primary.shortcut': 'Shortcut {keys}',
+
+  'verdict.win': 'TEAM {team} WINS',
+  'verdict.draw': 'DRAW',
 
   'phase.SETUP': 'Waiting for algorithms',
   'phase.UPLOAD_A': 'Team A loaded',
@@ -500,7 +722,6 @@ const en: Record<TranslationKey, string> = {
   'team.emitter.lockButton': 'Lock Emitter',
   'team.emitter.waiting':
     'Choosing opens once the match starts — the judge generates the map in the “Prepare” step and this phase follows.',
-  'team.emitter.candidatesEmpty': 'The judge has not generated the map yet.',
   'team.emitter.revealedTitle': 'Emitters',
   'team.emitter.public': 'public',
   'team.emitter.hidden': 'hidden',
@@ -508,11 +729,10 @@ const en: Record<TranslationKey, string> = {
   'team.emitter.opponentLocked': 'has locked',
   'team.emitter.opponentUnlocked': 'has not locked yet',
 
-  'team.candidate.selectedMark': '← selected',
+  'team.candidate.selectedMark': 'selected',
   'team.candidate.alive': 'alive',
   'team.candidate.dead': 'dead',
 
-  'team.arena.title': 'Arena',
   'team.arena.hint': 'Click a point in the arena to pick it as the emitter (or use the list above).',
 
   'team.note.selected': 'Picked {id}',
@@ -524,6 +744,59 @@ const en: Record<TranslationKey, string> = {
   'team.err.uploadFailed': 'Upload failed',
   'team.err.readFailed': 'Could not read the file',
 
+  'team.section.source': 'Source',
+  'team.section.status': 'Status',
+  'team.steps.preflight': 'Preflight',
+  'team.steps.wait': 'Wait for start',
+  'team.step.done': 'done',
+  'team.step.now': 'current',
+  'team.step.todo': 'pending',
+  'team.step.error': 'failed',
+  'team.status.round': 'Round',
+  'team.status.opponent': 'Opponent',
+  'team.status.opponentLocked': 'locked',
+  'team.status.opponentUnlocked': 'not locked yet',
+  'team.next.title': 'Next step',
+  'team.next.upload':
+    'Upload your team’s package under “Algorithm package”: one .zip, a whole directory, or a single solver.py.',
+  'team.next.invalid':
+    'The package failed structural validation — fix the errors listed under the upload controls and upload again.',
+  'team.next.bundled':
+    'Tournament mode: the slot holds a bundled template algorithm, which does not count as ready — upload your team’s real package.',
+  'team.next.preflightFailed': 'Preflight failed — fix the algorithm and upload it again.',
+  'team.next.preflightPending':
+    'This package has no install record and Preflight has not run — the judge’s “Prepare” step runs it once in the sandbox.',
+  'team.next.waitJudge':
+    'Algorithm ready. Waiting for the judge to prepare the match and generate the map; then pick your Emitter here.',
+  'team.next.select':
+    'Pick one of the candidate points under “Fixed Emitter for this match” (or click a point in the arena).',
+  'team.next.lock': 'Picked {id}. Lock it when you are sure — it cannot be changed for the rest of the match.',
+  'team.next.waitOpponent':
+    'Emitter locked. Waiting for the opponent to lock; both anchors go public once both sides have locked.',
+  'team.next.waitStart': 'Both anchors are public. Waiting for the judge to start the match (Reveal → START).',
+  'team.next.running': 'Match in progress — round {round}. Nothing to do on this page; watch the spectator screen.',
+  'team.next.ended': 'The match has ended.',
+  'team.package.hash': 'Package hash',
+  'team.package.validation': 'Validation',
+  'team.package.entry': 'Entry',
+  'team.package.files': 'Files',
+  'team.package.invalidTitle': 'The package failed validation',
+  'team.package.invalidNext':
+    'Fix it and upload again. An upload never touches the package already in the slot unless the new one passes every check.',
+  'team.upload.title': 'Upload the package',
+  'team.upload.replaceTitle': 'Replace the package',
+  'team.upload.replaceImpact':
+    'A new package goes through full validation and one Preflight run again; a rejected upload leaves the current package untouched. Once match preparation has begun, the server refuses replacements.',
+  'team.upload.busy': 'Installing and validating… (includes one sandbox Preflight; may take tens of seconds)',
+  'team.source.pickHint': 'Click a file name to view it (read-only).',
+  'team.emitter.lockedBadge': 'LOCKED',
+  'team.emitter.immutable': 'Cannot be changed for this match.',
+  'team.emitter.yours': 'Your emitter',
+  'team.arena.title': 'Arena',
+  'team.arena.note': 'Your points only; obstacles stay hidden until Reveal',
+  'team.serverError.title':
+    'The match service reported a failure — the match is paused at its current phase until the judge resolves it.',
+
   'judge.title': 'Judge',
   'judge.teamCard.unnamed': '(unnamed)',
   'judge.teamCard.nameTitle': 'Name reported by the package itself',
@@ -532,11 +805,6 @@ const en: Record<TranslationKey, string> = {
   'judge.teamCard.emitterLocked': 'Anchor {id}',
   'judge.teamCard.emitterLockedNoId': 'locked',
   'judge.teamCard.emitterUnlocked': 'Anchor not locked',
-  'judge.teamCard.sealed': 'Sealed {hash}…',
-  'judge.teamCard.notSealed': 'Not sealed',
-  'judge.teamCard.preflightNever': 'not installed by this platform',
-  'judge.teamCard.preflightOk': 'Preflight ✓',
-  'judge.teamCard.preflightFail': 'Preflight ✕',
 
   'judge.links.title': 'Participant entry',
   'judge.links.subtitle': 'This match only · rotates every match',
@@ -552,7 +820,7 @@ const en: Record<TranslationKey, string> = {
   'judge.wizard.whyDisabled': 'Server verdict: unavailable — {hint}',
 
   'judge.step.SETUP':
-    'Seal both teams’ algorithms into this match. Players put their algorithms into the runtime slots first (see “Delivery point” below); once both are ready, the next step does “seal → validate → create” in one go.',
+    'Seal both teams’ algorithms into this match. Players upload their packages on their own participant pages first; once both are ready, the next step does “seal → validate → create” in one go.',
   'judge.step.UPLOAD_A': 'Team A is sealed. Once Team B’s algorithm is ready, a single step finishes preparation.',
   'judge.step.UPLOAD_B':
     'Both algorithms are in their slots: one step does “seal both → sandbox Preflight → create match”, then emitter selection begins.',
@@ -570,7 +838,7 @@ const en: Record<TranslationKey, string> = {
   'judge.step.COMPUTING':
     'Both algorithms are computing in their own sandboxes; this round is being settled.',
   'judge.step.ROUND_RESULT': 'This round is settled; you can move to the next one.',
-  'judge.step.MATCH_END': 'The match has ended. Watch the replay, or start a new match.',
+  'judge.step.MATCH_END': 'The match has ended. Open the replay; to start a new match, run Reset under Advanced (confirmation required).',
 
   'judge.emitter.title': 'Emitters',
   'judge.emitter.revealed': 'Both locked · anchors public',
@@ -584,35 +852,26 @@ const en: Record<TranslationKey, string> = {
   'judge.header.round': 'Round',
   'judge.header.seed': 'seed',
 
-  'judge.slot.title': 'Algorithm slots',
-  'judge.slot.settings': 'Points: {points} · {difficulty}',
-  'judge.slot.deliveryPoint': 'Delivery point',
-  'judge.slot.summary': 'Files: {files} · {bytes} B · preflight {state}',
   'judge.slot.empty': 'Slot is empty',
-  'judge.slot.installed': 'Installed · from {source}',
-  'judge.slot.unrecorded': 'No install record (factory seed / placed by hand)',
-  'judge.slot.hash': 'Package hash {hash}…',
-  'judge.slot.sealed': 'Sealed {hash}',
-  'judge.slot.readonly': 'read-only',
+  'judge.slot.settings': 'Points: {points} · {difficulty}',
 
   'judge.adv.summary': 'Advanced Controls · low-level actions & match settings',
   'judge.adv.desc':
     'The wizard highlights the one thing to do now; this is every action the server offers, including the low-level steps the wizard does not use. Availability is still read from the server — hover a greyed-out button to see why.',
   'judge.adv.installDesc':
-    'For a real match use the wizard’s “seal both → validate → create match”. Algorithms belong in the runtime slots (see “Delivery point” above). Use this only to swap in an algorithm temporarily; it takes an absolute directory path on the server.',
+    'For a real match use the wizard’s “seal both → validate → create match” — players upload their packages on the participant pages. Use this only to swap in an algorithm temporarily; it takes an absolute directory path on the server and asks for confirmation before replacing.',
   'judge.adv.teamDir': 'Team {team} algorithm directory',
   'judge.adv.pathPlaceholder': '/absolute/path/to/package',
   'judge.adv.install': 'Install Team {team} algorithm',
+  'judge.adv.installWhy': 'Enter the absolute directory path on the server before installing',
+  'judge.adv.installReady': 'Clicking shows the impact first, then replaces the package in the slot',
   'judge.adv.settingsDesc': 'Match settings — applied on the next reset / new match.',
   'judge.adv.seed': 'Seed (blank = random)',
   'judge.adv.points': 'Combat points (blank = keep)',
   'judge.adv.difficulty': 'Difficulty (blank = keep)',
   'judge.adv.keepDifficulty': 'keep {value}',
 
-  'judge.audit.title': 'Audit',
   'judge.audit.events': 'Events: {n}',
-  'judge.audit.artifacts': 'Artifacts: {dir}',
-  'judge.audit.noArtifacts': 'no artifacts yet',
   'judge.audit.runtimeOk': '✓ matches the frozen manifest',
   'judge.audit.runtimeMismatch': '✕ differs from the frozen manifest',
 
@@ -620,10 +879,37 @@ const en: Record<TranslationKey, string> = {
   'judge.lastRound.kills': 'Kills',
   'judge.lastRound.alive': 'Alive',
   'judge.lastRound.verdict': 'Result',
-  'judge.lastRound.draw': 'Draw',
-  'judge.lastRound.winner': 'TEAM {team} wins',
   'judge.lastRound.notConnected': 'This action is not wired into the UI yet: {key}',
-  'judge.lastRound.headline': 'R{round} · TEAM {team} first',
+  'judge.lastRound.headline': 'R{round} · first {first}',
+
+  'judge.section.matchStatus': 'Match status',
+  'judge.section.audit': 'Audit · Source review',
+  'judge.status.map': 'Map',
+  'judge.teamCard.hashSealed': 'Sealed hash',
+  'judge.teamCard.hashSlot': 'Package hash',
+  'judge.teamCard.source': 'Source',
+  'judge.teamCard.compute': 'Compute',
+  'judge.teamCard.originInstalled': 'installed by this platform',
+  'judge.teamCard.originUnrecorded': 'no install record',
+  'judge.lastError.title': 'Background run failed — the match stays in its current phase',
+  'judge.lastError.retryHint':
+    'Once the cause is fixed, run “Run the remaining rounds back-to-back” again from the primary action; no new match is needed and both Emitter locks stay as they are.',
+  'judge.action.failed': '“{action}” was not executed',
+  'judge.action.next': 'The server refused; the match state is unchanged. Fix the cause and press again.',
+  'judge.danger.title': 'Confirmation required',
+  'judge.danger.resetImpact':
+    'Clears both Emitter locks and issues a new matchId and participant links; the match settings under Advanced apply now. The old participant links stop working immediately.',
+  'judge.danger.installImpact':
+    'Replaces the package in Team {team}’s slot; the new package needs a fresh Preflight. The server refuses replacements once the match has started.',
+  'judge.danger.confirm': 'Confirm: {label}',
+  'judge.danger.cancel': 'Cancel',
+  'judge.round.errorsTitle': 'Algorithm errors this round (settled per the rules)',
+  'judge.audit.runtime': 'Runtime',
+  'judge.audit.recent': 'Recent events',
+  'judge.audit.files': 'Files: {n} · {bytes} B',
+  'slotStatus.EMPTY': 'empty',
+  'slotStatus.READY': 'ready',
+  'slotStatus.INVALID': 'invalid',
 
   'action.useSlot.label': 'Use the algorithm in the slot (Team {team})',
   'action.useSlot.hint.factory':
@@ -676,12 +962,12 @@ const en: Record<TranslationKey, string> = {
   'spectator.round': 'Round',
   'spectator.alive': 'Team {team} alive',
   'spectator.firstSolver': 'First solver',
-  'spectator.tie': 'simultaneous',
-  'spectator.emitters': 'Match emitters',
+  'spectator.emitter': 'Emitter',
+  'spectator.emitterPending': 'not public yet',
   'spectator.readyNextRound': 'Round settled · awaiting the next round',
   'spectator.note.attacks': 'Attacks {attacks}   Kills {kills}',
   'spectator.note.noAttacks': 'none',
-  'spectator.verdict.draw': 'DRAW',
+  'spectator.verdictRound': 'ROUND {n}',
 
   'replay.title': 'Replay',
   'replay.loading': 'Loading replay…',
@@ -693,12 +979,21 @@ const en: Record<TranslationKey, string> = {
   'replay.prev': 'Previous round',
   'replay.next': 'Next round',
   'replay.slider': 'Round',
+  'replay.counter': 'Round {n} / {total}',
+  'replay.speed': 'Playback speed',
+  'replay.speedOption': '{x}× speed',
+  'replay.player': 'Replay player — ← → change round, Space play / pause, Home / End first / last round',
+  'replay.first': 'First solver',
+  'replay.attacks': 'Attacks',
+  'replay.kills': 'Kills',
+  'replay.time': 'Compute time',
+  'replay.frameEnd': 'Match ended this round · {reason}',
+  'replay.loadTitle': 'This replay cannot be opened',
+  'replay.backToList': 'Back to the replay list',
   'replay.meta': 'Points: {points} · {difficulty} · seed {seed}',
   'replay.frameSummary': 'first {first} · attacks {attacks} · kills {kills}',
   'replay.roundShort': 'R{n}',
   'replay.roundsBadge': '{n}R',
-  'replay.draw': 'Draw',
-  'replay.winner': 'TEAM {team} wins',
   'replay.loadFailed': 'Could not load (HTTP {status})',
   'replay.reason.notFound': 'No such match',
   'replay.reason.incomplete': 'This match’s artifacts are incomplete',
@@ -729,13 +1024,65 @@ const en: Record<TranslationKey, string> = {
   'difficulty.medium': 'Medium',
   'difficulty.hard': 'Hard',
 
-  'judge.stage.setup': 'Setup',
-  'judge.stage.algorithmReady': 'Algorithm ready',
-  'judge.stage.emitterLock': 'Emitter lock',
+  'endReason.ELIMINATION': 'Elimination',
+  'endReason.MUTUAL_ELIMINATION': 'Mutual elimination',
+  'endReason.STALEMATE': 'Stalemate',
+  'endReason.HARD_ROUND_LIMIT': 'Hard round limit',
+  'endReason.NONE': 'Not ended',
+
+  'firstSolver.A': 'TEAM A',
+  'firstSolver.B': 'TEAM B',
+  'firstSolver.tie': 'simultaneous',
+  'firstSolver.none': 'none',
+
+  'home.eyebrow': 'Local match system',
+  'home.title': 'Choose your role',
+  'home.lead':
+    'Judge, teams and spectators each have their own entry. The Judge and Team pages need this match’s access link (the #t=… at the end of the address); the Spectator view and replays do not.',
+  'home.role.judge.title': 'Judge',
+  'home.role.judge.desc':
+    'Create the match, validate both algorithms, reveal, issue START, run the remaining rounds. One machine has exactly one judge console.',
+  'home.role.team.desc':
+    'Upload the algorithm package, pass validation, pick and lock this match’s Emitter. Once locked it cannot be changed.',
+  'home.role.spectator.title': 'Spectator',
+  'home.role.spectator.desc':
+    'A read-only, full-width arena: round, alive counts, first solver and the verdict. No token needed and no controls.',
+  'home.role.enter': 'Open',
+  'home.role.enterWithoutToken': 'Open without a token (the page will say the token is missing)',
+  'home.access.required': 'Access link required',
+  'home.access.teamNote':
+    'Open this page from the link handed out in the judge console’s “Participant entry” panel: the #t=… at the end of the address is this match’s token. It stays in the address bar and is never stored.',
+  'home.access.judgeNote':
+    'The judge link is printed in the terminal that started the service (/judge#t=…). The token stays in the address bar and is never stored.',
+  'home.access.pasteLabel': 'Paste an access link or token',
+  'home.access.pastePlaceholder': 'http://…#t=… or the token itself',
+  'home.access.go': 'Open',
+  'home.access.invalid':
+    'This does not look like an access link or token. A link must be on this site and carry #t=…; a token is letters, digits, - and _.',
+  'home.replays.title': 'Recent matches',
+  'home.replays.all': 'All replays →',
+
+  'replays.title': 'Replays',
+  'replays.count': 'Matches: {n}',
+  'replays.loading': 'Loading the match list…',
+  'replays.loadFailed': 'Could not load the match list',
+  'replays.empty': 'No replayable match yet — the first finished match will appear here.',
+  'replays.col.ended': 'Ended',
+  'replays.col.match': 'Match',
+  'replays.col.teams': 'Teams',
+  'replays.col.result': 'Result',
+  'replays.col.reason': 'End reason',
+  'replays.col.rounds': 'Rounds',
+  'replays.vs': '{a} vs {b}',
+  'replays.open': 'Open replay',
+
+  'judge.stage.setup': 'Match Setup',
+  'judge.stage.algorithmReady': 'Algorithm Ready',
+  'judge.stage.emitterLock': 'Emitter Lock',
   'judge.stage.ready': 'Ready',
-  'judge.stage.startMatch': 'Start match',
-  'judge.stage.round': 'Round',
-  'judge.stage.matchEnd': 'Match end',
+  'judge.stage.startMatch': 'Reveal',
+  'judge.stage.round': 'Running',
+  'judge.stage.matchEnd': 'Match End',
 
   'round.error.noAttack': 'Team {team}: no attack executed this round',
   'round.error.TIMEOUT': 'Team {team}: TIMEOUT — no result.json within the compute budget',
@@ -878,12 +1225,45 @@ export const WIZARD_STAGE_KEYS: Record<WizardStage, TranslationKey> = {
   'MATCH END': 'judge.stage.matchEnd',
 };
 
+/**
+ * 槽位状态枚举 → 译文键。
+ *
+ * `SlotView.status` 在协议里是 `string`（`src/submission/Slot.ts` 的 `SlotStatus` 依赖 node，
+ * 浏览器 import 不了），所以这里写它的**结构镜像**；`tests/web-wizard.ts` 扫 Slot.ts 源码对照，
+ * 引擎多一种状态而这里没跟上就变红。枚举原文由调用方放进 `data-slot-status`，不进文案。
+ */
+export const SLOT_STATUS_KEYS: Record<'EMPTY' | 'READY' | 'INVALID', TranslationKey> = {
+  EMPTY: 'slotStatus.EMPTY',
+  READY: 'slotStatus.READY',
+  INVALID: 'slotStatus.INVALID',
+};
+
+/** 槽位状态 → 当前语言的显示文本；认不出就原样显示（同 `endReasonLabel` 的纪律） */
+export function slotStatusLabel(locale: Locale, value: string): string {
+  const key = ownKey(SLOT_STATUS_KEYS, value);
+  return key ? translate(locale, key) : value;
+}
+
 /** 难度枚举 → 译文键。`value` 仍是 `easy/medium/hard`，只有显示被翻译。 */
 export const DIFFICULTY_KEYS: Record<WireDifficulty, TranslationKey> = {
   easy: 'difficulty.easy',
   medium: 'difficulty.medium',
   hard: 'difficulty.hard',
 };
+
+/**
+ * 在「枚举 → 译文键」的映射里查一个**运行期字符串**。
+ *
+ * 必须用 `hasOwnProperty`：这些值来自网络或历史产物，`'constructor'` / `'toString'`
+ * 这种名字用普通下标会命中 `Object.prototype` 上的函数 —— 它是 truthy 的，
+ * 于是 `translate()` 拿到一个不存在的键、渲染出字面量 “undefined”。
+ * 认不出来的值一律返回 null，由调用方决定原样显示。
+ */
+function ownKey<K extends string>(map: Record<K, TranslationKey>, value: string): TranslationKey | null {
+  return Object.prototype.hasOwnProperty.call(map, value)
+    ? (map as Record<string, TranslationKey>)[value]
+    : null;
+}
 
 /**
  * 难度值 → 当前语言的显示文本。
@@ -893,8 +1273,52 @@ export const DIFFICULTY_KEYS: Record<WireDifficulty, TranslationKey> = {
  * 既不崩，也不假装它被翻译过。
  */
 export function difficultyLabel(locale: Locale, value: string): string {
-  const key = (DIFFICULTY_KEYS as Record<string, TranslationKey | undefined>)[value];
+  const key = ownKey(DIFFICULTY_KEYS, value);
   return key ? translate(locale, key) : value;
+}
+
+/**
+ * 终局原因 → 译文键。`Record<WireEndReason, …>`：引擎新增一种终局原因而这里没跟上，
+ * 编译立刻报错。枚举原文由调用方放进 `data-end-reason`，不进文案。
+ */
+export const END_REASON_KEYS: Record<WireEndReason, TranslationKey> = {
+  ELIMINATION: 'endReason.ELIMINATION',
+  MUTUAL_ELIMINATION: 'endReason.MUTUAL_ELIMINATION',
+  STALEMATE: 'endReason.STALEMATE',
+  HARD_ROUND_LIMIT: 'endReason.HARD_ROUND_LIMIT',
+  NONE: 'endReason.NONE',
+};
+
+/** 终局原因 → 当前语言的显示文本；认不出（历史产物）就原样显示 */
+export function endReasonLabel(locale: Locale, value: string): string {
+  const key = ownKey(END_REASON_KEYS, value);
+  return key ? translate(locale, key) : value;
+}
+
+/** `RoundSummaryView.firstSolver` 的四个取值 → 译文键 */
+export const FIRST_SOLVER_KEYS: Record<'A' | 'B' | 'tie' | 'none', TranslationKey> = {
+  A: 'firstSolver.A',
+  B: 'firstSolver.B',
+  tie: 'firstSolver.tie',
+  none: 'firstSolver.none',
+};
+
+/** 先手 → 当前语言的显示文本；此前 `tie` / `none` 被拼成 “TEAM TIE” */
+export function firstSolverLabel(locale: Locale, value: string): string {
+  const key = ownKey(FIRST_SOLVER_KEYS, value);
+  return key ? translate(locale, key) : value;
+}
+
+/**
+ * 胜者 → 判决文案（`TEAM A 获胜` / `DRAW`）。
+ *
+ * 三块板与回放此前各自写 `TEAM ${winner}` —— 语序与措辞散在四处。
+ * 认不出的值（历史产物）原样返回。
+ */
+export function winnerLabel(locale: Locale, winner: string): string {
+  if (winner === 'A' || winner === 'B') return translate(locale, 'verdict.win', { team: winner });
+  if (winner === 'draw') return translate(locale, 'verdict.draw');
+  return winner;
 }
 
 /**

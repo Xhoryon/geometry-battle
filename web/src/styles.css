@@ -6,7 +6,8 @@
  *
  * 纪律：
  *   - 不用渐变、不用圆角阴影 —— 现场要的是一台仪器，不是一个网页
- *     （唯一例外是 `.verdict` 的那层遮罩渐变，它保证判决文字压在竞技场上仍可读）；
+ *     （此前唯一的例外是大屏判决的遮罩渐变；V1.4 起终局是独立的一条横带，
+ *     不再压在竞技场上，渐变也就一并去掉了）；
  *   - 彩色只给「有语义的东西」：A 队、B 队、命中闪、报错、以及**角色标识**；
  *   - **等宽只给数值**。路径、哈希、计时代码是数据，用等宽；标题、按钮、
  *     状态词、正文一律无衬线 —— 等宽满屏是终端，不是产品；
@@ -39,8 +40,21 @@
   --danger: #ff5470;
   --ok: #5fd18a;
 
-  /* 角色标识 —— 每屏在根选择器里覆写，见文件末尾「角色标识」一节 */
+  /* 角色标识 —— 由 AppShell 的 `data-role` 覆写，见文件末尾「角色标识」一节 */
   --role: var(--a);
+
+  /*
+   * 状态设计系统（V1.4）：七种状态、一套 token。
+   * 全部取自上面的语义色 —— **没有新色相**。徽章 / 连接标签 / 提示块 / 步骤条
+   * 都只消费这七个变量；文字永远在，颜色只是补充。
+   */
+  --status-neutral: var(--dim);
+  --status-waiting: var(--muted);
+  --status-ready: var(--ok);
+  --status-active: var(--a);
+  --status-warning: var(--b);
+  --status-error: var(--danger);
+  --status-terminal: var(--impact);
 
   /* 字号层级：标签 11 / 次要 12 / 数值 13 / 正文 14 / 强调 15 / 大数值 32 / 大标题 40 */
   --fs-label: 11px;
@@ -357,97 +371,152 @@ details.adv .adv__body {
 }
 
 /* ==========================================================================
-   观众大屏 —— 满幅竞技场 + 上下两条导轨
+   观众大屏 —— 记分牌头部 + 满幅竞技场 + 计算底栏（V1.4）
+   --------------------------------------------------------------------------
+   四行网格：头部 / 终局带（仅终局）/ 舞台 / 底栏。舞台吃掉剩下的全部高度；
+   终局带是独立的一行而不是压在画布上的遮罩 —— 判决出来之后最后一帧必须完整可见。
    ========================================================================== */
 
 .screen {
   height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   background: var(--paper);
 }
+/* 每个区域钉死自己的行：终局带不在时只有三个子元素，自动排布会把舞台挤进第二行、
+   底栏挤进 1fr 行 —— 底栏被推出视口（实测 1280×720 下 753 > 720）。 */
+.screen__head {
+  grid-row: 1;
+}
+.screen__verdict {
+  grid-row: 2;
+}
+.screen__stage {
+  grid-row: 3;
+}
+.screen__foot {
+  grid-row: 4;
+}
 
-.screen__rail {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 12px 26px;
+/* 头部：Team A | 回合·阶段 | Team B —— 两侧等宽、各靠外缘，中央按内容定宽并居中 */
+.screen__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 24px;
+  padding: 14px 28px 12px;
   border-bottom: 1px solid var(--rule);
+  background: var(--panel);
 }
-.screen__rail--bottom {
-  border-bottom: none;
-  border-top: 1px solid var(--rule);
-  justify-content: space-between;
+.screen__team {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
-
-.round-mark {
+/* B 队镜像到右侧：数在外、字在内，与 A 队对称 —— 这是记分牌的读法 */
+.screen__team[data-team='B'] {
+  align-items: flex-end;
+  text-align: right;
+}
+.screen__alive {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.screen__team[data-team='B'] .screen__alive {
+  flex-direction: row-reverse;
+}
+.screen__count {
+  font-size: var(--fs-headline);
+  line-height: 1;
+  font-weight: 600;
+}
+.screen__team[data-team='A'] .screen__count {
+  color: var(--a);
+}
+.screen__team[data-team='B'] .screen__count {
+  color: var(--b);
+}
+.screen__caption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.screen__emitter {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  font-size: var(--fs-num);
+  color: var(--muted);
+  white-space: nowrap;
 }
-.round-mark__label {
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.round-mark__value {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-display);
-  line-height: 1;
-  font-weight: 600;
+.screen__team[data-team='B'] .screen__emitter {
+  flex-direction: row-reverse;
 }
 
-.alive {
+/* 中央：回合大数 + 阶段一句话。两条竖线把它框成一格 —— 隔几米也认得出「这是现在」 */
+.screen__center {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
+  min-width: 220px;
+  padding: 0 24px;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
 }
-.alive__count {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-display);
-  line-height: 1;
-  font-weight: 600;
+.screen__count--round {
+  color: var(--text);
+  font-size: 48px;
 }
-.alive--a .alive__count {
+.screen__phase {
+  font-size: clamp(14px, 1.3vw, 20px);
+  letter-spacing: 0.06em;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* 终局带：实底一行。判决是一句话（无衬线、大、字距收紧），原因与回合小号大写跟在后面。
+   颜色由 data-winner 决定，只是补充 —— 文字本身已经说了谁赢。 */
+.screen__verdict {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 22px;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+.screen__winner {
+  font-family: var(--sans);
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  color: var(--muted);
+}
+.screen__verdict[data-winner='A'] .screen__winner {
   color: var(--a);
 }
-.alive--b .alive__count {
+.screen__verdict[data-winner='B'] .screen__winner {
   color: var(--b);
 }
-.alive__label {
-  font-size: 10px;
-  letter-spacing: 0.18em;
+.screen__reason {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--dim);
+  color: var(--muted);
 }
 
 .screen__stage {
   position: relative;
   min-height: 0;
-}
-
-/* ---- 大屏阶段横幅 ----
-   叠在竞技场顶部居中：观众席上最远的那个人也读得到「现在在干什么」。
-   只占一行、半透明衬底，不挡竞技场主体。 */
-.screen__banner {
-  position: absolute;
-  top: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 2;
-  padding: 6px 22px;
-  border: 1px solid var(--rule);
-  background: var(--paper);
-  pointer-events: none;
-}
-.screen__phase {
-  font-size: clamp(16px, 1.9vw, 26px);
-  letter-spacing: 0.06em;
-  color: var(--text);
-  white-space: nowrap;
 }
 .screen__stage canvas {
   display: block;
@@ -455,34 +524,34 @@ details.adv .adv__body {
   height: 100%;
 }
 
-.verdict {
-  position: absolute;
-  inset: auto 0 0 0;
-  padding: 18px 26px;
-  background: linear-gradient(to top, color-mix(in oklab, var(--paper) 94%, transparent), transparent);
+/* 底栏：A 计算 | 先手 | B 计算，其下一行本轮说明 */
+.screen__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 28px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--panel);
+}
+.screen__foot .compute {
+  width: 100%;
+  justify-content: space-between;
+}
+.screen__first {
   display: flex;
   align-items: baseline;
-  gap: 16px;
+  gap: 10px;
 }
-/* 判决是**一句话**，不是一段数据：无衬线、更大、字距收紧 */
-.verdict__winner {
-  font-family: var(--sans);
-  font-size: var(--fs-headline);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
+.screen__firstvalue {
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--muted);
 }
-.verdict__winner--a {
+.screen__first[data-tone='a'] .screen__firstvalue {
   color: var(--a);
 }
-.verdict__winner--b {
+.screen__first[data-tone='b'] .screen__firstvalue {
   color: var(--b);
-}
-.verdict__reason {
-  font-size: var(--fs-sm);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
 }
 
 /* 计算状态：两条细条，把「谁在算 / 算了多久」压成一行 */
@@ -560,13 +629,25 @@ details.adv .adv__body {
   color: var(--muted);
 }
 
-/* 大屏底部一行：状态说明。绝不出现哈希 / 路径 / JSON。 */
+/* 夹在两条之间的槽（大屏放先手）：吃掉中间的空隙，内容居中 */
+.compute__center {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* 大屏底部一行：状态说明。绝不出现哈希 / 路径 / JSON。本轮算法异常（TIMEOUT / CRASH）用 warning 色 */
 .screen__note {
+  margin: 0;
   font-size: var(--fs-sm);
   color: var(--dim);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.screen__note[data-severity='warning'] {
+  color: var(--status-warning);
 }
 
 /* ==========================================================================
@@ -576,48 +657,82 @@ details.adv .adv__body {
 .judge {
   height: 100%;
   display: grid;
-  grid-template-columns: 340px 1fr;
-  /* 表头 / 双方状态条 / 主体 */
-  grid-template-rows: auto auto 1fr;
+  grid-template-columns: 350px 1fr;
+  /* 双方记分牌 / 主体（头部导轨已由 AppShell 承担） */
+  grid-template-rows: auto 1fr;
 }
 
-/* ---- 裁判台的双方状态条 ----
-   常驻整宽：「跑的是谁、就绪没、锚点锁没锁」是开赛前必须确认的三件事，
-   不能埋在侧栏里等人滚动。 */
+/* ---- Team A | Team B 记分牌 ----
+   常驻整宽：「跑的是谁、就绪没、Preflight 过没、锚点锁没锁、算得怎样」是开赛前必须确认、
+   比赛中要盯着的东西，不能埋在侧栏里等人滚动。两张卡等宽并排 —— 这是记分牌，不是列表。 */
 .judge__teams {
   grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  padding: 8px 18px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--rule);
   background: color-mix(in oklab, var(--panel) 70%, var(--paper));
 }
 .teamcard {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 12px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
   border: 1px solid var(--rule);
+  /* 左缘一条队色 —— 与顶部的角色带同一种语言：一条线，不是一块色斑 */
+  border-left: 3px solid var(--rule);
   background: var(--paper-2);
   min-width: 0;
 }
+.teamcard[data-team='A'] {
+  border-left-color: var(--a);
+}
+.teamcard[data-team='B'] {
+  border-left-color: var(--b);
+}
+.teamcard__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
 .teamcard__name {
+  flex: 1 1 auto;
   font-weight: 600;
   color: var(--text);
-  max-width: 220px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.judge__bar {
-  grid-column: 1 / -1;
+/* 五格状态：标签小号大写、值是徽章或等宽数 —— 宽度不够就换行，绝不横向溢出 */
+.teamcard__stats {
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0;
+}
+.teamcard__stats > div {
+  display: inline-flex;
   align-items: center;
-  gap: 22px;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel);
+  gap: 6px;
+  min-width: 0;
+}
+.teamcard__stats dt {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.teamcard__stats dd {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-num);
+  min-width: 0;
 }
 .judge__side {
   border-right: 1px solid var(--rule);
@@ -627,9 +742,136 @@ details.adv .adv__body {
 }
 .judge__main {
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: auto 1fr auto;
   min-height: 0;
   min-width: 0;
+}
+/* 竞技场上方一条细导轨：区块名 + 本轮标题。退到背景，舞台才是主角 */
+.stage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.judge__foot {
+  min-width: 0;
+}
+.judge__foot .judge__foot-notice {
+  margin: 0 18px 12px;
+}
+/* 侧栏区块里的正文说明（此前散在各处的内联 style） */
+.panel__lead {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+/* 比赛状态的数值格：两列，标签 + 等宽值。
+   右列放较长的值（存活 A n / B n、地图「Points: 6 · Easy」），所以 2:3 而不是对半 ——
+   对半时英文的地图一行在 350px 侧栏里会折成两行。 */
+.statgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+/* 区块内的小块（双方 Emitter） */
+.subpanel {
+  border: 1px solid var(--rule);
+  padding: 8px 10px;
+  margin-top: 12px;
+}
+.subpanel > .panel__title {
+  margin-bottom: 6px;
+}
+.subpanel__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+}
+/* 参赛者入口的一行：队名 · 链接（省略号）· 复制 */
+.linkrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+.linkrow__url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 终局的「看回放」入口，排在换场之前 */
+.judge__replay {
+  display: inline-flex;
+  margin-bottom: 10px;
+}
+/* 两步确认：影响说明 + 两个按钮。危险按钮用 danger 色描边，不实底 —— 它还没被按下 */
+.confirm__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.btn--danger {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 55%, transparent);
+}
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}
+.adv__rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 14px 0 12px;
+}
+.adv__install {
+  margin-bottom: 14px;
+}
+.adv__install > .btn {
+  margin-bottom: 8px;
+}
+/* 目录安装按钮下面那一行原因（灰掉为什么 / 可点会发生什么） */
+.adv__why {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+}
+/* 审计 · 源码核对：每队一段 */
+.review {
+  border-top: 1px solid var(--rule);
+  padding: 8px 0;
+}
+.review__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  margin-bottom: 4px;
+}
+.review__name {
+  font-weight: 600;
+}
+.review__empty {
+  margin: 0;
+  font-size: 11px;
+}
+.review__source {
+  margin-top: 10px;
+}
+.review__runtime {
+  margin-top: 10px;
+}
+.review__recent {
+  margin: 12px 0 4px;
+}
+.lastround__verdict {
+  display: inline-flex;
 }
 
 .panel {
@@ -685,13 +927,6 @@ details.adv .adv__body {
 .slot__status--bad {
   color: var(--danger);
 }
-.slot__detail {
-  grid-column: 1 / -1;
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--dim);
-  overflow-wrap: anywhere;
-}
 
 .actions {
   display: grid;
@@ -717,22 +952,6 @@ details.adv .adv__body {
   padding: 12px 18px;
   border-top: 1px solid var(--rule);
   background: var(--panel);
-}
-.lastround__item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.lastround__label {
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.lastround__value {
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  font-size: var(--fs-num);
 }
 
 .audit-list {
@@ -774,23 +993,14 @@ details.adv .adv__body {
 }
 
 /* ==========================================================================
-   回放
+   回放 —— 左侧逐轮清单，右侧舞台 + 本帧事实 + 播放器（V1.4）
    ========================================================================== */
 
 .replay {
   height: 100%;
   display: grid;
-  grid-template-columns: 300px 1fr;
-  grid-template-rows: auto 1fr;
-}
-.replay__bar {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel);
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 .replay__side {
   border-right: 1px solid var(--rule);
@@ -798,10 +1008,41 @@ details.adv .adv__body {
   overflow-y: auto;
   padding: 12px;
 }
+/* 双方：队名标签 + 算法包名（来自匿名回放索引，与列表页同一来源） */
+.replay__teams {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-sm);
+}
+.replay__teamname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.replay__others-title {
+  margin-top: 20px;
+}
+/* 头部的判决徽章：terminal token 打底，胜方队色盖上去；平局保持中性 */
+.replay__verdict {
+  display: inline-flex;
+}
+.replay__verdict[data-winner='A'] .badge--status {
+  --status-color: var(--a);
+}
+.replay__verdict[data-winner='B'] .badge--status {
+  --status-color: var(--b);
+}
+
 .replay__main {
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   min-height: 0;
+  min-width: 0;
 }
 .replay__stage {
   position: relative;
@@ -812,22 +1053,86 @@ details.adv .adv__body {
   width: 100%;
   height: 100%;
 }
-.replay__controls {
+/* 本帧事实：与裁判台底栏（.lastround）同一形状 —— 标签小号大写 + 等宽值 */
+.replay__info {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 12px 18px;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  align-items: baseline;
+  padding: 10px 18px;
   border-top: 1px solid var(--rule);
   background: var(--panel);
-}
-.replay__controls input[type='range'] {
-  flex: 1;
-  accent-color: var(--a);
+  min-width: 0;
 }
 
-.frame-btn {
+/* 播放器：一条可聚焦的横带。焦点环画在整条上 —— 键盘用户知道 ← → 现在归它 */
+.player {
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+  padding: 10px 18px 12px;
+}
+.player:focus-visible {
+  outline-offset: -2px;
+}
+.player__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.player__transport {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.player__play {
+  min-width: 88px;
+}
+.player__counter {
+  flex: none;
+  min-width: 120px;
+  font-size: var(--fs-num);
+  color: var(--muted);
+}
+.player__timeline {
+  flex: 1 1 160px;
+  min-width: 120px;
+  margin: 0;
+  accent-color: var(--a);
+}
+.player__speed {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  flex: none;
+}
+.player__speedopt {
+  padding: 5px 10px;
+  font-size: var(--fs-label);
+  color: var(--dim);
+  background: transparent;
+}
+.player__speedopt + .player__speedopt {
+  border-left: 1px solid var(--rule);
+}
+.player__speedopt:hover {
+  color: var(--text);
+}
+/* 当前速度用角色色实底 —— 与语言开关同一种「这是当前值」的写法 */
+.player__speedopt.is-on {
+  color: var(--paper);
+  background: var(--role);
+}
+
+.framelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* 回合按钮与「其他场次」链接长得一样：首列按内容定宽（英文 R01 三个字符，中文「第 01 轮」六个） */
+.frame-btn,
+.frame-link {
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: auto 1fr;
   gap: 8px;
   width: 100%;
   text-align: left;
@@ -839,8 +1144,14 @@ details.adv .adv__body {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--muted);
+  text-decoration: none;
 }
-.frame-btn:hover {
+.frame-btn > .dim,
+.frame-link > .dim {
+  white-space: nowrap;
+}
+.frame-btn:hover,
+.frame-link:hover {
   background: color-mix(in oklab, var(--a) 8%, transparent);
 }
 .frame-btn[aria-current='true'] {
@@ -849,11 +1160,15 @@ details.adv .adv__body {
 }
 
 .btn {
+  display: inline-block;
   background: transparent;
   border: 1px solid var(--rule);
   padding: 7px 14px;
   cursor: pointer;
   font-size: var(--fs-sm);
+  color: var(--text);
+  /* `<a class="btn">`（首页的入口）也要长得像按钮，不要带链接下划线 */
+  text-decoration: none;
 }
 .btn:hover:not(:disabled) {
   border-color: color-mix(in oklab, var(--a) 55%, transparent);
@@ -905,40 +1220,41 @@ details.adv .adv__body {
 }
 
 /* ==========================================================================
-   角色标识 —— 一条 2px 的带子，不是一块色斑
+   应用外壳（AppShell）与角色标识 —— 一条 2px 的带子，不是一块色斑
    --------------------------------------------------------------------------
-   四屏共用一个 `--role`：顶部强调带、页签名、以及页内少量强调消费它。
-   四个取值都来自已有的语义色，没有新色相。
+   五屏共用一个 `--role`：顶部强调带、页签名、以及页内少量强调消费它。
+   取值都来自已有的语义色，没有新色相。`--role` 由外壳的 `data-role` 决定，
+   页面根元素（.judge / .screen / .replay / .team）从外壳继承它。
    ========================================================================== */
 
-.judge {
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.shell[data-role='judge'] {
   --role: var(--a); /* 裁判台：青 —— 操作台 */
 }
-.screen {
+.shell[data-role='spectator'] {
   --role: var(--impact); /* 观众大屏：白 —— 展示面，最中性 */
 }
-.replay {
+.shell[data-role='replay'] {
   --role: var(--muted); /* 回放：灰蓝 —— 档案，已发生的事 */
 }
-.team {
+.shell[data-role='team'] {
   --role: var(--ok); /* 选手端：绿 —— 自己人 */
 }
-
-.judge,
-.screen,
-.replay,
-.team {
-  position: relative;
+.shell[data-role='home'] {
+  --role: var(--impact); /* 首页：白 —— 还没选身份 */
 }
 
 /*
- * 绝对定位是**必须的**：这四屏都是 grid 容器，若让 ::before 参与布局，
- * 它会变成第一个网格项、把整页挤下去。绝对定位把它移出文档流。
+ * 绝对定位是**必须的**：外壳是 flex 容器，若让 ::before 参与布局，
+ * 它会变成第一个子项、把整页挤下去。绝对定位把它移出文档流。
  */
-.judge::before,
-.screen::before,
-.replay::before,
-.team::before {
+.shell::before {
   content: '';
   position: absolute;
   top: 0;
@@ -950,95 +1266,575 @@ details.adv .adv__body {
   z-index: 4;
 }
 
-/* 每屏的第一个 eyebrow 就是这一屏的名字 —— 用角色色点出来 */
-.judge__bar > .eyebrow:first-child,
-.replay__bar > .eyebrow:first-child,
-.team__rail > .eyebrow:first-child {
+/* 顶栏：品牌 · 页签名 · 页面数据 ·（右）导航 · 语言 · 连接状态。退到背景，舞台才是主角 */
+.shell__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 42px;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.shell__brand {
+  font-family: var(--mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.shell__brand:hover {
   color: var(--role);
+}
+/* 页签名就是这一屏的角色 —— 用角色色点出来 */
+.shell__eyebrow {
   font-size: var(--fs-sm);
+  font-weight: 600;
   letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--role);
+  white-space: nowrap;
+}
+.shell__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  min-width: 0;
+}
+.shell__right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+.shell__nav {
+  display: flex;
+  gap: 2px;
+}
+.shell__nav a {
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.shell__nav a:hover {
+  color: var(--text);
+  border-color: var(--rule);
+}
+.shell__nav a[aria-current='page'] {
+  color: var(--text);
+  border-color: color-mix(in oklab, var(--role) 55%, transparent);
+}
+/* 页面主体：吃掉剩下的全部高度；页面根元素自己 `height: 100%` */
+.shell__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
 }
 
-/* 导轨与侧栏退到背景：舞台才是主角 */
-.judge__bar,
-.replay__bar,
-.team__rail {
-  padding: 9px 16px;
+/* 还没拿到 board 时的整页占位（连接说明 + 令牌提示） */
+.gate {
+  height: 100%;
+  overflow: auto;
+  padding: 10vh 24px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
 }
+.gate > .notice {
+  max-width: 560px;
+  width: 100%;
+}
+
 .judge__side,
 .replay__side {
   border-right: 1px solid color-mix(in oklab, var(--rule) 70%, transparent);
 }
 
 /* ==========================================================================
-   选手端（Team）—— 皮肤在此，页面由主 agent 组装
+   状态设计系统 —— 徽章 / 状态行 / 连接标签 / 分层提示 / 主动作
+   ========================================================================== */
+
+/* 徽章：与 .tag 同一种形状，颜色由 data-status 决定。类名刻意不叫 .tag（演练钉了它的数量） */
+.badge {
+  --status-color: var(--status-neutral);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.badge--status {
+  color: var(--status-color);
+  border-color: color-mix(in oklab, var(--status-color) 45%, transparent);
+}
+.badge[data-status='neutral'] {
+  --status-color: var(--status-neutral);
+}
+.badge[data-status='waiting'] {
+  --status-color: var(--status-waiting);
+}
+.badge[data-status='ready'] {
+  --status-color: var(--status-ready);
+}
+.badge[data-status='active'] {
+  --status-color: var(--status-active);
+}
+.badge[data-status='warning'] {
+  --status-color: var(--status-warning);
+}
+.badge[data-status='error'] {
+  --status-color: var(--status-error);
+}
+.badge[data-status='terminal'] {
+  --status-color: var(--status-terminal);
+  background: color-mix(in oklab, var(--status-terminal) 10%, transparent);
+  font-weight: 600;
+}
+.badge__icon {
+  font-family: var(--mono);
+}
+
+/* 状态行：小标签 + 等宽数值 */
+.statline {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.statline__label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.statline__value {
+  font-size: var(--fs-num);
+}
+
+/* 连接标签：七态。data-tone 只管颜色，data-status 是状态原文 */
+.conn {
+  --status-color: var(--status-waiting);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-label);
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in oklab, var(--status-color) 45%, transparent);
+  color: var(--status-color);
+  white-space: nowrap;
+}
+.conn[data-tone='ready'] {
+  --status-color: var(--status-ready);
+}
+.conn[data-tone='warning'] {
+  --status-color: var(--status-warning);
+}
+.conn[data-tone='error'] {
+  --status-color: var(--status-error);
+}
+.conn__dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: currentColor;
+}
+/* 还没连上 / 等 board / 重连中：空心点。状态在动，点也在呼吸 —— 这是状态，不是装饰 */
+.conn[data-status='connecting'] .conn__dot,
+.conn[data-status='waiting'] .conn__dot,
+.conn[data-status='reconnecting'] .conn__dot {
+  background: transparent;
+  border: 1px solid currentColor;
+  animation: conn-pulse 1.4s ease-in-out infinite;
+}
+@keyframes conn-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 分层提示块：范围眉标 + 一句话 + 详情 + 可选重试。成功提示不再借红色的 .errors */
+.notice {
+  --notice-color: var(--status-error);
+  border: 1px solid color-mix(in oklab, var(--notice-color) 45%, transparent);
+  background: color-mix(in oklab, var(--notice-color) 9%, transparent);
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+  color: color-mix(in oklab, var(--notice-color) 70%, var(--text));
+}
+.notice[data-severity='warning'] {
+  --notice-color: var(--status-warning);
+}
+.notice[data-severity='success'] {
+  --notice-color: var(--status-ready);
+}
+.notice[data-severity='info'] {
+  --notice-color: var(--status-waiting);
+}
+.notice__title {
+  margin: 0;
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.notice__scope {
+  flex: none;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.notice__body {
+  margin: 4px 0 0;
+}
+.notice__list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.notice__retry {
+  margin-top: 8px;
+}
+
+/* 主动作：比 .act 高一档，可点时用角色色描边；快捷键提示贴右 */
+.act--primary {
+  padding: 12px 13px;
+}
+.act--primary:not(:disabled) {
+  border-color: color-mix(in oklab, var(--role) 55%, transparent);
+}
+.act__kbd {
+  margin-left: auto;
+  align-self: center;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  border: 1px solid var(--rule);
+  padding: 1px 6px;
+}
+.primary__why {
+  margin: 8px 0 0;
+  font-size: 11px;
+}
+
+/* 裁判向导步骤条：done / now / todo 三态各有字形与颜色 —— 此前 done 与 todo 同色 */
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+}
+.wizard-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  color: var(--dim);
+}
+.wizard-steps li[data-state='done'] {
+  color: var(--status-ready);
+  border-color: color-mix(in oklab, var(--status-ready) 40%, transparent);
+}
+.wizard-steps li[data-state='now'] {
+  color: var(--text);
+  background: color-mix(in oklab, var(--role) 12%, transparent);
+  border-color: color-mix(in oklab, var(--role) 60%, transparent);
+}
+.wizard-steps__no {
+  font-family: var(--mono);
+}
+
+/* 队伍标签：色点 + 名字 */
+.teamlabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   首页 —— 选择身份 + 最近比赛
+   ========================================================================== */
+
+.home {
+  height: 100%;
+  overflow: auto;
+  padding: 26px 32px 48px;
+}
+.home__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.home__title {
+  margin: 0;
+  font-size: var(--fs-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.home__lead {
+  margin: 0;
+  color: var(--muted);
+  max-width: 78ch;
+}
+.rolegrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 28px;
+}
+.rolecard {
+  --card-role: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--card-role);
+  background: var(--panel);
+}
+.rolecard[data-role='judge'] {
+  --card-role: var(--a);
+}
+.rolecard[data-role='team'] {
+  --card-role: var(--ok);
+}
+.rolecard[data-role='spectator'] {
+  --card-role: var(--impact);
+}
+.rolecard__title {
+  margin: 0;
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rolecard__desc {
+  margin: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.rolecard__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dim);
+}
+.rolecard__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rolecard .btn--primary {
+  min-width: 0;
+  justify-self: auto;
+}
+.access-form {
+  display: flex;
+  gap: 6px;
+}
+.access-form input {
+  flex: 1;
+  min-width: 0;
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  padding: 6px 8px;
+}
+.access-form input:focus-visible {
+  outline-color: var(--card-role);
+}
+
+.replays {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.replays th {
+  text-align: left;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--rule);
+}
+.replays td {
+  padding: 7px 10px;
+  border-bottom: 1px solid color-mix(in oklab, var(--rule) 60%, transparent);
+  vertical-align: baseline;
+}
+.replays__num {
+  text-align: right;
+}
+.replays__winner[data-winner='A'] {
+  color: var(--a);
+}
+.replays__winner[data-winner='B'] {
+  color: var(--b);
+}
+.replays__winner[data-winner='draw'] {
+  color: var(--muted);
+}
+.replays-page {
+  height: 100%;
+  overflow: auto;
+  padding: 22px 32px 48px;
+}
+.empty--inline {
+  padding: 18px 0;
+  text-align: left;
+}
+
+/* ==========================================================================
+   选手端（Team，V1.4）—— 左侧「状态」栏 + 右侧三个区块（算法包 / 源码 / Emitter）
    --------------------------------------------------------------------------
-   `__rail` 是顶部导轨，`__main` 是它下面的**可滚动纵列**。
-   两处都用 flex 纵向流而不是固定行数的网格：选手端是若干张面板顺次往下排，
-   面板数量由页面决定 —— 钉死行数会把多余的面板挤进隐式行、把内容裁掉。
+   与裁判台同一种骨架：固定宽度的侧栏自己滚，主区自己滚，外壳头部不动。
+   主区是一张两列网格：算法包与源码叠在左列（上传 → 看源码是一条顺序），
+   Emitter 独占右列（选点 + 锁定 + 场面是开赛前唯一要盯的东西）。
+   ≤1200px 退成一列（算法包 → 源码 → Emitter），≤900px 连侧栏也堆上去。
    ========================================================================== */
 
 .team {
   height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.team__rail {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--panel);
-}
-
-/* 面板纵列，自己滚：顶部导轨固定，内容再长也不会把导轨顶走 */
-.team__main {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
+}
+.team__side {
+  border-right: 1px solid var(--rule);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 14px 14px 28px;
+  min-width: 0;
+}
+.team__main {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px 14px;
   padding: 14px 16px 28px;
   overflow-y: auto;
+  min-height: 0;
+  min-width: 0;
+}
+/* 左列是一个纵向流（算法包在上、源码紧随其下），不是网格行 ——
+   网格会把跨两行的 Emitter 的高度平均摊给两行，把源码推到底部。 */
+.team__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+/* 区块是一个有边框的盒子：清晰的格线，不是浮起来的卡片 */
+.team__block {
+  margin: 0;
+  min-width: 0;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--rule);
+  background: var(--panel);
+}
+/* 直接落在网格里的区块（Emitter）按内容高度排，不被拉到整行高 */
+.team__main > .team__block {
+  align-self: start;
+}
+.team__block.panel--a,
+.team__block.panel--b {
+  padding-left: 12px;
+}
+/* 区块内的二级标题：与一级同款，只多一点上间距 */
+.team__block .subhead {
+  margin-top: 14px;
+}
+/* 区块标题允许收缩换行：英文标题在 1280 宽的两列里可能比列还宽 */
+.team__block .panel__title h2 {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+/* 状态栏只有 300px：数值格一行一项，别把徽章挤出边界 */
+.team__side .statgrid {
+  grid-template-columns: minmax(0, 1fr);
 }
 
-/* ---- 参赛者四步进度条 ----
-   sticky：面板纵向滚动时它始终留在顶上 ——「我走到哪、下一步做什么」
-   不该因为往下滚了就消失。 */
-.steps {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 4px 0 8px;
+/* ---- 六步进度（状态栏）----
+   done / now / todo / error 四态：颜色 + 字形 + 文字三重表达，不只靠颜色。 */
+.tsteps {
   list-style: none;
-  /* 实底：sticky 时下面的内容会从它背后滚过去，必须挡住 */
-  background: var(--paper);
-}
-.steps__item {
+  margin: 0 0 12px;
+  padding: 0;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tsteps li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 7px;
-  padding: 4px 12px 4px 4px;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
   border: 1px solid var(--rule);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
-.steps__item[data-state='done'] {
-  color: var(--ok);
-  border-color: color-mix(in oklab, var(--ok) 42%, transparent);
+.tsteps li[data-state='done'] {
+  color: var(--status-ready);
+  border-color: color-mix(in oklab, var(--status-ready) 40%, transparent);
 }
-.steps__item[data-state='now'] {
+.tsteps li[data-state='now'] {
   color: var(--text);
   background: color-mix(in oklab, var(--role) 12%, transparent);
   border-color: color-mix(in oklab, var(--role) 60%, transparent);
+}
+.tsteps li[data-state='error'] {
+  color: var(--status-error);
+  border-color: color-mix(in oklab, var(--status-error) 45%, transparent);
+}
+.tsteps__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tsteps__state {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .steps__no {
   display: inline-flex;
@@ -1052,7 +1848,7 @@ details.adv .adv__body {
   font-size: 10px;
   line-height: 1;
 }
-/* 面板内的小标题，把「这一步在做什么」写出来（纯说明，不是可用性判据） */
+/* 区块内的小标题，把「这一步在做什么」写出来（纯说明，不是可用性判据） */
 .step-caption {
   display: flex;
   align-items: center;
@@ -1061,8 +1857,90 @@ details.adv .adv__body {
   font-size: 12px;
   color: var(--muted);
 }
+.subpanel__text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.subpanel__text + .subpanel__text {
+  margin-top: 6px;
+}
 
-/* 画布在哪个容器里都要铺满 —— 舞台总是最后一层背景，别再包一层定位 */
+/* ---- 算法包：身份行 + 双入口上传 ---- */
+.pkg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+.pkg .slot__name {
+  font-weight: 600;
+  color: var(--text);
+}
+/* 两个入口上下叠放：提示句（「包根目录里要有 solver.py」）要完整可读，不能被省略号吃掉 */
+.uploadrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.uploadrow .upload {
+  margin-bottom: 0;
+}
+.uploadbusy {
+  margin: 8px 0 0;
+}
+.fineprint {
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+.filelist {
+  max-height: 180px;
+}
+.preview {
+  margin-top: 6px;
+}
+
+/* ---- Emitter：锁定块 / 候选点 / 场面 ---- */
+.lockbox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in oklab, var(--status-terminal) 35%, transparent);
+  background: color-mix(in oklab, var(--status-terminal) 5%, transparent);
+}
+.lockbox__id {
+  font-size: var(--fs-lead);
+  color: var(--text);
+}
+.lockbox__note {
+  flex-basis: 100%;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.cands {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.waitline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* 画布容器：高度随视口，但有上下限 —— 1280×720 上不吞掉整块，1080p 上也不显得小 */
+.team__arena {
+  height: clamp(220px, 34vh, 340px);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
 .team canvas {
   display: block;
   width: 100%;
@@ -1084,10 +1962,9 @@ details.adv .adv__body {
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 贴合内容，别被网格列拉成整宽的一条 —— 坐标按钮铺满 1440px 只是显得空 */
-  justify-self: start;
+  /* 贴合内容，别被拉成整宽的一条 —— 坐标按钮铺满 1440px 只是显得空 */
   width: auto;
-  min-width: 150px;
+  min-width: 190px;
   text-align: left;
   padding: 7px 9px;
   background: transparent;
@@ -1126,29 +2003,46 @@ details.adv .adv__body {
 .cand--locked:hover {
   background: transparent;
 }
-
-/* 颜色小方块：队伍 / 素材的颜色标记 */
-.swatch {
-  flex: none;
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  background: var(--rule);
+.cand__id {
+  min-width: 26px;
 }
-.swatch--a {
-  background: var(--a);
+.cand__xy {
+  color: var(--muted);
 }
-.swatch--b {
-  background: var(--b);
+.cand:disabled .cand__xy {
+  color: var(--dim);
 }
-.swatch--off {
-  background: transparent;
-  border: 1px solid var(--rule);
+.cand__state {
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.cand--selected .cand__state {
+  color: var(--role);
 }
 
 /* ==========================================================================
    窄屏（≤900px）—— 固定侧栏改为堆叠，而不是把舞台挤没
    ========================================================================== */
+
+@media (max-width: 1200px) {
+  /* 选手端主区退成一列：算法包 → 源码 → Emitter（就是操作顺序） */
+  .team__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1100px) {
+  .rolegrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .shell__nav {
+    display: none; /* 窄屏：导航让位给页面数据；品牌仍可回首页 */
+  }
+}
 
 @media (max-width: 900px) {
   .judge,
@@ -1156,14 +2050,33 @@ details.adv .adv__body {
     height: auto;
     min-height: 100%;
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
+  }
+  .judge {
     grid-template-rows: auto auto auto;
   }
+  .judge__teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
 
-  .judge__bar,
-  .replay__bar,
-  .team__rail {
+  .shell__bar {
     flex-wrap: wrap;
     gap: 8px 14px;
+  }
+
+  /* 选手端：侧栏堆到主区上方，两处都不再各自滚动 —— 整页滚 */
+  .team {
+    height: auto;
+    min-height: 100%;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .team__side {
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+    overflow: visible;
+  }
+  .team__main {
+    overflow: visible;
   }
 
   /* 侧栏从「固定宽度的列」变成「舞台上方的一段」，自己滚 */
@@ -1192,25 +2105,42 @@ details.adv .adv__body {
     padding: 12px 12px 24px;
   }
 
-  .screen__rail {
-    flex-wrap: wrap;
+  /* 大屏：整页滚；中央那格挪到最上面整行，两队并排在下 */
+  .screen {
+    height: auto;
+    min-height: 100%;
+  }
+  .screen__head {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px 18px;
     padding: 10px 14px;
+  }
+  .screen__center {
+    grid-column: 1 / -1;
+    order: -1;
+    min-width: 0;
+    padding: 0;
+    border: 0;
   }
   .screen__stage {
     min-height: 52vh;
   }
-  .round-mark__value,
-  .alive__count {
-    font-size: 24px;
+  .screen__count {
+    font-size: 26px;
   }
-  .verdict {
+  .screen__count--round {
+    font-size: 32px;
+  }
+  .screen__verdict {
     flex-wrap: wrap;
     gap: 8px 12px;
-    padding: 12px 14px;
+    padding: 10px 14px;
   }
-  .verdict__winner {
+  .screen__winner {
     font-size: 26px;
+  }
+  .screen__foot {
+    padding: 10px 14px;
   }
 
   /* 计算状态：一行一侧，条拿满宽度（此时标签不再有被挤掉的余地） */
@@ -1233,5 +2163,12 @@ details.adv .adv__body {
   * {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+    /* 只缩短时长对 `infinite` 的呼吸动画不管用 —— 它会以每帧一轮的速度继续闪。一轮就停。 */
+    animation-iteration-count: 1 !important;
+  }
+  /* 两处「状态在动」的呼吸点（连接标签 / 计算条）：静态呈现，状态词与 data-* 仍在 */
+  .conn__dot,
+  .compute__bar > i.is-running {
+    animation: none !important;
   }
 }
