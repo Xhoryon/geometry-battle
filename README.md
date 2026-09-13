@@ -915,11 +915,7 @@ map-generator stress check.
 ├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
 ├── demo/              # 参考解（reference-solver-v2）
 ├── tests/             # 回归测试套件 + 算法 fixture
-├── docs/
-│   └── agent-context/ # 给接手的 AI/开发者的**当前有效事实**（状态、架构、规矩）
-└── Plans/
-    ├── Input/         # 人输入的 Plan、规范与任务书
-    └── Output/        # 审计报告、工作日志与交接文档
+└── docs/              # 文档：规则、架构、发布说明、公平性报告
 ```
 
 **English.** `runs/slots/` is the runtime state and the official delivery point (and is
@@ -928,7 +924,7 @@ git-ignored). `algorithms/` is the tracked factory fixture — first start seeds
 match runs. `src/core/` holds the engine and the canonical Judge; `src/server/` is the
 local Web server (HTTP + WS + MatchSession); `web/` is the frontend (React + Vite +
 Canvas 2D); `tests/` holds the regression suites and algorithm fixtures;
-`docs/agent-context/` records the current valid facts for whoever takes over next.
+`docs/` contains rules, architecture, release notes, and fairness reports.
 
 
 ---
