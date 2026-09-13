@@ -1,9 +1,9 @@
 # V1.4 平台公平性实验（experiments/v1.4-fairness）
 
 > 目的：回答「Geometry Battle 对 Team A / Team B 是否镜像公平」，并把答案固化成
-> 可重复的测试与可重跑的实验脚本。**本目录只放实验脚本、说明与结果摘要**；
-> 原始产物写到 `experiments/v1.4-fairness/results/<日期>/`（本目录 `.gitignore` 已忽略 `results/`），
-> 绝不写进 `runs/`、`artifacts/`、`algorithms/`。
+> 可重复的测试与可重跑的实验脚本。**本目录只放实验脚本、说明与紧凑的结果摘要 JSON**（`results/*.json`）；
+> 整场 match / replay / audit 与逐回合明细由 `selfplay.ts --raw` 写到**仓库外**（本目录 `.gitignore` 忽略 `results/` 下
+> 除顶层 `*.json` 以外的一切），绝不写进 `runs/`、`artifacts/`、`algorithms/`。
 
 ## 1. 永久测试（已落地，`tests/`）
 
@@ -49,8 +49,8 @@ A 的 `domain[0]` 是 Emitter，B 的却是场地边 −20（`Rules.firingDomain
   因二阶差分换了加法顺序而在最后一位 ulp 上不同（2324/6000）。该度量不参与任何判定。
 - 对 B 队的影响：**这是修复的本意** —— B 现在被采到与 A 互为镜像的 x 集合。贴阈值的函数结论可能改变
   （同一组 6000 个合成边界函数里 1065 个 B 侧结论或错误码变化；8 族 2400 个随机函数里 0 个）。
-  参赛者文档应写明网格规则：「校验网格从本队 Emitter 出发、沿进攻方向以步长 h 推进到场地边界；
-  两队的采样点互为镜像」（`competitor-kit/DSL_SPECIFICATION.md` 校验表一节，待补）。
+  参赛者文档已写明网格规则（lead 在 Track B 合入，`competitor-kit/DSL_SPECIFICATION.md:177`：
+  「数值校验的采样网格也从本队 Emitter 出发、沿进攻方向以步长 h 推进到场地边界（V1.4 起对双方一致）」）。
 - 回归：`tests/mirror-fairness.ts` 的「L2: 定向探针」，198 个探针、5 个家族，除结论与错误码外还要求
   `convexityChanges / maxAbsValue / maxAbsSlope / maxAbsCurvature` 四个判定度量逐位相同
   （只比结论会漏掉「两边都合法但计数不同」这种阈值一挪就翻转的前兆）：
@@ -66,14 +66,63 @@ A 的 `domain[0]` 是 Emitter，B 的却是场地边 −20（`Rules.firingDomain
   旧代码（HEAD febf1c6 的 Validator）上该用例与「L2: 随机 AST 家族」一起变红（8/10）；修复后 10/10，
   2400 + 198 个函数零分歧。
 
-## 4. 实验脚本（A4 —— 待补）
+## 4. 实验脚本（A4，已落地）
 
-计划中的脚本（放在本目录，输出到 `results/`）：
+四个脚本都在本目录，`npx ts-node` 直接跑；它们**只读**引擎（`MatchEngine` / `judgeShot` / `generateMapOrNull`），
+不改任何规则常量，不写 `runs/` `artifacts/` `algorithms/`。
 
-- `self-play-campaign.ts`：同包自战（symmetry-probe / 官方 starter / 另一强 solver），配对镜像 seed，
-  两种槽位分配各跑一遍，记录 A wins / B wins / draws、firstSolver 分布、每回合双方耗时；
-  统计用配对检验（同一 seed 的原/镜两场是一对）。
-- `map-distribution.ts`：数千 seed 上按 §5 的成对统计检验地图分布的左右对称性
-  （障碍物质心 x 符号、区域内障碍物面积、每队到最近障碍物的间距、直线可达敌人数）。
+| 脚本 | 做什么 | 输出 |
+|---|---|---|
+| `stats.ts` | 共用统计：精确二项检验 + Clopper–Pearson CI、符号检验、Wilcoxon 符号秩（结修正）、配对 t、两样本 KS、Cohen's d_z | 被下面三者导入 |
+| `mapstats.ts` | 地图分布左右对称性：每个 (难度 × 点数) 单元 N 张图，A/B **配对**几何指标（mean\|x\|、y、到最近障碍物间距、从自动选定 Emitter 出发用**真实 `judgeShot`** 判定的直线可达敌人数、最近/平均敌人距离、障碍物质心符号 / 半场面积 / 与本队区域的 x 投影重叠与面积）；同时算 `mirrorMap(map)` 的指标做**逐位恒等**检查与 KS | `results/mapstats.json` + 终端表格 |
+| `selfplay.ts` | 同包自战 campaign：直接驱动 `MatchEngine`，每场独立临时 slot/artifact/sandbox 根，**逐场串行**；`--mirror` 用 `tests/mirror-match.ts` 的生成器替换技术给每个 seed 再打一场 M(map)；逐场记录胜者 / 结束原因 / 逐回合 firstSolver、耗时、kills、blocked、错误码，并落原始 match/replay/audit | `--out` 摘要 JSON（`results/selfplay-<campaign>.json`）+ `--raw/<campaign>/`（仓库外）整场产物与 `records.json` |
+| `summary.ts` / `analyze.ts` | campaign 汇总（槽位胜率、配对镜像检查、先手分布）；`analyze.ts` 离线复算一个或多个 `records.json` 并合并先手统计 | 终端 |
+
+### 本轮实际执行的命令（2026-09-13，报告 `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`）
+
+```bash
+RAW=/tmp/claude-0/-tmp/2693a466-c5d1-491f-901a-cbe2a9512da5/scratchpad/fairness-raw   # 仓库外的原始产物目录
+OUT=experiments/v1.4-fairness/results
+
+# 地图分布：9 个单元 × 3000 seed（种子步长 7919，避免回退造成同一张图被计两次）
+npx ts-node experiments/v1.4-fairness/mapstats.ts --seeds 3000 --start 100000 --stride 7919 --out $OUT/mapstats.json
+
+# a. symmetry-probe 自战，120 seed × {map, M(map)}，9 个单元轮转覆盖
+npx ts-node experiments/v1.4-fairness/selfplay.ts --pkg tests/fixtures/algos/symmetry-probe \
+  --seeds 120 --start 500000 --stride 101 --difficulty all --points all --mirror \
+  --campaign probe --raw $RAW --out $OUT/selfplay-probe.json
+
+# b. solver-fast 自战，90 seed × {map, M(map)}（同一组 seed，便于跨 solver 对照）
+npx ts-node experiments/v1.4-fairness/selfplay.ts --pkg playtest/competitors/solver-fast \
+  --seeds 90 --start 500000 --stride 101 --difficulty all --points all --mirror \
+  --campaign solver-fast --raw $RAW --out $OUT/selfplay-solver-fast.json
+
+# c. B-v1 自战（experiment/algo-b 的冻结副本，包哈希 a5d9af52…），90 seed × {map, M(map)}
+npx ts-node experiments/v1.4-fairness/selfplay.ts --pkg <b-v1 包目录> \
+  --seeds 90 --start 500000 --stride 101 --difficulty all --points all --mirror \
+  --campaign b-v1 --raw $RAW --out $OUT/selfplay-b-v1.json
+
+# 离线复算 / 合并先手统计
+npx ts-node experiments/v1.4-fairness/analyze.ts $RAW/probe/records.json $RAW/solver-fast/records.json $RAW/b-v1/records.json
+```
+
+四步由一个串行 shell 脚本依次执行（`$RAW/run-campaign.sh`，前后各记一次 `uptime`），**任何时刻只有一场比赛在跑**。
+`--difficulty all --points all` 的单元分配是 `difficulty = DIFF[i % 3]`、`points = PTS[⌊i/3⌋ % 3]`，
+120 seed → 每单元 13–14 个，90 seed → 每单元 10 个。
+
+### 读结果时的注意事项
+
+- `mapstats.json` 的 `verdict` 按脚本头部**预先登记**的规则给出（Wilcoxon p < 0.001/指标数 且 |d_z| ≥ 0.05 → CONFIRMED）；
+  `mirrorIdentity.mismatches` 必须是 0 —— 它证明 mirrorMap 与指标函数（含真实 judgeShot）本身是镜像对称的，
+  否则后面的配对比较无意义。
+- `selfplay-*.json` 里 `byVariant.orig` 才是「自然地图分布 + 平台」下的槽位胜率；`byVariant.all` 在 `--mirror` 下
+  被配对结构**强制**拉向 0.5（每对分胜负的比赛贡献一 A 一 B），只用来配合 `pairCheck` 看平台是否破坏了这个结构。
+- `pairCheck.violations` 对 symmetry-probe 必须为空；对 solver-fast / B-v1 **不是**平台指标（它们的策略本来就不镜像对称，
+  且可能有随机 / 时间依赖），只作参考。
+- `firstSolver.*` 只统计 `result = COMPLETE` 的回合；先手在 Locked Attack Right 下不影响击杀（见报告 §4）。
+
+## 5. 结果
+
+见 `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`（方法、表格、四条结论与置信度、平台缺陷、局限与复现）。
 
 跑任何重实验前后都记录 `uptime`：500 ms 预算下机器负载会造成 TIMEOUT 假红。
