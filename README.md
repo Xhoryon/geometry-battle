@@ -92,7 +92,7 @@ point can produce a match that never terminates — see
   以及本 README 的双语化。
 - **V1.4 —— Platform Fairness · Handbook · UX Refresh。** 平台镜像公平性的永久测试
   （Level 1–6，`tests/mirror-*.ts`）与同包自战 / 先手 / 地图分布战役（结论：镜像公平 PASS，
-  槽位 / 先手 / 地图偏差均 DISPROVEN，见 `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`）；
+  槽位 / 先手 / 地图偏差均 DISPROVEN，见 `docs/V1.4_FAIRNESS_REPORT.md`）；
   修复了唯一发现的平台不对称（Validator 采样网格锚点）；选手手册新增「坐标方向与镜像」
   与镜像自检工具 `check_mirror.py`；前端重构为赛事系统：首页 `/`（选择身份 + 最近比赛）、
   七步裁判向导、参赛者页四块六步与显式 LOCKED、观众记分板式大屏、回放播放器，统一状态
@@ -120,7 +120,7 @@ point can produce a match that never terminates — see
 - **V1.4 — Platform Fairness · Handbook · UX Refresh.** Permanent mirror-fairness tests
   (Levels 1–6, `tests/mirror-*.ts`) plus same-solver self-play / first-solver / map-distribution
   campaigns (verdict: mirror fairness PASS; slot, first-solver and map bias all DISPROVEN — see
-  `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`); the one platform asymmetry found (the
+  `docs/V1.4_FAIRNESS_REPORT.md`); the one platform asymmetry found (the
   Validator's sampling-grid anchor) is fixed; the competitor handbook gains "Orientation &
   Symmetry" and the `check_mirror.py` self-check; the frontend becomes a tournament system: a
   Home page `/` (choose your role + recent matches), a seven-stage judge wizard, a four-block /
