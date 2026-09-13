@@ -1,9 +1,11 @@
+<!-- bilingual-doc: zh-CN + en-US -->
+
 # Geometry Battle
 
 **An educational algorithm competition sandbox for computational geometry,
 algorithm optimization, and AI-assisted programming.**
 
-中文名：几何斗殴 · 当前版本：V1.3 Platform（中英双语界面）
+中文名：几何斗殴 · 当前版本：V1.4 Platform（中英双语界面 + 平台公平性）
 
 **许可：PolyForm Noncommercial License 1.0.0** —— *source-available for noncommercial use*。
 **这不是 OSI 认可的开源许可**，商业用途需另行授权，详见 [许可与使用范围](#许可与使用范围--license--scope)。

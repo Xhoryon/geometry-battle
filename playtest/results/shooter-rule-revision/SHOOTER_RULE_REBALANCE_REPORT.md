@@ -1,6 +1,23 @@
-# Shooter Rule Revision & Rebalance — Report
+<!-- bilingual-doc: zh-CN + en-US -->
 
-Geometry Battle V1.1 · 三算法对抗 · 规则修订后的重跑
+# Shooter Rule Revision & Rebalance — Report / 射手规则修订与重平衡 — 报告
+
+**Geometry Battle V1.1 · Three-Algorithm Tournament · Post-Rule-Revision Rerun**
+
+**几何斗殴 V1.1 · 三算法对抗 · 规则修订后的重跑**
+
+---
+
+## Document Metadata / 文档元数据
+
+### English
+
+- Protocol version: 1.1 (`competitor-kit/` public interface)
+- Test date: 2026-09-10
+- Nature of this round: **Playtest / Balance Research + One Human-Authorized Rule Revision**, not a free platform development task
+- Rule version: **V1.1 Playtest Rules — Revision 2** (per task specification §28, not called V1.2)
+
+### 中文
 
 - 协议版本：1.1（`competitor-kit/` 公开接口）
 - 测试日期：2026-09-10
@@ -9,7 +26,38 @@ Geometry Battle V1.1 · 三算法对抗 · 规则修订后的重跑
 
 ---
 
-## Git baseline（本轮全部证据的可寻址锚点）
+## Git baseline / Git 基线
+
+### English
+
+**Addressable anchor for all evidence in this round**
+
+| Item | Value |
+|---|---|
+| Branch | `feature/v1.1-ui-protocol` |
+| **RULE_BASELINE_SHA** (pre-revision rules & production implementation) | `877f142` |
+| HEAD at result generation | `95f2a5f` |
+| `v1.0.0-competition` | `26d7970fbcba7b50f04e0743130ca4ffdd3bd904` (**unchanged** this round) |
+
+Commits from this round:
+
+```text
+90647f3  docs(rules): amend shooter elimination semantics
+2e825a1  feat(v1.1): preserve locked attack after shooter elimination
+95f2a5f  refactor(v1.1): drop stale cancellation comments and runner-cancel wording
+```
+
+**Working tree at result generation**: 180 matches ran after `2e825a1`; `95f2a5f` only changed comments and one error message, **no behavior change**. Harness/results commits followed afterward. For strict reproduction, use the tree at `95f2a5f` or later.
+
+Canonical rule path (sole authoritative rule input for this round, **revised this round**):
+
+```text
+Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md
+```
+
+### 中文
+
+**本轮全部证据的可寻址锚点**
 
 | 项 | 值 |
 |---|---|
@@ -26,8 +74,7 @@ Geometry Battle V1.1 · 三算法对抗 · 规则修订后的重跑
 95f2a5f  refactor(v1.1): drop stale cancellation comments and runner-cancel wording
 ```
 
-**结果产出时的工作区说明**：180 场在 `2e825a1` 之后运行；`95f2a5f` 只改注释与一条错误文案，
-**无行为变更**，其后的 harness/结果提交再补齐。若需严格复现，请用 `95f2a5f` 起的树。
+**结果产出时的工作区说明**：180 场在 `2e825a1` 之后运行；`95f2a5f` 只改注释与一条错误文案，**无行为变更**，其后的 harness/结果提交再补齐。若需严格复现，请用 `95f2a5f` 起的树。
 
 Canonical rule path（本轮唯一权威规则输入，本轮**被修订**）：
 
@@ -37,15 +84,29 @@ Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.
 
 ---
 
-## 1. Old Rule
+## 1. Old Rule / 1. 旧规则
+
+### English
 
 ```text
 First Solver kills opponent Shooter
 → opponent shot cancelled
 ```
 
-即：先手方一旦击杀对方的 Shooter，对方本轮**已经算出或正在计算**的攻击不再执行，
-其沙箱进程被立即终止。回合结果码为 `CANCELLED_A` / `CANCELLED_B`。
+That is: once the first-mover kills the opponent's Shooter, the opponent's attack **already computed or being computed** is no longer executed, and their sandbox process is immediately terminated. Round result code: `CANCELLED_A` / `CANCELLED_B`.
+
+Round-2 report (`playtest/results/round-2/`) concluded:
+
+> **Under this ruleset, speed affects outcome through exactly one channel: Shot Cancellation.**
+
+### 中文
+
+```text
+先手方一旦击杀对方的 Shooter
+→ 对方本轮攻击被取消
+```
+
+即：先手方一旦击杀对方的 Shooter，对方本轮**已经算出或正在计算**的攻击不再执行，其沙箱进程被立即终止。回合结果码为 `CANCELLED_A` / `CANCELLED_B`。
 
 Round-2 报告（`playtest/results/round-2/`）的判读是：
 
@@ -53,27 +114,58 @@ Round-2 报告（`playtest/results/round-2/`）的判读是：
 
 ---
 
-## 2. New Rule
+## 2. New Rule / 2. 新规则
+
+### English
+
+```text
+After START, both sides gain independent and irrevocable attack rights for this round.
+```
+
+- Shooter is the **mathematical firing anchor** for this round's attack function, not a "gunner who must stay alive until firing moment". Even if Shooter is killed before firing, the function must still satisfy `f(x_shooter) = y_shooter`, using the Shooter coordinates from the START snapshot.
+- **No replacement, no recomputation**: do not randomly pick another alive point, do not rerun the algorithm, input snapshot is frozen.
+- **Process unaffected**: Shooter death is no longer a Runner termination signal; the second-mover algorithm still has its full official computation deadline.
+- The **only** reasons an attack is not executed: `TIMEOUT` / `INVALID` / `CRASH`.
+- New endgame: after one round both sides reach zero simultaneously → **MATCH DRAW**, `endReason = MUTUAL_ELIMINATION`. **MUST NOT** declare the First Solver as winner.
+
+Rule text: see `Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md` §38.x / §39.
+
+### 中文
 
 ```text
 START 之后，双方获得本轮独立且不可撤销的攻击权。
 ```
 
-- Shooter 是本轮攻击函数的**数学发射锚点**，不是「必须活到开火瞬间的枪手」。
-  即使 Shooter 在开火前被击杀，函数仍必须满足 `f(x_shooter) = y_shooter`，
-  用的还是 START 快照里的 Shooter 坐标。
+- Shooter 是本轮攻击函数的**数学发射锚点**，不是「必须活到开火瞬间的枪手」。即使 Shooter 在开火前被击杀，函数仍必须满足 `f(x_shooter) = y_shooter`，用的还是 START 快照里的 Shooter 坐标。
 - **不换人、不重算**：不随机改选存活点，不重跑算法，输入快照冻结。
-- **进程不受影响**：Shooter 死亡不再是 Runner termination signal，
-  后手算法仍拥有完整的官方计算 deadline。
+- **进程不受影响**：Shooter 死亡不再是 Runner termination signal，后手算法仍拥有完整的官方计算 deadline。
 - 攻击不执行的**唯一**原因是 `TIMEOUT` / `INVALID` / `CRASH`。
-- 新增终局：一轮结束后双方同时归零 → **MATCH DRAW**，`endReason = MUTUAL_ELIMINATION`，
-  **不得**因为谁是 First Solver 就判谁赢。
+- 新增终局：一轮结束后双方同时归零 → **MATCH DRAW**，`endReason = MUTUAL_ELIMINATION`，**不得**因为谁是 First Solver 就判谁赢。
 
 规则文本见 `Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md` §38.x / §39。
 
 ---
 
-## 3. Reason for Change
+## 3. Reason for Change / 3. 修订原因
+
+### English
+
+Not a product of balance derivation, but a **human decision** (task specification §2: `Rule amended by human decision`).
+
+Consequences caused by the revised rule in Round-2 testing:
+
+| Observation | Value |
+|---|---|
+| Fast vs Optimizer official record | **Fast 50 / Optimizer 0 / Draw 10** |
+| Optimizer total actual kills across all matches | 76 |
+| Kills swallowed by old rule (fast-vs-optimizer) | **787**, of which **84.8%** of targets were still alive at match end |
+| Of which反杀s against Fast Shooter | 253 times (43% of all rounds) |
+| Optimizer's effective output erased | Approximately **91%** of curves that could have produced kills |
+| Optimizer's per-round "no-hit rate" | **0.9148** |
+
+That is: the cancellation rule nearly zeroed the slow side's function quality, making speed the only channel to victory.
+
+### 中文
 
 不是平衡性推导的产物，是**人类决定**（任务书 §2：`Rule amended by human decision`）。
 
@@ -92,10 +184,29 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 
 ---
 
-## 4. Implementation Diff Scope
+## 4. Implementation Diff Scope / 4. 实现改动范围
 
-生产改动面**只有取消语义本身**；DSL 白名单、命中判定、障碍物碰撞、先手规则、
-计时终点与超时预算、沙箱策略一律未动。
+### English
+
+Production change scope **limited to cancellation semantics only**; DSL whitelist, hit detection, obstacle collision, first-mover rule, timing endpoint and timeout budget, sandbox policy all untouched.
+
+| File | Change |
+|---|---|
+| `src/core/Match.ts` | `resolveOrderedShots` **removed** "Shooter dead → skip that side's shot" guard and `cancelled` / `onCancelled` output params; added `shooterAliveAtAttack`. `computeRound` removed `onFirstResult` cancellation hook; added `mutualElimination`, `MatchLog.endReason`, `MatchEngine.endReason()` |
+| `src/runner/SandboxRunner.ts` | Removed `DuelOptions.onFirstResult` and its `runner.cancel()` branch (§10). Cancellation path error message changed to "runner cancelled by host (process terminated)" (error code unchanged) |
+| `src/core/Logs.ts` | `RoundLog` / `ReplayFrame` added `attacksExecuted` / `shooterAliveAtAttack` / `shooterA|BAliveAfterRound` / `mutualElimination` / `endReason`; `CANCELLED_A/B` and `cancelled*` annotated as **historical/compatible** |
+| `src/ui/AudienceScreenUI.ts`, `src/operator/cli.ts` | Replay and settlement screens no longer print "cancelled", changed to show actual firing order and "Shooter dead at firing (attack right locked, not cancelled)" |
+| `Plans/Input/…Playtest Specification.md` | §38 rewritten as Locked Attack Right (38.1–38.6); §39 downgraded CANCELLED and preserved historical evidence |
+| `competitor-kit/ALGORITHM_REQUIREMENTS.md`, `README.md` | Public documentation synchronized |
+| `tests/` | Old `shooter-cancel` suite reclassified per §18 as `locked-attack-right` (R1–R8) |
+
+**Design choice note**: Cancellation semantics is a **structural deletion** rather than leaving a switch that's always false — guards and output params no longer exist, old rule cannot be silently reintroduced (task specification §30 requires re-gate auditor to verify "whether old cancellation path残留s", this is a positive response to that check).
+
+**Unchanged**: `RoundMachine`'s 19 phases and transition table **not touched at all** (`CHECK_SHOOTER` phase name retained, now only means "check Shooter alive" as a progression step, no longer carries any cancellation semantics — it's part of the phase sequence, renaming would disturb the frozen state machine vocabulary). `TIE_EPS_MS`, first-mover determination, timeout budget, sandbox SBPL, DSL whitelist, hit and obstacle detection all byte-for-byte untouched, verifiable via `git diff 877f142..HEAD -- src/core/Rules.ts src/core/Judge.ts src/core/Round.ts src/runner/SandboxRunner.ts` (the latter's diff only has cancellation hook removal and one error message).
+
+### 中文
+
+生产改动面**只有取消语义本身**；DSL 白名单、命中判定、障碍物碰撞、先手规则、计时终点与超时预算、沙箱策略一律未动。
 
 | 文件 | 改动 |
 |---|---|
@@ -107,21 +218,48 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 | `competitor-kit/ALGORITHM_REQUIREMENTS.md`、`README.md` | 公开说明同步 |
 | `tests/` | 旧 `shooter-cancel` 套件按 §18 重分类为 `locked-attack-right`（R1–R8） |
 
-**设计选择说明**：取消语义是**结构性删除**而不是留一个恒为 false 的开关 ——
-守卫与出参都不再存在，旧规则无法被静默重新引入（任务书 §30 要求重审方核查「旧 cancellation
-路径是否残留」，这是对该核查的正面回应）。
+**设计选择说明**：取消语义是**结构性删除**而不是留一个恒为 false 的开关 —— 守卫与出参都不再存在，旧规则无法被静默重新引入（任务书 §30 要求重审方核查「旧 cancellation 路径是否残留」，这是对该核查的正面回应）。
 
-**未改动**：`RoundMachine` 的 19 个阶段与转换表**一个都没动**
-（`CHECK_SHOOTER` 阶段名保留，现在只表示「检查 Shooter 存活」这一步的推进，
-不再带任何取消语义 —— 它是阶段序列的一部分，改名会牵动冻结的状态机词汇表）。
-`TIE_EPS_MS`、先手判定、超时预算、沙箱 SBPL、DSL 白名单、命中与障碍物判定
-全部逐字节未动，可用 `git diff 877f142..HEAD -- src/core/Rules.ts src/core/Judge.ts
-src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删除取消钩子与
-一条错误文案）。
+**未改动**：`RoundMachine` 的 19 个阶段与转换表**一个都没动**（`CHECK_SHOOTER` 阶段名保留，现在只表示「检查 Shooter 存活」这一步的推进，不再带任何取消语义 —— 它是阶段序列的一部分，改名会牵动冻结的状态机词汇表）。`TIE_EPS_MS`、先手判定、超时预算、沙箱 SBPL、DSL 白名单、命中与障碍物判定全部逐字节未动，可用 `git diff 877f142..HEAD -- src/core/Rules.ts src/core/Judge.ts src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删除取消钩子与一条错误文案）。
 
 ---
 
-## 5. Regression Evidence
+## 5. Regression Evidence / 5. 回归证据
+
+### English
+
+| Item | Result |
+|---|---|
+| `npm run typecheck` | **0 errors** |
+| `npx ts-node tests/locked-attack-right.ts` | **10/10 passed** (R1–R8 + 2 existing coverage) |
+| Full regression | **25/26** — only failure `algorithm-slot`, **not introduced this round**, see §15 |
+| `shotCancellationRate` (180 match实测) | **0.0** (by design, evidence required by §23) |
+| `INVALID / TIMEOUT / CRASH` | **0 / 0 / 0** (total 4496 "team×round" samples) |
+| Rerun consistency | Offline model predictions for all three pairings match official results **field-for-field identical** (§9) |
+
+Final full regression (`npx ts-node tests/run-all.ts`, on commit `95f2a5f` + this round's harness/results):
+
+```text
+  ✓ dsl-contract            ✓ preflight-decoy          ✓ process-tree-cleanup
+  ✓ convexity-aliasing      ✓ result-ipc               ✓ hostile-input
+  ✓ official-starter        ✓ algorithm-slot  ✗        ✓ timing-fairness
+  ✓ map-fairness            ✓ full-match-e2e           ✓ replay
+  ✓ obstacle-block          ✓ runner-isolation         ✓ runtime-manifest
+  ✓ dual-shooter-selection  ✓ cross-round-cheat        ✓ competitor-kit
+  ✓ locked-attack-right     ✓ package-tamper
+  ✓ alive-kill              ✓ timeout-boundary
+  ✓ roundstate-equality
+  ✓ input-protocol
+  ✓ stage-gating
+  ✓ pre-start-execution
+
+25/26 suites passed
+Failed suite: algorithm-slot
+```
+
+`algorithm-slot` failure **not introduced this round** (§15 P-1 has stash isolation and bisect evidence).
+
+### 中文
 
 | 项 | 结果 |
 |---|---|
@@ -154,7 +292,26 @@ src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删
 
 `algorithm-slot` 的失败**不是本轮引入**（§15 P-1 有 stash 隔离与 bisect 证据）。
 
-### 5.1 R1–R8（任务书 §17）
+---
+
+### 5.1 R1–R8 / 5.1 R1–R8（任务书 §17）
+
+### English
+
+| ID | Scenario | Result |
+|---|---|---|
+| R1 | First-mover kills opponent Shooter, second-mover already has valid solution → second-mover still fires | ✓ Structural assertion: `shooterAliveAtAttack.B === false` and `shots.B !== null` |
+| R2 | First-mover kills opponent Shooter, second-mover returns valid solution later → still fires (end-to-end, sniper vs slow-sniper) | ✓ `attacksExecuted === ['A','B']`, `hits.B.length > 0` |
+| R3 | First-mover kills opponent Shooter, second-mover times out → no attack, reason is `TIMEOUT` | ✓ `result === 'TIMEOUT_B'`, `cancelled.B === false`, `result !== 'CANCELLED_B'` |
+| R4 | First-mover kills opponent Shooter, second-mover output invalid → no attack | ✓ `result === 'INVALID_B'`, `cancelled.B === false` |
+| R5 | Both Shooters kill each other → both attacks resolve | ✓ One structural and one end-to-end |
+| R6 | Both sides reach zero in same round → `MUTUAL_ELIMINATION` / `DRAW` | ✓ Six-round scripted match, `winner === 'draw'`, `endReason() === 'MUTUAL_ELIMINATION'`, persisted logs consistent |
+| R7 | Dead Shooter cannot be selected next round | ✓ |
+| R8 | No Shooter Replacement within same round | ✓ Shooter id unchanged, no second computation, input hash unchanged |
+
+**Regression validity counter-proof**: After temporarily adding back the old guard (`if (!shooter.alive) continue;`) to `resolveOrderedShots`, suite immediately dropped from 10/10 to 6/10, with R1 / R2 / R5 / R6 all turning red, then restored and confirmed no残留. That is, this regression batch **does catch** old cancellation rule resurrection.
+
+### 中文
 
 | 编号 | 场景 | 结果 |
 |---|---|---|
@@ -167,11 +324,26 @@ src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删
 | R7 | 阵亡 Shooter 下一轮不可再选 | ✓ |
 | R8 | 同轮不做 Shooter Replacement | ✓ Shooter id 不变、无第二次计算、输入哈希不变 |
 
-**回归有效性反证**：把旧守卫（`if (!shooter.alive) continue;`）临时加回 `resolveOrderedShots` 后，
-套件立刻从 10/10 掉到 6/10，R1 / R2 / R5 / R6 全部变红，随后恢复并确认无残留。
-即这批回归**确实抓得到**旧取消规则的复活。
+**回归有效性反证**：把旧守卫（`if (!shooter.alive) continue;`）临时加回 `resolveOrderedShots` 后，套件立刻从 10/10 掉到 6/10，R1 / R2 / R5 / R6 全部变红，随后恢复并确认无残留。即这批回归**确实抓得到**旧取消规则的复活。
 
-### 5.2 §18 旧测试重分类
+---
+
+### 5.2 Old Test Reclassification / 5.2 §18 旧测试重分类
+
+### English
+
+| Assertion | Classification | Handling |
+|---|---|---|
+| "First-mover kills opponent Shooter → opponent attack cancelled" and 5 others | **obsolete due to authorized rule change** | Suite entirely rewritten as `locked-attack-right` |
+| "Dead Shooter cannot continue attacking" (originally same-round semantics) | **obsolete** | Rewritten as new semantics: dead Shooter cannot be selected next round (R7) |
+| "After first-mover kill, second-mover's shot guard reachable (P2-B)" | **obsolete** | Guard deleted, changed to assert opposite (R1) |
+| "On tied first-mover, both sides fire simultaneously based on same snapshot" | **still valid** | Retained as-is |
+| "Backward-facing attack does not hit enemies behind self" | **still valid** | Retained as-is |
+| `tests/replay.ts:119-122` "Last frame winner has alive points, loser全灭" | **obsolete** (implies "only one side can全灭") | Rewritten: draws only possible from mutual elimination, non-draws still winner alive + loser全灭 |
+
+**Unchanged**: Any assertions for timing fairness, DSL, hit, obstacle, boundary, START, sandbox.
+
+### 中文
 
 | 断言 | 分类 | 处理 |
 |---|---|---|
@@ -186,7 +358,23 @@ src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删
 
 ---
 
-## 6. Fast vs Optimizer
+## 6. Fast vs Optimizer / 6. Fast vs Optimizer
+
+### English
+
+| | Round-2 (old rule) | Revision 2 |
+|---|---|---|
+| Record | Fast **50** · Optimizer **0** · Draw 10 | Fast **2** · Optimizer **38** · Draw 20 |
+| Fast first-mover rate | 0.854 (merged across pairings) | **1.000** |
+| Optimizer first-mover rate | 0.000 | **0.000** |
+| Fast kills per effective shot | 0.5775 | 0.541 |
+| Optimizer kills per effective shot | 0.285 | **0.662** |
+| Fast no-hit rate | 0.6406 | 0.651 |
+| Optimizer no-hit rate | **0.9148** | **0.665** |
+
+Fast **is first-mover every single round** (1.000 vs 0.000), yet lost 2-38. First-mover rate changed from "decisive" to "no conversion".
+
+### 中文
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -198,12 +386,24 @@ src/core/Round.ts src/runner/SandboxRunner.ts` 核对（后者的 diff 只有删
 | Fast 无命中率 | 0.6406 | 0.651 |
 | Optimizer 无命中率 | **0.9148** | **0.665** |
 
-Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。
-先手率从「决定性」变成「无转化」。
+Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。先手率从「决定性」变成「无转化」。
 
 ---
 
-## 7. Fast vs Hybrid
+## 7. Fast vs Hybrid / 7. Fast vs Hybrid
+
+### English
+
+| | Round-2 (old rule) | Revision 2 |
+|---|---|---|
+| Record | Fast **26** · Hybrid 8 · Draw 26 | Fast **13** · Hybrid **10** · Draw **37** |
+| Fast first-mover rate | — | 0.841 |
+| Hybrid first-mover rate | — | 0.155 |
+| Swap consistency | — | `swapConsistent=1` / `swapFlipped=6` |
+
+This is the only "near-tie" pairing (13-10), but **after swapping order, 6 out of 7 comparable conditions flipped outcome**, suggesting this difference is closer to timing noise rather than stable strategic advantage. Mutual elimination most concentrated in this pairing: **15/60 = 25.0%**.
+
+### 中文
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -212,13 +412,26 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。
 | Hybrid 先手率 | — | 0.155 |
 | 换序一致性 | — | `swapConsistent=1` / `swapFlipped=6` |
 
-这是唯一「接近打平」的一对（13-10），但**换序后 7 个可比条件里有 6 个胜负翻转**，
-说明这点差距更接近时序噪声而不是稳定的策略优势。
-同归于尽在这一对里最集中：**15/60 = 25.0%**。
+这是唯一「接近打平」的一对（13-10），但**换序后 7 个可比条件里有 6 个胜负翻转**，说明这点差距更接近时序噪声而不是稳定的策略优势。同归于尽在这一对里最集中：**15/60 = 25.0%**。
 
 ---
 
-## 8. Hybrid vs Optimizer
+## 8. Hybrid vs Optimizer / 8. Hybrid vs Optimizer
+
+### English
+
+| | Round-2 (old rule) | Revision 2 |
+|---|---|---|
+| Record | Hybrid **39** · Optimizer 4 · Draw 17 | Hybrid **3** · Optimizer **37** · Draw 20 |
+| Hybrid first-mover rate | 0.5604 (across pairings) | 0.889 |
+| Optimizer first-mover rate | 0.000 | 0.111 |
+| Hybrid kills per effective shot | 0.4495 | 0.487 |
+| Optimizer kills per effective shot | 0.285 | **0.604** |
+| Swap consistency | — | `swapConsistent=14` / `swapFlipped=1` |
+
+**Direction completely reversed**: Round-2 had Hybrid crushing Optimizer 39-4, Revision 2 has it crushed 3-37. Round-2's Hybrid advantage was a gift from the cancellation rule, not a function quality advantage. Swap consistency 14/1 shows this reversal is stable, not noise.
+
+### 中文
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -229,39 +442,71 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。
 | Optimizer 每有效射击击杀 | 0.285 | **0.604** |
 | 换序一致性 | — | `swapConsistent=14` / `swapFlipped=1` |
 
-**方向完全反转**：Round-2 里 Hybrid 39-4 碾压 Optimizer，Revision 2 里 3-37 被碾压。
-Round-2 中 Hybrid 的优势是取消规则送给它的礼物，不是函数质量的优势。
-换序一致性 14/1 说明这个反转是稳定的，不是噪声。
+**方向完全反转**：Round-2 里 Hybrid 39-4 碾压 Optimizer，Revision 2 里 3-37 被碾压。Round-2 中 Hybrid 的优势是取消规则送给它的礼物，不是函数质量的优势。换序一致性 14/1 说明这个反转是稳定的，不是噪声。
 
 ---
 
-## 9. 反事实：离线模型逐场命中官方结果
+## 9. Counterfactual: Offline Model Field-for-Field Matches Official Results / 9. 反事实：离线模型逐场命中官方结果
 
-本轮把旧的 `CF-NO-CANCEL` 归档为 **historical counterfactual**（§21），
-新增唯一反事实 **`CF-LEGACY-CANCEL`**（§22，重加被废止的取消分支）。
-同时保留 `locked-attack` 模式作为**模型保真度核对**（它现在就是生产规则，不再是反事实）。
+### English
+
+This round archives the old `CF-NO-CANCEL` as **historical counterfactual** (§21), adds sole new counterfactual **`CF-LEGACY-CANCEL`** (§22, re-adding废止ed cancellation branch). Simultaneously retains `locked-attack` mode as **model fidelity check** (it's now production rule, no longer counterfactual).
+
+Round-2 used offline model to predict "if cancellation removed" under old rule; this round places that prediction alongside **actual official results**:
+
+| Pairing | Round-2 `CF-NO-CANCEL` prediction | Revision 2 official测 | Consistent? |
+|---|---|---|
+| fast-vs-hybrid | Fast 13 · Hybrid 10 · Draw 37 | Fast **13** · Hybrid **10** · Draw **37** | **Field-for-field identical** |
+| optimizer-vs-hybrid | Optimizer 37 · Hybrid 3 · Draw 20 | Optimizer **37** · Hybrid **3** · Draw **20** | **Field-for-field identical** |
+| fast-vs-optimizer | Optimizer 38 · Fast 2 · Draw 20 | Optimizer **38** · Fast **2** · Draw **20** | **Field-for-field identical** |
+
+**This is one of the two strongest pieces of evidence this round**:
+
+1. Revision was **faithfully implemented** — an independent offline model (Python reimplementation, `gb_counterfactual.py`) reproduced 180/180 outcomes on the production implementation.
+2. Post-revision balance results are **deterministic consequences of the rule**, not artifacts of implementation details, timing jitter, or environment — otherwise the offline model couldn't match field-for-field.
+
+This round's `locked-attack` mode simulation results also match official results field-for-field (table above shows its output).
+
+### 中文
+
+本轮把旧的 `CF-NO-CANCEL` 归档为 **historical counterfactual**（§21），新增唯一反事实 **`CF-LEGACY-CANCEL`**（§22，重加被废止的取消分支）。同时保留 `locked-attack` 模式作为**模型保真度核对**（它现在就是生产规则，不再是反事实）。
 
 Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本轮把该预测与**真实产出的官方结果**并排：
 
 | 配对 | Round-2 `CF-NO-CANCEL` 预测 | Revision 2 官方实测 | 一致？ |
-|---|---|---|---|
+|---|---|---|
 | fast-vs-hybrid | Fast 13 · Hybrid 10 · Draw 37 | Fast **13** · Hybrid **10** · Draw **37** | **逐场完全相同** |
 | optimizer-vs-hybrid | Optimizer 37 · Hybrid 3 · Draw 20 | Optimizer **37** · Hybrid **3** · Draw **20** | **逐场完全相同** |
 | fast-vs-optimizer | Optimizer 38 · Fast 2 · Draw 20 | Optimizer **38** · Fast **2** · Draw **20** | **逐场完全相同** |
 
 **这是本轮最强的两条证据之一**：
 
-1. 修订被**忠实实现** —— 一个独立的离线模型（Python 重实现，`gb_counterfactual.py`）
-   在生产实现上重现了 180/180 的全部胜负。
-2. 修订后的平衡结果是**规则的确定性后果**，不是实现细节、时序抖动或环境的产物 ——
-   否则离线模型不可能逐场命中。
+1. 修订被**忠实实现** —— 一个独立的离线模型（Python 重实现，`gb_counterfactual.py`）在生产实现上重现了 180/180 的全部胜负。
+2. 修订后的平衡结果是**规则的确定性后果**，不是实现细节、时序抖动或环境的产物 —— 否则离线模型不可能逐场命中。
 
 本轮 `locked-attack` 模式的模拟结果同样与官方逐场一致（上表即其输出）。
 
-### 9.1 旧规则在**新世界**上的代价（`CF-LEGACY-CANCEL` 归因）
+---
 
-在官方（新规则）世界上重放每个回合，用「先手的实际命中里是否含对方 Shooter」
-重推旧规则会取消什么（不再读平台 flag —— 平台已不再记录取消）：
+### 9.1 Old Rule's Cost in the **New World** / 9.1 旧规则在**新世界**上的代价（`CF-LEGACY-CANCEL` 归因）
+
+### English
+
+Replay each round on the official (new rule) world, use "whether first-mover's actual hits contain opponent Shooter" to推旧规则会取消什么 (no longer read platform flag — platform no longer records cancellation):
+
+| Algorithm | Rounds | Would be cancelled by old rule | Kills swallowed | Includes反杀 opponent Shooter |
+|---|---|---|---|---|
+| fast | 1521 | 59 (**3.9%**) | 60 | 57 |
+| hybrid | 1568 | 170 (**10.8%**) | 264 | 147 |
+| optimizer | 1407 | 375 (**26.7%**) | **762** | **310** |
+
+Old rule's penalty **monotonically correlated with algorithm speed**: slower, more rounds cancelled. Optimizer has one out of every four rounds erased.
+
+> Metric reminder: `Swallowed kills where "target still alive at终局" = 0%` (Round-2 same metric was 84.8%). This is a consequence of **metric definition**, not "old rule doesn't hurt": this metric uses this round's new rule终局 alive set, and new rule终局 has almost everyone dead, so denominator naturally approaches 0. Use raw counts (762 / 264 / 60) as primary.
+
+### 中文
+
+在官方（新规则）世界上重放每个回合，用「先手的实际命中里是否含对方 Shooter」重推旧规则会取消什么（不再读平台 flag —— 平台已不再记录取消）：
 
 | 算法 | 回合数 | 会被旧规则取消 | 被吞掉的击杀 | 含反杀对方 Shooter |
 |---|---|---|---|---|
@@ -269,14 +514,28 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 | hybrid | 1568 | 170（**10.8%**） | 264 | 147 |
 | optimizer | 1407 | 375（**26.7%**） | **762** | **310** |
 
-旧规则的惩罚**与算法速度单调相关**：越慢，被取消的回合越多。
-Optimizer 每四个回合就有一个会被抹掉。
+旧规则的惩罚**与算法速度单调相关**：越慢，被取消的回合越多。Optimizer 每四个回合就有一个会被抹掉。
 
-> 口径提醒：`被吞掉的击杀中「目标在终局仍存活」= 0%`（Round-2 同一指标为 84.8%）。
-> 这是**指标定义**的后果，不是「旧规则不痛」：该指标拿的是**本轮新规则下**的终局存活集合，
-> 而新规则终局几乎人人战死，因此分母天然接近 0。请以原始计数（762 / 264 / 60）为准。
+> 口径提醒：`被吞掉的击杀中「目标在终局仍存活」= 0%`（Round-2 同一指标为 84.8%）。这是**指标定义**的后果，不是「旧规则不痛」：该指标拿的是**本轮新规则下**的终局存活集合，而新规则终局几乎人人战死，因此分母天然接近 0。请以原始计数（762 / 264 / 60）为准。
 
-### 9.2 `CF-LEGACY-CANCEL` 的前向模拟
+---
+
+### 9.2 `CF-LEGACY-CANCEL` Forward Simulation / 9.2 `CF-LEGACY-CANCEL` 的前向模拟
+
+### English
+
+| Pairing | Mode | Wins | Suppressed shots | Fired after death |
+|---|---|---|---|---|
+| fast-vs-hybrid | `cf-legacy-cancel` | Fast 24 · Hybrid 10 · Draw 26 | 303 | 0 |
+| fast-vs-hybrid | `locked-attack` | Fast **13** · Hybrid 10 · Draw **37** | 0 | **228** |
+| optimizer-vs-hybrid | `cf-legacy-cancel` | Hybrid 38 · Optimizer 4 · Draw 18 | 250 | 0 |
+| optimizer-vs-hybrid | `locked-attack` | Optimizer **37** · Hybrid 3 · Draw 20 | 0 | **173** |
+| fast-vs-optimizer | `cf-legacy-cancel` | Fast 50 · Optimizer 0 · Draw 10 | 304 | 0 |
+| fast-vs-optimizer | `locked-attack` | Optimizer **38** · Fast 2 · Draw 20 | 0 | **200** |
+
+Compared to Round-2 official测 (50-0-10, 39-4-17, 26-8-26): `cf-legacy-cancel` **exactly reproduces** 50-0-10 on fast-vs-optimizer, other two pairings differ by 1–2 matches (24-10-26 vs 26-8-26; 38-4-18 vs 39-4-17). Differences expected: simulation runs on **this round's** map sequence and auto-selection, not bit-for-bit replicating Round-2's manual selection records.
+
+### 中文
 
 | 配对 | 模式 | 胜场 | 被压制射击 | 阵亡后仍开火 |
 |---|---|---|---|---|
@@ -287,14 +546,28 @@ Optimizer 每四个回合就有一个会被抹掉。
 | fast-vs-optimizer | `cf-legacy-cancel` | Fast 50 · Optimizer 0 · Draw 10 | 304 | 0 |
 | fast-vs-optimizer | `locked-attack` | Optimizer **38** · Fast 2 · Draw 20 | 0 | **200** |
 
-对照 Round-2 官方实测（50-0-10、39-4-17、26-8-26）：
-`cf-legacy-cancel` 在 fast-vs-optimizer 上**精确复现** 50-0-10，
-另两对差 1–2 场（24-10-26 vs 26-8-26；38-4-18 vs 39-4-17）。
-差异属预期：模拟跑在**本轮**的地图序列与自动选点上，不是逐位复刻 Round-2 的人工选点记录。
+对照 Round-2 官方实测（50-0-10、39-4-17、26-8-26）：`cf-legacy-cancel` 在 fast-vs-optimizer 上**精确复现** 50-0-10，另两对差 1–2 场（24-10-26 vs 26-8-26；38-4-18 vs 39-4-17）。差异属预期：模拟跑在**本轮**的地图序列与自动选点上，不是逐位复刻 Round-2 的人工选点记录。
 
 ---
 
-## 10. Mutual Elimination
+## 10. Mutual Elimination / 10. 同归于尽
+
+### English
+
+| Pairing | Mutual eliminations | Proportion |
+|---|---|---|
+| fast-vs-hybrid | **15 / 60** | **25.0%** |
+| optimizer-vs-hybrid | 1 / 60 | 1.7% |
+| fast-vs-optimizer | 3 / 60 | 5.0% |
+| **Total** | **19 / 180** | **10.6%** |
+
+This is an endgame形态 that was **impossible under old rule** (under old rule, once first-mover zeroes opponent, second-mover has no chance to zero first-mover). Per §8, all judged as **DRAW**, not a single match awarded to A because "A is First Solver".
+
+**All 77 draws from 180 matches fully decomposed**: 58 matches hit 30-round cap (`endReason = NONE`) + 19 mutual eliminations (`MUTUAL_ELIMINATION`) = 77. **No third type of draw exists.**
+
+Distribution clearly uneven: Fast↔Hybrid has one mutual elimination every four matches, while pairings involving Optimizer have few. Two "tactical priority + early return" style algorithms are more likely to shoot each other into mutual elimination.
+
+### 中文
 
 | 配对 | 同归于尽 | 占比 |
 |---|---|---|
@@ -303,18 +576,31 @@ Optimizer 每四个回合就有一个会被抹掉。
 | fast-vs-optimizer | 3 / 60 | 5.0% |
 | **合计** | **19 / 180** | **10.6%** |
 
-这是旧规则下**不可能出现**的终局形态（旧规则下先手一旦清零对方，后手就没有机会再清零先手），
-按 §8 全部判为 **DRAW**，没有任何一场因为「A 是 First Solver」被判给 A。
+这是旧规则下**不可能出现**的终局形态（旧规则下先手一旦清零对方，后手就没有机会再清零先手），按 §8 全部判为 **DRAW**，没有任何一场因为「A 是 First Solver」被判给 A。
 
-**180 场的全部 77 场平局已完全分解**：58 场打满 30 轮上限（`endReason = NONE`）
-+ 19 场同归于尽（`MUTUAL_ELIMINATION`）= 77。**不存在第三类平局。**
+**180 场的全部 77 场平局已完全分解**：58 场打满 30 轮上限（`endReason = NONE`）+ 19 场同归于尽（`MUTUAL_ELIMINATION`）= 77。**不存在第三类平局。**
 
-分布明显不均：Fast↔Hybrid 每四场就有一场同归于尽，而涉及 Optimizer 的对局很少。
-两个「战术优先 + 早返回」风格的算法更容易互相对射到同归于尽。
+分布明显不均：Fast↔Hybrid 每四场就有一场同归于尽，而涉及 Optimizer 的对局很少。两个「战术优先 + 早返回」风格的算法更容易互相对射到同归于尽。
 
 ---
 
-## 11. Timing
+## 11. Timing / 11. 计时
+
+### English
+
+Timing rules **unchanged** (first-mover = side with shorter elapsed time from respective GO timestamp; endpoint = `result.json` mtime).
+
+| Algorithm | Median elapsed (merged) | p95 | Max | First-mover rate |
+|---|---|---|---|---|
+| fast | 16.3 ms | 34.5 ms | 114.4 ms | **0.912** |
+| hybrid | 24.2 ms | 169.3 ms | 596.4 ms | 0.495 |
+| optimizer | **119.4 ms** | 311.6 ms | 902.2 ms | 0.058 |
+
+Compared to Round-2 (fast 14.6 / hybrid 22.0 / optimizer 144.9 ms): all three elapsed distributions basically unchanged, Optimizer's median elapsed even slightly decreased (144.9 → 119.4 ms), because it no longer needs to留余量 for "will be cancelled anyway"… **This is inference, not measurement**: this round did not run a "same algorithm under new vs old rule elapsed comparison" experiment, cannot attribute elapsed changes to the rule. Recording observations only.
+
+**Speed's formal value still exists, conversion ability basically gone**: Fast gets first-mover 100% in fast-vs-optimizer, yet lost 2-38; Optimizer's "fired after death rate" is 0.238 / 0.297, meaning a considerable portion of its shots already land after its Shooter has been counter-killed — precisely the portion old rule would delete, new rule allows.
+
+### 中文
 
 计时规则**未改动**（先手 = 双方各自 GO 时刻起算的耗时更短者；终点 = `result.json` 的 mtime）。
 
@@ -324,19 +610,26 @@ Optimizer 每四个回合就有一个会被抹掉。
 | hybrid | 24.2 ms | 169.3 ms | 596.4 ms | 0.495 |
 | optimizer | **119.4 ms** | 311.6 ms | 902.2 ms | 0.058 |
 
-与 Round-2 对比（fast 14.6 / hybrid 22.0 / optimizer 144.9 ms）：三者耗时分布基本不变，
-Optimizer 的中位耗时还略有下降（144.9 → 119.4 ms），因为它不再需要为「反正会被取消」而留余量……
-**这一条是推断，不是测量**：本轮没有做「同一算法在新旧规则下的耗时对比」实验，
-不能把耗时变化归因于规则。仅记录观测值。
+与 Round-2 对比（fast 14.6 / hybrid 22.0 / optimizer 144.9 ms）：三者耗时分布基本不变，Optimizer 的中位耗时还略有下降（144.9 → 119.4 ms），因为它不再需要为「反正会被取消」而留余量…… **这一条是推断，不是测量**：本轮没有做「同一算法在新旧规则下的耗时对比」实验，不能把耗时变化归因于规则。仅记录观测值。
 
-**速度的形式价值仍在，转化能力基本消失**：
-Fast 在 fast-vs-optimizer 中 100% 拿到先手，却 2-38 落败；
-Optimizer 的「阵亡后仍开火率」是 0.238 / 0.297，即它相当一部分射击本来就是
-在 Shooter 已经被反杀之后才落地的 —— 这恰恰是旧规则会删掉、新规则允许的那部分。
+**速度的形式价值仍在，转化能力基本消失**：Fast 在 fast-vs-optimizer 中 100% 拿到先手，却 2-38 落败；Optimizer 的「阵亡后仍开火率」是 0.238 / 0.297，即它相当一部分射击本来就是在 Shooter 已经被反杀之后才落地的 —— 这恰恰是旧规则会删掉、新规则允许的那部分。
 
 ---
 
-## 12. Match Length
+## 12. Match Length / 12. 对局长度
+
+### English
+
+| | Round-2 | Revision 2 |
+|---|---|---|
+| Mean | 12.87 rounds | **12.49 rounds** |
+| Median | 6 | **5** |
+| p75 / p90 / p95 | 30 / 30 / 30 | 30 / 30 / 30 |
+| Hit 30-round cap | 53 / 180 (29.4%) | **58 / 180 (32.2%)** |
+
+Almost unchanged, matches hitting cap slightly increased.
+
+### 中文
 
 | | Round-2 | Revision 2 |
 |---|---|---|
@@ -349,7 +642,24 @@ Optimizer 的「阵亡后仍开火率」是 0.238 / 0.297，即它相当一部�
 
 ---
 
-## 13. No-progress
+## 13. No-progress / 13. 僵持
+
+### English
+
+Consecutive zero-kill rounds (`longestNoKillStreak`, per-match maximum):
+
+| | Round-2 | Revision 2 |
+|---|---|---|
+| Mean | 7.03 | **8.26** |
+| Median | 0 | 0 |
+| p75 | 21 | **25** |
+| p90 | 25 | **26** |
+| p95 | 26 | **27** |
+| Max | 29 | 29 |
+
+**Stalemate distribution worsened**: p75 rose from 21 to 25, matches hitting cap 53 → 58. Reason: new rule deleted the "first-mover zeroes opponent → round immediately ends" fast termination channel.
+
+### 中文
 
 连续零击杀轮数（`longestNoKillStreak`，逐场取最长）：
 
@@ -362,35 +672,59 @@ Optimizer 的「阵亡后仍开火率」是 0.238 / 0.297，即它相当一部�
 | p95 | 26 | **27** |
 | 最大 | 29 | 29 |
 
-**僵持分布变差了**：p75 从 21 抬到 25，打满上限的场次 53 → 58。
-原因是新规则删掉了「先手清零对方 → 本轮立即结束」这条快速终止通道。
+**僵持分布变差了**：p75 从 21 抬到 25，打满上限的场次 53 → 58。原因是新规则删掉了「先手清零对方 → 本轮立即结束」这条快速终止通道。
 
-### 13.1 吸收态检验（cap 60）
+---
 
-从 180 场里取出「至少有一侧打满 30 轮」的 **16 个条件**，
-对 **fast-vs-hybrid**（本轮平局与同归于尽最集中的一对，与 Round-2 同类检验口径一致）
-用 `--max-rounds 60` 重跑 16 × 2 摆位 = **32 场**：
+### 13.1 Absorbing State Test (cap 60) / 13.1 吸收态检验（cap 60）
+
+### English
+
+From 180 matches, extract **16 conditions** where "at least one side hit 30 rounds", rerun **fast-vs-hybrid** (this round's pairing most concentrated in draws and mutual eliminations, consistent with Round-2 same-test口径) with `--max-rounds 60` for 16 × 2 positions = **32 matches**:
+
+| | Matches | Proportion |
+|---|---|---|
+| Resolved within 60 rounds | 10 | 31.3% |
+| **Still unresolved at 60 rounds** | **22** | **68.8%** |
+
+**Conclusion: Most of these stalemates are absorbing fixed points, not slow convergence.** Raising cap from 30 to 60 only resolved less than one-third; remaining 22 matches frozen even with double the rounds. This confirms Round-2's judgment (its spot-check of 3 matches, all stopped at 60 rounds), with sample size an order of magnitude larger.
+
+**Simultaneously confirms Round-2's reservation**: 30/60 are both only **test framework's cap settings**, not game nature; stalemate distribution is right-censored by cap, therefore **any stalemate threshold is non-identifiable**. This round likewise does not recommend defining a threshold.
+
+> Coverage note (as-recorded): Constrained by this round's time budget, cap-60 only ran fast-vs-hybrid pairing (32/96 matches). `optimizer-vs-hybrid` and `fast-vs-optimizer` same-test **not completed**, whether their respective stalemates are likewise absorbing states **not measured**. Do not extrapolate this 68.8% to the other two pairings. Single 60-round match cost far exceeds 30-round (two sandboxes per round), running all three pairings would require approximately 2+ hours.
+
+### 中文
+
+从 180 场里取出「至少有一侧打满 30 轮」的 **16 个条件**，对 **fast-vs-hybrid**（本轮平局与同归于尽最集中的一对，与 Round-2 同类检验口径一致）用 `--max-rounds 60` 重跑 16 × 2 摆位 = **32 场**：
 
 | | 场数 | 占比 |
 |---|---|---|
 | 60 轮内分出胜负 | 10 | 31.3% |
 | **打满 60 轮仍未化解** | **22** | **68.8%** |
 
-**结论：这些僵持绝大多数是吸收式不动点，不是缓慢收敛。**
-把上限从 30 抬到 60 只化解了不到三分之一；剩下的 22 场即便再给一倍回合数也不动。
-这坐实了 Round-2 的判断（其抽查 3 场，全部停在 60 轮），且样本大了一个数量级。
+**结论：这些僵持绝大多数是吸收式不动点，不是缓慢收敛。**把上限从 30 抬到 60 只化解了不到三分之一；剩下的 22 场即便再给一倍回合数也不动。这坐实了 Round-2 的判断（其抽查 3 场，全部停在 60 轮），且样本大了一个数量级。
 
-**同时坐实了 Round-2 的保留意见**：30/60 都只是**测试框架的上限设置**，不是游戏性质；
-僵持分布被上限右删失，因此**任何僵持阈值都不可识别**，本轮同样不建议定阈值。
+**同时坐实了 Round-2 的保留意见**：30/60 都只是**测试框架的上限设置**，不是游戏性质；僵持分布被上限右删失，因此**任何僵持阈值都不可识别**，本轮同样不建议定阈值。
 
-> 覆盖范围说明（如实记录）：受本轮时间预算限制，cap-60 只跑了 fast-vs-hybrid 一对
-> （32/96 场）。`optimizer-vs-hybrid` 与 `fast-vs-optimizer` 的同类检验**未跑完**，
-> 它们各自的僵持是否同样是吸收态**未经测量**。不要把这 68.8% 外推到另外两对。
-> 单场 60 轮的成本远高于 30 轮（每轮两个沙箱），三对全跑约需 2 小时以上。
+> 覆盖范围说明（如实记录）：受本轮时间预算限制，cap-60 只跑了 fast-vs-hybrid 一对（32/96 场）。`optimizer-vs-hybrid` 与 `fast-vs-optimizer` 的同类检验**未跑完**，它们各自的僵持是否同样是吸收态**未经测量**。不要把这 68.8% 外推到另外两对。单场 60 轮的成本远高于 30 轮（每轮两个沙箱），三对全跑约需 2 小时以上。
 
 ---
 
-## 14. Rule Health
+## 14. Rule Health / 14. 规则健康度
+
+### English
+
+| Health item | Judgment |
+|---|---|
+| Rule **faithfully implemented** | **YES** — Independent offline model matches 180/180 field-for-field |
+| Any cancellation path残留 | **NO** — Guards and output params structurally deleted; `shotCancellationRate` measured 0.0; §18 gate 0 mismatch |
+| `TIMEOUT` / `INVALID` / `CRASH` misrecorded as cancellation | **NO** — R3 / R4 dedicated regression + 180 matches 0/0/0 |
+| Mutual elimination misjudged | **NO** — 19 matches all judged DRAW, not one awarded for first-mover |
+| Snapshot polluted by second-mover recomputation | **NO** — Input hash unchanged within this round (R8 + `stage-gating` existing regression) |
+| Public documentation consistent with production | **YES** — kit §6.1 and §38 share same source; README synchronized |
+| **Balance achieved** | **NO** — See §16 |
+
+### 中文
 
 | 健康项 | 判定 |
 |---|---|
@@ -404,102 +738,179 @@ Optimizer 的「阵亡后仍开火率」是 0.238 / 0.297，即它相当一部�
 
 ---
 
-## 15. Platform Findings
+## 15. Platform Findings / 15. 平台发现
+
+### English
+
+Per task specification §19: Failures unrelated to this rule revision **not silently fixed**, classify first.
+
+#### P-1 `algorithm-slot` existing failure (not introduced this round) · Classified MINOR (test vs artifact inconsistency)
+
+```text
+✗ algorithm-slot: Repository's bundled two slots have identical structure (§2/§3/§41)
+    Assertion failed: Slot root directory should only have fixed entry, actual manifest.json,solver.py
+```
+
+- **Judged as existing based on**: After `git stash` of all this round's changes and single-run of same suite on original HEAD, **same 7/8 failure, same assertion**. Can bisect to introducing commit: `d9f470c docs(v1.1): sync fixed algorithm slots with canonical starter` — that commit added `manifest.json` to `algorithms/team-a|team-b` (reasoning "canonical starter has manifest"), but did not synchronize `tests/algorithm-slot.ts:87` and `algorithms/README.md` (both state slot root directory **only has** `solver.py`).
+- `d9f470c` **is not** an ancestor of Cycle-2 audit baseline `5f56261`, so it entered `main` history after that, during Round-2 playtest period. This explains why Cycle 2 full regression was 26/26.
+- **Not fixed this round**: Task specification only authorizes rule revision; fix method (change test or change artifact) requires first adjudicating "should factory slots be a legal algorithm package", which exceeds authorization scope.
+- **Hand to re-gate auditor**: Please determine whether artifact is wrong (should delete `manifest.json`) or assertion is outdated (should relax).
+
+#### P-2 `cross-round-cheat` occasional sandbox teardown hang · Classified OBSERVATION (existing)
+
+Already recorded and evidenced in Cycle-2 (`Plans/Output/V1.1 Timing Anchor & sys.path Remediation Handoff.md` §5.3): Failed assertion different each time, single-suite elapsed 120s–1031s, timeout budget ineffective, rerun turns green. Not reproduced this round (this round's full regression had that suite 5/5 pass). No traceable causation with this round's changes.
+
+#### P-3 No new platform defects found this round
+
+In 180 matches, `INVALID` / `TIMEOUT` / `CRASH` all **0**, artifacts complete, `endReason` and per-round new fields all readable, replays fully loadable.
+
+### 中文
 
 按任务书 §19：与本次规则无关的失败**不静默修复**，先定级。
 
-### P-1 `algorithm-slot` 既有失败（不是本轮引入）· 定级 MINOR（测试与产物不一致）
+#### P-1 `algorithm-slot` 既有失败（不是本轮引入）· 定级 MINOR（测试与产物不一致）
 
 ```text
 ✗ algorithm-slot: 仓库自带两个槽位结构完全一致（§2/§3/§41）
     断言失败: 槽位根目录应只有固定入口，实际 manifest.json,solver.py
 ```
 
-- **判定为既有的依据**：把本轮全部改动 `git stash` 掉后在原始 HEAD 上单跑同一套件，
-  **同样 7/8 失败、同一条断言**。并可 bisect 到引入提交：
-  `d9f470c docs(v1.1): sync fixed algorithm slots with canonical starter`
-  —— 该提交给 `algorithms/team-a|team-b` 加了 `manifest.json`
-  （理由是「canonical starter 有 manifest」），但没有同步 `tests/algorithm-slot.ts:87`
-  与 `algorithms/README.md`（两者都写明槽位根目录**只有** `solver.py`）。
-- `d9f470c` **不是** Cycle-2 审计基线 `5f56261` 的祖先，所以它是在那之后、
-  Round-2 playtest 期间进入 `main` 历史的。这解释了为什么 Cycle 2 的全量回归是 26/26。
-- **本轮不修**：任务书只授权规则修订；修复方式（改测试还是改产物）需要先裁决
-  「出厂槽位是否应当是一个合法算法包」，这超出授权范围。
+- **判定为既有的依据**：把本轮全部改动 `git stash` 掉后在原始 HEAD 上单跑同一套件，**同样 7/8 失败、同一条断言**。并可 bisect 到引入提交：`d9f470c docs(v1.1): sync fixed algorithm slots with canonical starter` —— 该提交给 `algorithms/team-a|team-b` 加了 `manifest.json`（理由是「canonical starter 有 manifest」），但没有同步 `tests/algorithm-slot.ts:87` 与 `algorithms/README.md`（两者都写明槽位根目录**只有** `solver.py`）。
+- `d9f470c` **不是** Cycle-2 审计基线 `5f56261` 的祖先，所以它是在那之后、Round-2 playtest 期间进入 `main` 历史的。这解释了为什么 Cycle 2 的全量回归是 26/26。
+- **本轮不修**：任务书只授权规则修订；修复方式（改测试还是改产物）需要先裁决「出厂槽位是否应当是一个合法算法包」，这超出授权范围。
 - **交给重审方**：请判定是产物错（应删 `manifest.json`）还是断言过期（应放宽）。
 
-### P-2 `cross-round-cheat` 偶发沙箱拆除挂死 · 定级 OBSERVATION（既有）
+#### P-2 `cross-round-cheat` 偶发沙箱拆除挂死 · 定级 OBSERVATION（既有）
 
-Cycle-2 已记录并取证（`Plans/Output/V1.1 Timing Anchor & sys.path Remediation Handoff.md` §5.3）：
-失败断言每次不同、单套件耗时 120s–1031s、超时预算未生效、重跑即绿。
-本轮未复现（本轮全量回归该套件 5/5 通过）。与本轮改动无可追溯因果。
+Cycle-2 已记录并取证（`Plans/Output/V1.1 Timing Anchor & sys.path Remediation Handoff.md` §5.3）：失败断言每次不同、单套件耗时 120s–1031s、超时预算未生效、重跑即绿。本轮未复现（本轮全量回归该套件 5/5 通过）。与本轮改动无可追溯因果。
 
-### P-3 本轮未发现新的平台缺陷
+#### P-3 本轮未发现新的平台缺陷
 
-180 场中 `INVALID` / `TIMEOUT` / `CRASH` 均为 **0**，产物完整、
-`endReason` 与逐轮新字段全部可读，回放可完整加载。
+180 场中 `INVALID` / `TIMEOUT` / `CRASH` 均为 **0**，产物完整、`endReason` 与逐轮新字段全部可读，回放可完整加载。
 
 ---
 
-## 16. 最终回答（任务书 §32）
+## 16. Final Answers / 16. 最终回答（任务书 §32）
 
-### 1. 删除 shot cancellation 是否解决了观察到的策略坍缩？
+### 16.1 Did removing shot cancellation solve the observed strategy collapse? / 16.1 删除 shot cancellation 是否解决了观察到的策略坍缩？
+
+### English
 
 ```text
 NO
 ```
 
-**没有解决，只是换了赢家。** 被点名的那个坍缩（Fast 50-0）确实消失了
-（50-0-10 → 2-38-20），但取而代之的是 Optimizer 38-2 与 37-3 —— 仍然是
-**单一策略支配**，只是支配者从「最快的」变成「函数质量最高的」。
+**Did not solve, only changed the winner.** The named collapse (Fast 50-0) did disappear (50-0-10 → 2-38-20), but replaced by Optimizer 38-2 and 37-3 — still **single strategy dominance**, just dominator changed from "fastest" to "highest function quality".
+
+Need to distinguish two things, otherwise will misread:
+
+- **Correctly fixed**: Speed dominating outcome through "cancellation" as **artificial channel**. This channel is indeed closed, offline model 180/180 match also proves closure is clean.
+- **Not fixed**: After removing that channel, this ruleset **has no remaining mechanism to offset function quality差距**. Round-2's conclusion "speed affects outcome solely through Shot Cancellation" holds; removing that channel naturally made "function quality" the sole channel.
+
+### 中文
+
+```text
+NO
+```
+
+**没有解决，只是换了赢家。** 被点名的那个坍缩（Fast 50-0）确实消失了（50-0-10 → 2-38-20），但取而代之的是 Optimizer 38-2 与 37-3 —— 仍然是**单一策略支配**，只是支配者从「最快的」变成「函数质量最高的」。
 
 需要区分两件事，否则会误读：
 
-- **被正确修掉的**：速度通过「取消」这条**人为通道**支配胜负。这条通道确实关闭了，
-  离线模型 180/180 命中也证明关闭得干净。
-- **没有被修掉的**：本规则集在删掉那条通道之后，**没有剩下任何能抵消函数质量差距的机制**。
-  Round-2 的结论「速度影响胜负的唯一通道就是 Shot Cancellation」成立，
-  去掉该通道后，「函数质量」自然成了唯一通道。
+- **被正确修掉的**：速度通过「取消」这条**人为通道**支配胜负。这条通道确实关闭了，离线模型 180/180 命中也证明关闭得干净。
+- **没有被修掉的**：本规则集在删掉那条通道之后，**没有剩下任何能抵消函数质量差距的机制**。Round-2 的结论「速度影响胜负的唯一通道就是 Shot Cancellation」成立，去掉该通道后，「函数质量」自然成了唯一通道。
 
-### 2. 计算速度是否仍有实质竞争价值？
+---
+
+### 16.2 Does computation speed still have substantial competitive value? / 16.2 计算速度是否仍有实质竞争价值？
+
+### English
+
+```text
+NO (formal value retained, substantial benefit not supported by evidence)
+```
+
+- Formal value **clearly exists**: Fast has first-mover rate **1.000** in fast-vs-optimizer (Optimizer 0.000).
+- But almost no conversion to wins: same 60 matches, Fast 2-38. Against Hybrid 13-10, seemingly有优势, but after swapping order **7 comparable conditions, 6 flipped outcome**, closer to timing noise than stable advantage.
+- Counter-proof: Optimizer has **23.8% / 29.7%** of shots landing after its own Shooter has been counter-killed — the slow side relies on "my shot won't be deleted anyway".
+
+### 中文
 
 ```text
 NO（形式价值保留，实质收益未被证据支持）
 ```
 
 - 形式价值**明确存在**：Fast 在 fast-vs-optimizer 中先手率 **1.000**（Optimizer 0.000）。
-- 但对胜负几乎没有转化：同样这 60 场，Fast 2-38。
-  对 Hybrid 是 13-10，看似有优势，但换序后 **7 个可比条件里 6 个胜负翻转**，
-  更接近时序噪声而非稳定优势。
-- 反证：Optimizer 有 **23.8% / 29.7%** 的射击是在自己的 Shooter 已被反杀之后才落地的
-  —— 慢的一方本来就靠「反正我的射击不会被删」吃饭。
+- 但对胜负几乎没有转化：同样这 60 场，Fast 2-38。对 Hybrid 是 13-10，看似有优势，但换序后 **7 个可比条件里 6 个胜负翻转**，更接近时序噪声而非稳定优势。
+- 反证：Optimizer 有 **23.8% / 29.7%** 的射击是在自己的 Shooter 已被反杀之后才落地的 —— 慢的一方本来就靠「反正我的射击不会被删」吃饭。
 
-### 3. 函数质量优化是否变得过度强势？
+---
 
-```text
-YES
-```
+### 16.3 Has function quality optimization become overly dominant? / 16.3 函数质量优化是否变得过度强势？
 
-Optimizer 拿下 75/180 场（41.7%），两场正面交锋分别是 **38-2** 与 **37-3**。
-每有效射击击杀 0.604–0.662，显著高于 Fast 的 0.478–0.541 与 Hybrid 的 0.473–0.487；
-「无命中率」从旧规则下的 0.915 降到 0.665 —— 它的函数质量第一次真正落地。
-
-**按 §25，本轮不修改算法。** 这一轮的目的就是测 `RULE EFFECT` 而不是 `ADAPTED META`；
-三个竞品算法自始至终**冻结未改**。
-
-### 4. 修订后的 Shooter 规则是否适合作为 V1.1 playtest 基线？
+### English
 
 ```text
 YES
 ```
 
-作为**规则**：它内部自洽、实现忠实（离线模型 180/180 命中）、消除了一个人为的支配通道、
-把 Shooter 的语义还原为「数学发射锚点」，并且让「要不要刺杀对方 Shooter」重新变成一个
-真实的策略取舍而不是一击必杀的开关。
+Optimizer won 75/180 matches (41.7%), two head-to-head pairings respectively **38-2** and **37-3**. Kills per effective shot 0.604–0.662, significantly higher than Fast's 0.478–0.541 and Hybrid's 0.473–0.487; "no-hit rate" dropped from 0.915 under old rule to 0.665 — its function quality truly landed for the first time.
 
-但必须把话说全：**它不是平衡性的解决方案**。选择 YES 的理由是「这条规则是对的」，
-不是「这套规则集已经平衡」。平衡问题（§16.1/§16.3）原样留给下一轮。
+**Per §25, this round does not modify algorithms.** This round's purpose is to measure `RULE EFFECT` not `ADAPTED META`; three competitor algorithms **frozen unchanged** throughout.
 
-### 5. Stalemate 测量是否应成为下一个规则任务？
+### 中文
+
+```text
+YES
+```
+
+Optimizer 拿下 75/180 场（41.7%），两场正面交锋分别是 **38-2** 与 **37-3**。每有效射击击杀 0.604–0.662，显著高于 Fast 的 0.478–0.541 与 Hybrid 的 0.473–0.487；「无命中率」从旧规则下的 0.915 降到 0.665 —— 它的函数质量第一次真正落地。
+
+**按 §25，本轮不修改算法。** 这一轮的目的就是测 `RULE EFFECT` 而不是 `ADAPTED META`；三个竞品算法自始至终**冻结未改**。
+
+---
+
+### 16.4 Is the revised Shooter rule suitable as V1.1 playtest baseline? / 16.4 修订后的 Shooter 规则是否适合作为 V1.1 playtest 基线？
+
+### English
+
+```text
+YES
+```
+
+As a **rule**: It is internally coherent, implementation faithful (offline model 180/180 match), eliminates an artificial dominance channel, restores Shooter's semantics as "mathematical firing anchor", and makes "whether to assassinate opponent Shooter" a real strategic tradeoff rather than a one-shot-kill switch.
+
+But must give the full picture: **It is not a solution to balance**. Choosing YES is because "this rule is correct", not "this ruleset is already balanced". Balance issues (§16.1/§16.3) remain as-is for next round.
+
+### 中文
+
+```text
+YES
+```
+
+作为**规则**：它内部自洽、实现忠实（离线模型 180/180 命中）、消除了一个人为的支配通道、把 Shooter 的语义还原为「数学发射锚点」，并且让「要不要刺杀对方 Shooter」重新变成一个真实的策略取舍而不是一击必杀的开关。
+
+但必须把话说全：**它不是平衡性的解决方案**。选择 YES 的理由是「这条规则是对的」，不是「这套规则集已经平衡」。平衡问题（§16.1/§16.3）原样留给下一轮。
+
+---
+
+### 16.5 Should Stalemate measurement become the next rule task? / 16.5 Stalemate 测量是否应成为下一个规则任务？
+
+### English
+
+```text
+YES
+```
+
+Three reasons:
+
+1. Stalemate distribution **worsened** this round: p75 consecutive zero-kill rounds 21 → 25, matches hitting 30-round cap 53 → 58.
+2. Added **mutual elimination** as endgame形态 (19/180, Fast↔Hybrid as high as 25%), impossible under old rule, a new absorbing structure requiring separate measurement and definition.
+3. Round-2 already withdrew "20/30 threshold" recommendation, reasoning distribution right-censored by 30-round cap, threshold non-identifiable. This round's cap-60 probe (§13.1) provides harder evidence: **68.8% of stalemates still absorbing fixed points at 60 rounds** (22/32), only resolved less than one-third. That is, stalemate is not "insufficient rounds", but situation itself already frozen — precisely the kind of situation requiring a formal Stalemate rule to terminate.
+
+Per §26, this round **did not implement Stalemate rule** (maintains `DEFER`), only collected two measurements.
+
+### 中文
 
 ```text
 YES
@@ -508,34 +919,80 @@ YES
 三条理由：
 
 1. 僵持分布在本轮**变差**：p75 连续零击杀轮数 21 → 25，打满 30 轮上限 53 → 58。
-2. 新增了**同归于尽**这一终局形态（19/180，Fast↔Hybrid 高达 25%），它是旧规则下
-   不可能出现的新吸收结构，需要单独测量与定义。
-3. Round-2 已撤回「20/30 阈值」的建议，理由是分布被 30 轮上限右删失、阈值不可识别。
-   本轮的 cap-60 探针（§13.1）给出了更硬的证据：**68.8% 的僵持在 60 轮下仍然是
-   吸收式不动点**（22/32），只化解了不到三分之一。也就是说僵持不是「回合数不够」，
-   而是局面本身已经冻结 —— 这正是需要一条正式 Stalemate 规则来终结的那种局面。
+2. 新增了**同归于尽**这一终局形态（19/180，Fast↔Hybrid 高达 25%），它是旧规则下不可能出现的新吸收结构，需要单独测量与定义。
+3. Round-2 已撤回「20/30 阈值」的建议，理由是分布被 30 轮上限右删失、阈值不可识别。本轮的 cap-60 探针（§13.1）给出了更硬的证据：**68.8% 的僵持在 60 轮下仍然是吸收式不动点**（22/32），只化解了不到三分之一。也就是说僵持不是「回合数不够」，而是局面本身已经冻结 —— 这正是需要一条正式 Stalemate 规则来终结的那种局面。
 
 按 §26，本轮**没有实现 Stalemate 规则**（保持 `DEFER`），只收集了两项测量。
 
 ---
 
-## 17. Remaining Open Questions
+## 17. Remaining Open Questions / 17. 遗留开放问题
 
-1. **函数质量支配是否是本规则集的结构性问题？** 去掉取消通道后，规则里再没有
-   任何机制能补偿慢速方的函数质量优势。可动的杠杆（**本轮均未实施**）：
-   调低时间预算、给先手方一个可量化的优势、或让射击成本与耗时挂钩。
-2. **同归于尽应当是平局吗？** 本轮按 §8 判 DRAW。19/180 且集中在 Fast↔Hybrid（25%），
-   这个比例是否可接受、是否应当有别的处理（例如按剩余点数、按击杀数），未定义。
-3. **Fast↔Hybrid 的胜负是否只是噪声？** 13-10 且换序 6/7 翻转，样本不足以支持
-   「Fast 优于 Hybrid」。需要更多条件或重复跑同一条件才能定论。
+### English
+
+1. **Is function quality dominance a structural problem of this ruleset?** After removing cancellation channel, no mechanism remains in rules to compensate slow side's function quality advantage. Movable levers (**all not implemented this round**): lower time budget, give first-mover a quantifiable advantage, or link shot cost to elapsed time.
+2. **Should mutual elimination be a draw?** This round judges DRAW per §8. 19/180 and concentrated in Fast↔Hybrid (25%), whether this proportion is acceptable, whether there should be alternative handling (e.g., by remaining points, by kill count), undefined.
+3. **Is Fast↔Hybrid outcome just noise?** 13-10 and swap 6/7 flipped, sample insufficient to support "Fast superior to Hybrid". Needs more conditions or repeated runs of same condition to conclude.
+4. **Is stalemate threshold identifiable?** Depends on §13.2's cap-60 results.
+5. **P-1 (Should factory slots contain `manifest.json`)?** Needs adjudication before full regression can return to all-green.
+6. **Should three competitor algorithms be re-tuned for Revision 2?** Per §16/§25, this round **explicitly does not**; this should be next round's independently-authorized `ADAPTED META` experiment, and must be reported separately from this round's `RULE EFFECT`.
+
+### 中文
+
+1. **函数质量支配是否是本规则集的结构性问题？** 去掉取消通道后，规则里再没有任何机制能补偿慢速方的函数质量优势。可动的杠杆（**本轮均未实施**）：调低时间预算、给先手方一个可量化的优势、或让射击成本与耗时挂钩。
+2. **同归于尽应当是平局吗？** 本轮按 §8 判 DRAW。19/180 且集中在 Fast↔Hybrid（25%），这个比例是否可接受、是否应当有别的处理（例如按剩余点数、按击杀数），未定义。
+3. **Fast↔Hybrid 的胜负是否只是噪声？** 13-10 且换序 6/7 翻转，样本不足以支持「Fast 优于 Hybrid」。需要更多条件或重复跑同一条件才能定论。
 4. **僵持阈值是否可识别？** 取决于 §13.2 的 cap-60 结果。
 5. **P-1（出厂槽位是否应含 `manifest.json`）** 需要裁决后才能让全量回归回到全绿。
-6. **三个竞品算法是否应当为 Revision 2 重新调优？** 按 §16/§25，本轮**明确不做**；
-   这应当是下一轮独立授权的 `ADAPTED META` 实验，且必须与本次的 `RULE EFFECT` 分开报告。
+6. **三个竞品算法是否应当为 Revision 2 重新调优？** 按 §16/§25，本轮**明确不做**；这应当是下一轮独立授权的 `ADAPTED META` 实验，且必须与本次的 `RULE EFFECT` 分开报告。
 
 ---
 
-## 18. 复现指引
+## 18. Reproduction Guide / 18. 复现指引
+
+### English
+
+```bash
+# 0. Commit where rule and production implementation reside (tree at result generation)
+git log --oneline -3          # 90647f3 / 2e825a1 / 95f2a5f
+
+# 1. Regression (permanent evidence of rule revision)
+npx ts-node tests/locked-attack-right.ts        # R1–R8, 10/10
+npm run typecheck
+npx ts-node tests/run-all.ts                    # Expected 25/26 (P-1 is existing failure)
+
+# 2. Three-algorithm balance experiment (180 matches, approximately 45 minutes on this machine)
+bash playtest/harness/run_shooter_rule_revision.sh
+
+# 3. Summary only
+python3 playtest/harness/analyze_round2.py --root playtest/results/shooter-rule-revision
+
+# 4. Counterfactual (new naming: locked-attack is production, cf-legacy-cancel is counterfactual)
+python3 playtest/harness/gb_counterfactual.py verify \
+    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
+    --out playtest/results/shooter-rule-revision/cf/verify-fast-vs-optimizer.json
+python3 playtest/harness/gb_counterfactual.py rounds \
+    --pair fast-vs-optimizer \
+    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
+    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
+    --out playtest/results/shooter-rule-revision/cf/rounds-fast-vs-optimizer.json
+python3 playtest/harness/gb_counterfactual.py simulate \
+    --pair fast-vs-optimizer --conditions playtest/harness/conditions-round2.json \
+    --out playtest/results/shooter-rule-revision/cf/sim-fast-vs-optimizer \
+    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
+    --ref-root playtest/results/shooter-rule-revision/raw \
+    --modes locked-attack cf-legacy-cancel
+
+# 5. Absorbing state test (cap 60) — condition subset exported from archive by §13.1's method
+for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
+  python3 playtest/harness/gb_round2.py run --pair $p \
+      --conditions /tmp/cond-cap60.json --out /tmp/cap60-srr/$p --max-rounds 60
+done
+```
+
+**Note**: Do not reuse Round-2's `--out` or `--cache` — those archives are evidence under **old rule**. `gb_round2.py run` skips already-archived matches (idempotent), reusing to old directory will get 0 new results.
+
+### 中文
 
 ```bash
 # 0. 规则与生产实现所处的提交（结果产出时的树）
@@ -575,12 +1032,39 @@ for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
 done
 ```
 
-**注意**：不要复用 Round-2 的 `--out` 或 `--cache` —— 那些归档是**旧规则**下的证据。
-`gb_round2.py run` 对已归档的对局会跳过（幂等），复用到旧目录会得到 0 场新结果。
+**注意**：不要复用 Round-2 的 `--out` 或 `--cache` —— 那些归档是**旧规则**下的证据。`gb_round2.py run` 对已归档的对局会跳过（幂等），复用到旧目录会得到 0 场新结果。
 
 ---
 
-## 19. 完成状态
+## 19. Completion Status / 19. 完成状态
+
+### English
+
+```text
+SHOOTER RULE REVISION & REBALANCE COMPLETE
+READY FOR INDEPENDENT RULE RE-GATE
+```
+
+This development side **does not declare** `TOURNAMENT READY`. Per task specification §30, hand to Fresh READ-ONLY Auditor to verify item-by-item:
+
+```text
+Rule document   == Competitor Kit == production Judge == tests == Replay
+Whether old cancellation path残留s
+```
+
+Verifiable anchors:
+
+| Claim | How to verify |
+|---|---|
+| Rule text revised | `git show 90647f3 -- "Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md"` |
+| Production implementation revised | `git show 2e825a1 -- src/` |
+| No cancellation path残留 | `grep -rn "shooter.alive\|ShotCancelled" src/` should only leave historical comments; `shotCancellationRate` measured 0.0 |
+| Regression catches old rule | Add `if (!shooter.alive) continue;` back to `resolveOrderedShots` → `locked-attack-right` must turn red (self-proved: 10/10 → 6/10) |
+| Results are deterministic consequences of rule | Round-2's CF prediction and Revision 2 official results field-for-field identical (§9) |
+| Algorithms frozen unchanged | `git diff 877f142..95f2a5f --stat -- playtest/competitors/` should be empty |
+| V1.0 untouched | `git rev-parse v1.0.0-competition^{commit}` → `26d7970` |
+
+### 中文
 
 ```text
 SHOOTER RULE REVISION & REBALANCE COMPLETE
@@ -605,4 +1089,28 @@ Rule document   == Competitor Kit == production Judge == tests == Replay
 | 结果是规则的确定性后果 | Round-2 的 CF 预测与 Revision 2 官方结果逐场相同（§9） |
 | 算法冻结未改 | `git diff 877f142..95f2a5f --stat -- playtest/competitors/` 应为空 |
 | V1.0 未被动过 | `git rev-parse v1.0.0-competition^{commit}` → `26d7970` |
-```
+
+---
+
+## Document Sanitization Checklist / 文档脱敏检查清单
+
+### English
+
+- **Internal paths**: ✓ All paths are relative to repository root or use canonical placeholders (`/tmp/`)
+- **Agent state**: ✓ No agent execution logs, internal reasoning, or workflow state included
+- **Personal information**: ✓ No personal paths, usernames, or machine-specific details
+- **Secrets**: ✓ No credentials, tokens, or sensitive configuration values
+- **Machine tokens preserved**: ✓ All technical identifiers (Team A, Team B, JSON keys, CLI flags, DSL operators, commit SHAs, numeric values) kept exact
+
+### 中文
+
+- **内部路径**: ✓ 全部路径相对于仓库根目录或使用规范占位符（`/tmp/`）
+- **Agent 状态**: ✓ 无 agent 执行日志、内部推理或工作流状态
+- **个人信息**: ✓ 无个人路径、用户名或机器特定细节
+- **敏感信息**: ✓ 无凭据、令牌或敏感配置值
+- **机器词元保留**: ✓ 所有技术标识符（Team A、Team B、JSON 键、CLI 标志、DSL 操作符、commit SHA、数值）保持精确
+
+---
+
+**Document ends / 文档结束**
+
