@@ -201,6 +201,23 @@ test.describe('浏览器语言不是 zh-*', () => {
 
   test('完整赛事流程（全英文，无终端介入）', async ({ page }) => {
     test.setTimeout(20 * 60 * 1000);
+    const errors: string[] = [];
+    page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(`console.error: ${m.text()}`);
+    });
+
+    // ---- 首页：选择身份（英文），粘贴裁判链接进裁判台；令牌只进 fragment（V1.4）----
+    await page.goto(`${baseURL}/`);
+    await expect(page).toHaveURL(`${baseURL}/`);
+    await expect(page.locator('[data-testid="home"]')).toBeVisible();
+    await expect(page.locator('.home__title')).toHaveText('Choose your role');
+    await page.locator('[data-testid="access-input-judge"]').fill(judgeURL);
+    await page.locator('[data-testid="access-go-judge"]').click();
+    await expect(page).toHaveURL(judgeURL);
+    expect(page.url(), '令牌不得进查询串').not.toContain('?t=');
+    await expect(page.locator('[data-testid="judge"]')).toHaveAttribute('data-board', 'ready');
+    await expect(page.locator('body')).toContainText('Judge wizard');
 
     // ---- 双方上传（参赛者页）----
     await uploadPackage(page, 'A');
@@ -262,10 +279,18 @@ test.describe('浏览器语言不是 zh-*', () => {
       /^MATCH\s*/,
       ''
     );
+    // 终局主位置是「打开回放」；换场（危险动作）收在 Advanced 里，不是主按钮
+    await expect(page.locator('[data-testid="judge-open-replay"]')).toBeVisible();
+    await expect(page.locator('[data-testid="primary-action"]')).toHaveCount(0);
+    // `reset` 只出现在 Advanced 折叠区里（clickAction 为了点到里面的按钮可能已把它展开，
+    // 所以这里断言的是「在哪」而不是「可见否」）
+    await expect(page.locator('details.adv [data-action="reset"]')).toHaveCount(1);
 
     // ---- 大屏：英文，且不泄漏诊断、没有命令控件 ----
     await page.goto(`${baseURL}/spectator`);
     await expect(page.locator('[data-testid="spectator"]')).toBeVisible();
+    await expect(page.locator('[data-testid="spectator"]')).toHaveAttribute('data-board', 'ready');
+    await expect(page.locator('[data-testid="spectator"]')).toHaveAttribute('data-terminal', 'true');
     await expect(page.locator('[data-testid="spectator-verdict"]')).toBeVisible({ timeout: 60000 });
     const screenText = await page.locator('body').innerText();
     expect(screenText.toLowerCase(), '大屏应当是英文').toContain('team a alive');
@@ -275,11 +300,33 @@ test.describe('浏览器语言不是 zh-*', () => {
     expect(await page.locator('[data-action]').count(), '大屏不得出现裁判动作按钮').toBe(0);
     expect(await page.locator('button:not([data-locale])').count(), '大屏除语言开关外不得有按钮').toBe(0);
 
-    // ---- 回放 ----
+    // ---- 回放播放器（英文）：上一轮 / 播放·暂停 / 下一轮 / 计数 ----
     await page.goto(`${baseURL}/replay/${encodeURIComponent(matchId)}`);
+    const player = page.locator('[data-testid="replay-player"]');
+    await expect(player).toBeVisible({ timeout: 60000 });
     await expect(page.locator('.frame-btn').first()).toBeVisible({ timeout: 60000 });
-    expect(await page.locator('.frame-btn').count()).toBeGreaterThan(0);
+    const frameCount = await page.locator('.frame-btn').count();
+    expect(frameCount).toBeGreaterThan(0);
     const replayText = await page.locator('body').innerText();
     expect(replayText, '回放页应当是英文').toContain('Rounds');
+    await expect(page.locator('[data-testid="replay-counter"]')).toHaveText(`Round 1 / ${frameCount}`);
+    await expect(page.locator('[data-testid="replay-prev"]')).toHaveAttribute('title', 'Previous round');
+    await expect(page.locator('[data-testid="replay-next"]')).toHaveAttribute('title', 'Next round');
+    await expect(page.locator('[data-testid="replay-play"]')).toHaveText('Play');
+    if (frameCount > 1) {
+      await page.locator('[data-testid="replay-next"]').click();
+      await expect(page.locator('[data-testid="replay-counter"]')).toHaveText(`Round 2 / ${frameCount}`);
+      await page.locator('[data-testid="replay-prev"]').click();
+      await expect(player).toHaveAttribute('data-index', '0');
+      await page.locator('[data-testid="replay-speed-2"]').click();
+      await page.locator('[data-testid="replay-play"]').click();
+      await expect(page.locator('[data-testid="replay-play"]')).toHaveText('Pause');
+      // 播放器自己走到下一帧（等 DOM 状态，不睡眠）
+      await expect(player).toHaveAttribute('data-index', '1', { timeout: 30000 });
+      await page.locator('[data-testid="replay-play"]').click();
+      await expect(player).toHaveAttribute('data-playing', 'false');
+    }
+
+    expect(errors, '全程不得有 pageerror / console.error').toEqual([]);
   });
 });

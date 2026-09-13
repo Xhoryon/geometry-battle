@@ -60,6 +60,8 @@ const SUITES = [
   // 由 `npm run e2e` 单独跑。
   'i18n',
   'web-projection',
+  // 裁判向导的纯模型（V1.4）：阶段表 / 主动作挑选 / 标签助手，不开浏览器即可回归。
+  'web-wizard',
   'web-zip',
   'web-server',
   // 调用方身份绑定（V1.2 Final RC Audit 的 P1）：参赛者面 / 裁判面的令牌门禁，
