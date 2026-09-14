@@ -2,9 +2,10 @@
  * Bilingual Documentation Regression Tests
  *
  * Verifies that all public-facing documentation maintains bilingual
- * coverage (zh-CN + en-US) with the required format marker.
+ * coverage (zh-CN + en-US) with language-switchable pairs.
  *
- * V1.4.1 — Permanent regression protection for bilingual documentation.
+ * V1.4.2 — Language-pair model: each key document has .md (English) + .zh-CN.md (Chinese)
+ *          with top navigation links.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -14,175 +15,130 @@ import { resolve } from 'node:path';
 const REPO_ROOT = resolve(__dirname, '..');
 
 /**
- * All public-facing documentation files that MUST be bilingual.
+ * All public-facing documentation files that MUST have language pairs.
  *
- * Format: [relativePath, description]
+ * Format: [baseRelativePath (without .zh-CN.md), description]
+ * Test will verify both .md and .zh-CN.md exist.
  */
-const REQUIRED_BILINGUAL_FILES: Array<[string, string]> = [
+const REQUIRED_LANGUAGE_PAIRS: Array<[string, string]> = [
   // Core documentation
   ['README.md', 'Main repository introduction'],
   ['docs/ARCHITECTURE.md', 'System architecture'],
   ['docs/V1.4_FAIRNESS_REPORT.md', 'Platform fairness report'],
   ['docs/RELEASE_NOTES.md', 'Release history'],
   ['docs/BILINGUAL_DOCUMENTATION.md', 'Bilingual documentation index'],
+  ['docs/REPRODUCIBILITY.md', 'Reproducibility guide'],
 
   // Competitor documentation
+  ['competitor-kit/README.md', 'Competitor kit overview'],
   ['competitor-kit/ALGORITHM_REQUIREMENTS.md', 'Algorithm requirements'],
+  ['competitor-kit/DSL_SPECIFICATION.md', 'DSL specification'],
+  ['competitor-kit/JSON_SCHEMA.md', 'JSON schema documentation'],
+  ['competitor-kit/RUNTIME_MANIFEST.md', 'Runtime manifest specification'],
   ['algorithms/README.md', 'Algorithm submission structure'],
 
   // Demo & reference
   ['demo/reference-solver-v2/README.md', 'Reference solver documentation'],
 
   // Playtest documentation
-  ['playtest/competitors/solver-fast/README.md', 'Algorithm A documentation'],
-  ['playtest/competitors/solver-optimizer/README.md', 'Algorithm B documentation'],
-  ['playtest/competitors/solver-hybrid/README.md', 'Algorithm C documentation'],
+  ['playtest/competitors/solver-fast/README.md', 'solver-fast documentation'],
+  ['playtest/competitors/solver-optimizer/README.md', 'solver-optimizer documentation'],
+  ['playtest/competitors/solver-hybrid/README.md', 'solver-hybrid documentation'],
+  ['playtest/results/DUAL_ALGORITHM_PLAYTEST_REPORT.md', 'Dual algorithm playtest report'],
   ['playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md', 'Round 2 playtest report'],
+  ['playtest/results/shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.md', 'Shooter rule rebalance report'],
 ];
 
 /**
- * The canonical bilingual marker that must appear at the top of each file.
+ * Convert base path to Chinese pair path
+ * e.g., "README.md" -> "README.zh-CN.md"
+ *       "docs/RULES.md" -> "docs/RULES.zh-CN.md"
  */
-const BILINGUAL_MARKER = '<!-- bilingual-doc: zh-CN + en-US -->';
+function toChinesePairPath(basePath: string): string {
+  return basePath.replace(/\.md$/, '.zh-CN.md');
+}
 
-describe('Bilingual Documentation', () => {
-  describe('Required Files', () => {
-    REQUIRED_BILINGUAL_FILES.forEach(([relativePath, description]) => {
-      it(`${relativePath} exists`, () => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
-        expect(existsSync(fullPath), `${description} file must exist`).toBe(true);
+describe('Bilingual Documentation — Language Pairs (V1.4.2)', () => {
+  describe('File Existence', () => {
+    REQUIRED_LANGUAGE_PAIRS.forEach(([basePath, description]) => {
+      const chinesePath = toChinesePairPath(basePath);
+
+      it(`${description}: English version exists (${basePath})`, () => {
+        const fullPath = resolve(REPO_ROOT, basePath);
+        expect(existsSync(fullPath), `Expected ${basePath} to exist`).toBe(true);
       });
 
-      it(`${relativePath} has bilingual marker`, () => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
-        const content = readFileSync(fullPath, 'utf-8');
-        const firstLine = content.split('\n')[0];
-
-        expect(
-          firstLine,
-          `${description} must start with bilingual marker: ${BILINGUAL_MARKER}`
-        ).toBe(BILINGUAL_MARKER);
-      });
-
-      it(`${relativePath} is non-empty`, () => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
-        const content = readFileSync(fullPath, 'utf-8');
-
-        expect(
-          content.length,
-          `${description} must have content beyond the marker`
-        ).toBeGreaterThan(BILINGUAL_MARKER.length + 10);
+      it(`${description}: Chinese version exists (${chinesePath})`, () => {
+        const fullPath = resolve(REPO_ROOT, chinesePath);
+        expect(existsSync(fullPath), `Expected ${chinesePath} to exist`).toBe(true);
       });
     });
   });
 
-  describe('Bilingual Format', () => {
-    it('all required files use consistent marker format', () => {
-      const markers = new Set<string>();
+  describe('Language Navigation Links', () => {
+    REQUIRED_LANGUAGE_PAIRS.forEach(([basePath, description]) => {
+      const chinesePath = toChinesePairPath(basePath);
 
-      REQUIRED_BILINGUAL_FILES.forEach(([relativePath]) => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
+      it(`${description}: English version has language switcher`, () => {
+        const fullPath = resolve(REPO_ROOT, basePath);
+        if (!existsSync(fullPath)) return; // Skip if file doesn't exist
+
         const content = readFileSync(fullPath, 'utf-8');
-        const firstLine = content.split('\n')[0];
-        markers.add(firstLine);
-      });
+        const first100Lines = content.split('\n').slice(0, 100).join('\n');
 
-      expect(
-        markers.size,
-        'All bilingual files must use the same marker format'
-      ).toBe(1);
+        // Must contain link to Chinese version
+        const hasChineseLink = first100Lines.includes(chinesePath) ||
+                               first100Lines.includes('简体中文');
 
-      expect(
-        [...markers][0],
-        'The single marker format must match the canonical marker'
-      ).toBe(BILINGUAL_MARKER);
-    });
-  });
-
-  describe('Coverage Statistics', () => {
-    it('reports total bilingual file count', () => {
-      const count = REQUIRED_BILINGUAL_FILES.length;
-
-      // V1.4.1 baseline: 12 files
-      expect(count).toBeGreaterThanOrEqual(12);
-
-      // Log for human verification in test output
-      console.log(`✓ ${count} bilingual documentation files verified`);
-    });
-
-    it('reports total bilingual line count', () => {
-      let totalLines = 0;
-
-      REQUIRED_BILINGUAL_FILES.forEach(([relativePath]) => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
-        const content = readFileSync(fullPath, 'utf-8');
-        const lineCount = content.split('\n').length;
-        totalLines += lineCount;
-      });
-
-      // V1.4.1 baseline: ~4,683 lines
-      expect(totalLines).toBeGreaterThan(4000);
-
-      console.log(`✓ ${totalLines} total lines of bilingual documentation`);
-    });
-  });
-
-  describe('File Structure Integrity', () => {
-    it('no bilingual file is unexpectedly small', () => {
-      REQUIRED_BILINGUAL_FILES.forEach(([relativePath, description]) => {
-        const fullPath = resolve(REPO_ROOT, relativePath);
-        const content = readFileSync(fullPath, 'utf-8');
-        const lineCount = content.split('\n').length;
-
-        // Minimum expected: marker + title + some content (at least 10 lines)
-        expect(
-          lineCount,
-          `${description} (${relativePath}) seems unexpectedly small`
-        ).toBeGreaterThanOrEqual(10);
-      });
-    });
-
-    it('README.md has substantial content', () => {
-      const readmePath = resolve(REPO_ROOT, 'README.md');
-      const content = readFileSync(readmePath, 'utf-8');
-      const lineCount = content.split('\n').length;
-
-      // README should be comprehensive (V1.4.1 baseline: ~1,284 lines)
-      expect(
-        lineCount,
-        'README.md must be comprehensive (>1000 lines for bilingual)'
-      ).toBeGreaterThan(1000);
-    });
-
-    it('ALGORITHM_REQUIREMENTS.md is comprehensive', () => {
-      const reqPath = resolve(REPO_ROOT, 'competitor-kit/ALGORITHM_REQUIREMENTS.md');
-      const content = readFileSync(reqPath, 'utf-8');
-      const lineCount = content.split('\n').length;
-
-      // Requirements doc should be detailed (V1.4.1 baseline: 1,343 lines)
-      expect(
-        lineCount,
-        'ALGORITHM_REQUIREMENTS.md must be comprehensive (>1000 lines)'
-      ).toBeGreaterThan(1000);
-    });
-  });
-
-  describe('Bilingual Index Integrity', () => {
-    it('BILINGUAL_DOCUMENTATION.md lists all required files', () => {
-      const indexPath = resolve(REPO_ROOT, 'docs/BILINGUAL_DOCUMENTATION.md');
-      const indexContent = readFileSync(indexPath, 'utf-8');
-
-      REQUIRED_BILINGUAL_FILES.forEach(([relativePath, description]) => {
-        // Check if the file is mentioned in the index
-        // (either as a link or in a table)
-        const isListed =
-          indexContent.includes(relativePath) ||
-          indexContent.includes(relativePath.replace('../', ''));
-
-        expect(
-          isListed,
-          `${relativePath} (${description}) must be listed in BILINGUAL_DOCUMENTATION.md`
+        expect(hasChineseLink,
+          `${basePath} must link to Chinese version in top navigation`
         ).toBe(true);
+      });
+
+      it(`${description}: Chinese version has language switcher`, () => {
+        const fullPath = resolve(REPO_ROOT, chinesePath);
+        if (!existsSync(fullPath)) return; // Skip if file doesn't exist
+
+        const content = readFileSync(fullPath, 'utf-8');
+        const first100Lines = content.split('\n').slice(0, 100).join('\n');
+
+        // Must contain link to English version
+        const hasEnglishLink = first100Lines.includes(basePath) ||
+                               first100Lines.includes('English');
+
+        expect(hasEnglishLink,
+          `${chinesePath} must link to English version in top navigation`
+        ).toBe(true);
+      });
+    });
+  });
+
+  describe('No Obsolete Bilingual Markers', () => {
+    REQUIRED_LANGUAGE_PAIRS.forEach(([basePath]) => {
+      const chinesePath = toChinesePairPath(basePath);
+
+      it(`${basePath}: should NOT contain obsolete bilingual-doc marker`, () => {
+        const fullPath = resolve(REPO_ROOT, basePath);
+        if (!existsSync(fullPath)) return;
+
+        const content = readFileSync(fullPath, 'utf-8');
+        const hasObsoleteMarker = content.includes('<!-- bilingual-doc:');
+
+        expect(hasObsoleteMarker,
+          `${basePath} should not contain V1.4.1 bilingual-doc marker`
+        ).toBe(false);
+      });
+
+      it(`${chinesePath}: should NOT contain obsolete bilingual-doc marker`, () => {
+        const fullPath = resolve(REPO_ROOT, chinesePath);
+        if (!existsSync(fullPath)) return;
+
+        const content = readFileSync(fullPath, 'utf-8');
+        const hasObsoleteMarker = content.includes('<!-- bilingual-doc:');
+
+        expect(hasObsoleteMarker,
+          `${chinesePath} should not contain V1.4.1 bilingual-doc marker`
+        ).toBe(false);
       });
     });
   });

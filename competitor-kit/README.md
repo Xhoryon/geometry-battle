@@ -1,111 +1,116 @@
-# Geometry Battle V1.1 — 参赛工具包（Competitor Kit）
+# Geometry Battle V1.1 — Competitor Kit
 
-这是你写算法需要的**全部**资料。读完这一页就可以开工。
+<div align="right">
+
+**English** | <a href="./README.zh-CN.md">简体中文</a>
+
+</div>
+
+---
+
+This is **everything** you need to write your algorithm. Read this page and you're ready to start.
 
 ```text
-你要交付的：一个目录，根目录里有一个 solver.py
-每轮它拿到：public_state.json + reveal_state.json
-每轮它给出：一个数学函数 f(x)（写进 output/result.json）
+What you deliver: a directory with solver.py at its root
+Each round it receives: public_state.json + reveal_state.json
+Each round it outputs: a mathematical function f(x) (written to output/result.json)
 ```
 
 ---
 
-## 1. 五分钟上手
+## 1. Five-Minute Quickstart
 
 ```bash
-# 1) 复制官方 starter 作为你的算法目录
+# 1) Copy the official starter as your algorithm directory
 cp -r competitor-kit/starter ./my-algorithm
 
-# 2) 自检（必须全 PASS 再提交）
+# 2) Self-check (must pass all checks before submission)
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm
 
-# 2b) 可选：镜像自检 —— 同一份代码在 Team A / Team B 两侧是否一致（开发诊断）
+# 2b) Optional: Mirror self-check — whether the same code behaves identically as Team A / Team B (development diagnostic)
 python3 competitor-kit/tools/check_mirror.py ./my-algorithm
 
-# 3) 改 solver.py，重复第 2 步
+# 3) Edit solver.py, repeat step 2
 ```
 
-自检输出长这样（数值会随包内容变化）：
+Self-check output looks like this (values will vary with package content):
 
 ```text
 ── Team A ──
-  Entrypoint         PASS 包根目录存在 solver.py
-  Package            PASS 2 个文件 / 6964 字节 / hash=0be87671344d…
-  Runtime            PASS sandbox-exec 可用，算法将在与官方比赛相同的沙箱内运行
-  CLI / startup      PASS READY 握手成功，GO 已释放（release_ns=…）
-  Input              PASS public_state.json (1389 B) + reveal_state.json (681 B)，sha256 绑定已由启动壳复核
-  Result JSON        PASS schema_version="1.1"，键集合恰好为 {schema_version, dsl}
-  DSL                PASS 结构合法（7 个节点）
-  Function legality  PASS f(-12.7337) = -9.1846（Emitter 残差 0.00e+0），凸性变号 0，采样 3274 点
-  Timeout            PASS 耗时 17.4 ms（上限 500 ms）
+  Entrypoint         PASS solver.py exists at package root
+  Package            PASS 2 files / 6964 bytes / hash=0be87671344d…
+  Runtime            PASS sandbox-exec available, algorithm will run in the same sandbox as official matches
+  CLI / startup      PASS READY handshake successful, GO released (release_ns=…)
+  Input              PASS public_state.json (1389 B) + reveal_state.json (681 B), sha256 binding verified by startup shell
+  Result JSON        PASS schema_version="1.1", key set exactly {schema_version, dsl}
+  DSL                PASS structure legal (7 nodes)
+  Function legality  PASS f(-12.7337) = -9.1846 (Emitter residual 0.00e+0), convexity sign changes 0, sampled 3274 points
+  Timeout            PASS elapsed 17.4 ms (limit 500 ms)
 ── Team B ──
-  …（同上，但锚点坐标不同）
-PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
+  …(same as above, but different anchor coordinates)
+PRE-FLIGHT PASS — 2 teams × 9 sections all passed
 ```
 
-> 注意 `Function legality` 那行里的 `f(…)` 取的是**样例世界**里的锚点坐标 ——
-> 它是逐场不同的，**不是** `(-18, 0)`。你的算法必须从 `public_state.emitters`
-> 读锚点；写死坐标会在这里就直接 FAIL（`NOT_THROUGH_SHOOTER`）。
+> Note that the `f(…)` in the `Function legality` line uses the anchor coordinates from the **sample world** —
+> it varies from match to match and is **not** `(-18, 0)`. Your algorithm must read the anchor from `public_state.emitters`;
+> hardcoding coordinates will fail right here with `NOT_THROUGH_SHOOTER`.
 
-`PRE-FLIGHT PASS` 表示接口与函数合法性都没问题。判定代码与官方 Preflight 是**同一份**，
-差别只在于两者用不同的 decoy 世界（种子不同、锚点坐标不同）——
-所以**不要把样例世界里的具体数值写死进算法**：写死锚点会在本地就 FAIL，
-而写死别的（比如某个点位坐标）则会让你在换一场比赛后失手。
+`PRE-FLIGHT PASS` means both interface and function legality are fine. The validation code is **the same** as the official Preflight,
+differing only in the decoy world used (different seed, different anchor coordinates) —
+so **do not hardcode specific values from the sample world**: hardcoding the anchor will fail locally,
+while hardcoding other values (e.g., a point position) will cause you to fail when the match changes.
 
 ---
 
-## 2. 文件索引
+## 2. File Index
 
-| 文件 | 内容 | 什么时候看 |
+| File | Content | When to read |
 |---|---|---|
-| [ALGORITHM_REQUIREMENTS.md](ALGORITHM_REQUIREMENTS.md) | **主文档**：提交形态、启动契约、输入输出、MUST/SHOULD/MAY | 先读这个 |
-| [RUNTIME_MANIFEST.md](RUNTIME_MANIFEST.md) | 沙箱里有什么 Python、哪些模块能用（**第三方包：无**） | 写 import 之前 |
-| [DSL_SPECIFICATION.md](DSL_SPECIFICATION.md) | 函数 DSL 的全部节点、限制、错误码、合法/非法示例 | 构造函数之前 |
-| [JSON_SCHEMA.md](JSON_SCHEMA.md) | 三个 JSON 文件的字段结构 + JSON Schema | 写解析代码之前 |
-| [starter/solver.py](starter/solver.py) | 官方 starter（接口正确、可直接运行） | 一开始 |
-| [examples/](examples/) | 真实引擎产出的输入/输出样例 | 想对照格式时 |
-| [tools/validate_submission.py](tools/validate_submission.py) | 本地自检工具 | 每次提交前 |
-| [tools/check_mirror.py](tools/check_mirror.py) | 镜像自检（开发诊断）：同一份代码在 A / B 两侧是否一致 | 提交前、以及每次改了方向 / 选目标逻辑之后 |
+| [ALGORITHM_REQUIREMENTS.md](ALGORITHM_REQUIREMENTS.md) | **Main document**: submission format, startup contract, input/output, MUST/SHOULD/MAY | Read this first |
+| [RUNTIME_MANIFEST.md](RUNTIME_MANIFEST.md) | What Python is in the sandbox, which modules are available (**third-party packages: NONE**) | Before writing imports |
+| [DSL_SPECIFICATION.md](DSL_SPECIFICATION.md) | All DSL nodes, limits, error codes, legal/illegal examples | Before constructing functions |
+| [JSON_SCHEMA.md](JSON_SCHEMA.md) | Field structure + JSON Schema for the three JSON files | Before writing parsing code |
+| [starter/solver.py](starter/solver.py) | Official starter (correct interface, runs out of the box) | At the beginning |
+| [examples/](examples/) | Real engine-produced input/output samples | When cross-referencing formats |
+| [tools/validate_submission.py](tools/validate_submission.py) | Local self-check tool | Before every submission |
+| [tools/check_mirror.py](tools/check_mirror.py) | Mirror self-check (development diagnostic): whether the same code behaves identically as A / B | Before submission, and after every change to direction / target selection logic |
 
 ---
 
-## 3. 你只需要记住的六件事
+## 3. Six Things You Need to Remember
 
-1. **入口固定**：包根目录的 `solver.py`，四个参数 `--team / --public / --reveal / --output`。
-   **同一正式提交必须能够在 Team A 与 Team B 两侧正确运行**：A 的前进方向是 x 增大、B 是 x 减小；
-   `points` 的顺序**不是**几何顺序（先 A 组后 B 组、组内按生成顺序、整场每轮相同、死点留在原位、
-   被锁定为 Emitter 的点被移除且不重新编号）—— 详见 [ALGORITHM_REQUIREMENTS.md](ALGORITHM_REQUIREMENTS.md) §6.2。
-   **English.** The same formal submission MUST run correctly as Team A and as Team B: A moves forward towards increasing x,
+1. **Fixed entry point**: `solver.py` at the package root, four parameters `--team / --public / --reveal / --output`.
+   **The same formal submission MUST run correctly as Team A and as Team B**: A moves forward towards increasing x,
    B towards decreasing x, and the order of `points` is not geometric order (A group first, then B, each in
    generation order, identical every round, dead points kept in place, Emitter points removed without
    renumbering) — see ALGORITHM_REQUIREMENTS.md §6.2.
-2. **输入只走文件**：两份 JSON，由参数给出路径；stdin 不是输入通道。
-3. **结果只走文件**：`{"schema_version":"1.1","dsl":<AST>}` 写进 `--output`；顶层只有这两个键，stdout 不是结果通道。
-4. **函数必须经过自己的固定 Emitter**：`|f(x_e) − y_e| ≤ 1e-6`。**Emitter 坐标逐场不同** —— 每队开赛前从自己的点里选一个并锁定，因此必须从 `public_state.emitters[team]` 读，**不要写死 `-18` / `18`**。用 `f(x) = y_e + g(x − x_e)` 这种增量写法最稳（换锚点不用改代码）。
+2. **Input only via files**: two JSON files, paths provided by parameters; stdin is not an input channel.
+3. **Result only via file**: `{"schema_version":"1.1","dsl":<AST>}` written to `--output`; top level has exactly these two keys, stdout is not a result channel.
+4. **Function must pass through your own fixed Emitter**: `|f(x_e) − y_e| ≤ 1e-6`. **Emitter coordinates vary by match** — each team selects and locks one from their own points before the match starts, so you must read from `public_state.emitters[team]`, **do not hardcode `-18` / `18`**. Use an incremental form like `f(x) = y_e + g(x − x_e)` for stability (no code changes when the anchor changes).
 
-   > **本地自检与官方 Preflight 都会替你检查这一点。** 它们的样例世界（decoy）
-   > 用的锚点是**样例地图上的点**，不是平台常量 —— 写死坐标会在
-   > `Function legality` 一节直接 FAIL（`NOT_THROUGH_SHOOTER`），当场就能发现。
-5. **没有第三方包**：`numpy` / `scipy` 在沙箱里**不可用**，只用标准库。
-6. **500 ms 内出结果**，每轮沙箱重建、不跨轮保存状态。
+   > **Both local self-check and official Preflight will verify this for you.** Their sample worlds (decoy)
+   > use anchors that are **points on the sample map**, not platform constants — hardcoded coordinates
+   > will fail immediately in the `Function legality` section (`NOT_THROUGH_SHOOTER`), caught on the spot.
+5. **No third-party packages**: `numpy` / `scipy` are **not available** in the sandbox, use standard library only.
+6. **Produce result within 500 ms**, sandbox is rebuilt each round, no state persists across rounds.
 
 ---
 
-## 4. 提交格式
+## 4. Submission Format
 
 ```text
-my-algorithm/          ← 提交这个目录（不是 zip）
-├── solver.py          ← 必须
-├── manifest.json      ← 可选
-└── 你的其它模块/数据
+my-algorithm/          ← Submit this directory (not a zip)
+├── solver.py          ← Required
+├── manifest.json      ← Optional
+└── Your other modules/data
 ```
 
-限制：≤ 8 MB、≤ 256 个文件、不允许符号链接，扩展名限
-`.py .json .txt .md .csv .yaml .yml`。
+Limits: ≤ 8 MB, ≤ 256 files, no symbolic links, extensions limited to
+`.py .json .txt .md .csv .yaml .yml`.
 
 ---
 
-## 5. 自检工具做了什么（以及它不是什么）
+## 5. What the Self-Check Tool Does (and What It Isn't)
 
 ```bash
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm
@@ -113,11 +118,11 @@ python3 competitor-kit/tools/validate_submission.py ./my-algorithm --team A
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm --json
 ```
 
-它把你的算法放进**真实的沙箱**（`sandbox-exec`，与正式比赛同一套），用一份
-**与比赛无关的 decoy 世界**跑一遍，然后逐项检查九个分节。
+It places your algorithm in a **real sandbox** (`sandbox-exec`, the same as official matches), runs it once with a
+**decoy world unrelated to the match**, then checks nine sections item by item.
 
-判定逻辑**不是**在工具里重新实现的（那必然会与平台漂移）——
-它调用的就是平台生产代码本身：
+The validation logic is **not** reimplemented in the tool (that would inevitably drift from the platform) —
+it calls the platform's production code itself:
 
 ```text
 inspectPackage / buildPublicState / buildRevealState
@@ -125,13 +130,13 @@ prepareSandbox / spawnRunner / parseResultFile
 parseCanonicalDSL / validateAttackFunction
 ```
 
-所以：**本地自检的规则 == 官方 Preflight 的规则**，是同一份代码，不是两份要人工同步的规则表。
+So: **local self-check rules == official Preflight rules**, same code, not two separate rule tables requiring manual sync.
 
-它**不检查**策略强度：能通过自检只说明接口和函数合法性没问题，不代表你能赢。
+It **does not check** strategy strength: passing self-check only means interface and function legality are fine, not that you'll win.
 
-需要 Node.js（比赛仓库自带）；Python 前端只是调用它。
+Requires Node.js (bundled with the competition repository); the Python frontend just calls it.
 
-### 5.1 镜像自检 `check_mirror.py`（开发诊断） / Mirror self-check (development diagnostic)
+### 5.1 Mirror Self-Check `check_mirror.py` (Development Diagnostic)
 
 ```bash
 python3 competitor-kit/tools/check_mirror.py ./my-algorithm
@@ -139,66 +144,46 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm --json
 python3 competitor-kit/tools/check_mirror.py ./my-algorithm --timeout 500
 ```
 
-它把同一份代码放进 decoy 世界及其**镜像世界**（x → −x、A/B 互换、编号互换、障碍物按序镜像）里各跑一遍
-（A@原世界 ↔ B@镜像世界，再反过来一对），然后比较两侧**规范化后的几何**（`f_A(x)` 对 `f_B(−x)`）与
-Judge 的结算结果 —— 不比 AST 字节。合法性与结算调用的仍是生产模块（`parseCanonicalDSL` /
-`validateAttackFunction` / `judgeShot`），Python 前端只负责调用 `src/operator/check-mirror.ts`。
+It runs the same code in the decoy world and in its **mirror** (x → −x, teams swapped, ids swapped, obstacles mirrored in order) — A on the original vs B on the mirror, and the reverse pair — then compares **normalised geometry** (`f_A(x)` against `f_B(−x)`) and the Judge outcome, not AST bytes. Legality and settlement still call production modules (`parseCanonicalDSL` / `validateAttackFunction` / `judgeShot`), the Python frontend just calls `src/operator/check-mirror.ts`.
 
-结论：`PASS` 一致；`WARN` 两侧都合法但几何不同（合法 —— 你的算法不是镜像对称的，确认这是有意的即可）；
-`FAIL` 一侧合法而镜像侧崩溃 / 超时 / 非法（经典的「只会打 Team A」bug）；两侧都失败同样记 `FAIL`
-（那不是镜像问题 —— 先跑 `validate_submission.py`）。退出码 0 = PASS / WARN，1 = FAIL，2 = 用法 / 环境错误。
-**注意**：`WARN` 若两对配对都报「结算不一致」（命中 / 阻挡 / 终止原因不同），那是同一个「只会打 Team A」bug
-的不崩溃形态（B 侧交出了退化但合法的函数）—— 退出码虽是 0，请像 `FAIL` 一样认真对待；工具会在这种情况下额外提示。
-相对路径（算法目录、`--sandbox-root`）相对**仓库根目录**解析，与 `validate_submission.py` 一致。
+Conclusion: `PASS` = consistent; `WARN` = both sides legal but the geometry differs (legal — your solver is not mirror-symmetric; make sure it is intentional); `FAIL` = one side legal while its mirror crashes / times out / is illegal (the classic Team-A-only bug); both sides failing is also `FAIL` (not a mirror issue — run `validate_submission.py` first). Exit codes: 0 = PASS / WARN, 1 = FAIL, 2 = usage / environment.
 
-**它是开发诊断，不是正式的拒绝规则：官方 Preflight 不运行它。** 正式的接口与函数合法性仍以
-`validate_submission.py`（== 官方 Preflight）为准。
+**Note:** a `WARN` whose two pairs both report a different judge outcome (hits / blocked / end reason) is the non-crashing form of the same Team-A-only bug (the B side emitted a degenerate but legal function) — the exit code is 0, but treat it as seriously as `FAIL`; the tool prints an extra hint in that case. Relative paths (the package directory, `--sandbox-root`) resolve against the **repository root**, as with `validate_submission.py`.
 
-**English.** `check_mirror.py` runs the same code in the decoy world and in its **mirror** (x → −x, teams
-swapped, ids swapped, obstacles mirrored in order) — A on the original vs B on the mirror, and the reverse
-pair — then compares **normalised geometry** (`f_A(x)` against `f_B(−x)`) and the Judge outcome, not AST
-bytes. `PASS` = consistent; `WARN` = both sides legal but the geometry differs (legal — your solver is not
-mirror-symmetric; make sure it is intentional); `FAIL` = one side legal while its mirror crashes / times out /
-is illegal (the classic Team-A-only bug); both sides failing is also `FAIL` (not a mirror issue — run
-`validate_submission.py` first). Exit codes: 0 = PASS / WARN, 1 = FAIL, 2 = usage / environment.
-**Note:** a `WARN` whose two pairs both report a different judge outcome (hits / blocked / end reason) is the
-non-crashing form of the same Team-A-only bug (the B side emitted a degenerate but legal function) — the exit
-code is 0, but treat it as seriously as `FAIL`; the tool prints an extra hint in that case. Relative paths (the
-package directory, `--sandbox-root`) resolve against the **repository root**, as with `validate_submission.py`.
-**It is a development diagnostic, not an official rejection rule — the official Preflight does not run it.**
+**It is a development diagnostic, not an official rejection rule — the official Preflight does not run it.** Formal interface and function legality are still determined by `validate_submission.py` (== official Preflight).
 
 ---
 
-## 6. 官方 Preflight 与本地自检的关系
+## 6. Relationship Between Official Preflight and Local Self-Check
 
-| | 本地自检 | 官方 Preflight |
+| | Local Self-Check | Official Preflight |
 |---|---|---|
-| 判定代码 | 同一份 | 同一份 |
-| 沙箱 | 真实沙箱 | 真实沙箱 |
-| 世界 | 固定 decoy 种子（可复现） | `matchId` 派生的 decoy 世界 |
-| 队别 | A、B 各跑一次 | 按你的槽位跑一次 |
-| 结论 | `PRE-FLIGHT PASS` / `FAIL` | `Preflight: PASS` / `FAIL` |
-| 镜像自检 | `check_mirror.py`（开发诊断，可选） | **不运行** |
+| Validation code | Same | Same |
+| Sandbox | Real sandbox | Real sandbox |
+| World | Fixed decoy seed (reproducible) | `matchId`-derived decoy world |
+| Team | Run once as A, once as B | Run once per your slot |
+| Conclusion | `PRE-FLIGHT PASS` / `FAIL` | `Preflight: PASS` / `FAIL` |
+| Mirror self-check | `check_mirror.py` (development diagnostic, optional) | **Not run** |
 
-两者都**不会**泄漏比赛信息：decoy 世界与正式比赛的种子无关。
+Neither will leak match information: decoy worlds are unrelated to actual match seeds.
 
 ---
 
-## 7. 版本与冻结
+## 7. Version and Freeze
 
 ```text
-协议版本      1.1
-Runtime       CPython 3.9.6，第三方包 NONE
-DSL           14 个白名单节点，节点 ≤128 / 深度 ≤12 / 常数 ≤1000
-结果通道      output/result.json（唯一）
-计时          各自 GO 起算，500 ms
-比赛终止      ELIMINATION / MUTUAL_ELIMINATION / STALEMATE（连续 20 回合零击杀）/ HARD_ROUND_LIMIT（第 60 回合）
+Protocol version  1.1
+Runtime           CPython 3.9.6, third-party packages NONE
+DSL               14 whitelisted nodes, nodes ≤128 / depth ≤12 / constants ≤1000
+Result channel    output/result.json (only)
+Timing            Each from their own GO, 500 ms
+Match termination ELIMINATION / MUTUAL_ELIMINATION / STALEMATE (20 consecutive rounds with zero kills) / HARD_ROUND_LIMIT (round 60)
 ```
 
-`competitor-kit/` 里的每一份文件都由平台测试持续核对：
+Every file in `competitor-kit/` is continuously verified by platform tests:
 
-- `tests/competitor-kit.ts` —— 文档示例、引用完整性、examples 防漂移、CRASH 可读性、starter 首跑、
-  §6.2 方向 / 数组顺序 / 双侧兼容的措辞防漂移、`tools/check_mirror.py` 的 PASS / WARN / FAIL 三条路径
-- `tests/runtime-manifest.ts` —— Manifest 声称可 import 的模块，在真实沙箱里必须真的可 import
+- `tests/competitor-kit.ts` — Documentation examples, reference integrity, examples drift prevention, CRASH readability, starter first run,
+  §6.2 direction / array order / dual-side compatibility wording drift prevention, `tools/check_mirror.py` PASS / WARN / FAIL paths
+- `tests/runtime-manifest.ts` — Modules the Manifest claims are importable must actually be importable in a real sandbox
 
-也就是说：**这一页写的东西，有测试在盯着它不许过期。**
+In other words: **what's written on this page has tests watching it, preventing staleness.**
