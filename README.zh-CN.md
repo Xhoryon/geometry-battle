@@ -13,7 +13,7 @@
 
 ---
 
-## 概述 / Overview
+## 概述
 
 双方队伍各提交一个算法包，装进两个**固定槽位** `runs/slots/team-a` 与 `runs/slots/team-b`
 （**运行期槽位根** = 正式投递点；仓库里的 `algorithms/` 只是出厂 fixture，见 §1）。
@@ -23,12 +23,12 @@
 
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
 **START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
-stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv--algorithm-protocol-two-phase-input-files--argv)。
+stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
 
 
 
 
-### V1.2 规则一览 / V1.2 rules at a glance
+### V1.2 规则一览
 
 > **与 V1.1 的唯一规则差异**：固定 Emitter 不再是平台常量，而是**每队开赛前
 > 从自己的点里选定一个**（V1.2 §一）。其余全部不变。
@@ -52,9 +52,9 @@ stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段�
 
 ---
 
-## 能力与版本 / Capabilities & versions
+## 能力与版本
 
-**中文.** 当前是 **V1.4 Platform**。四层能力叠在一起：
+**当前是 V1.4 Platform**。四层能力叠在一起：
 
 - **V1.1 —— 规则与判定冻结。** 两阶段输入协议（`public_state.json` → `reveal_state.json`）、
   14 个算子的 DSL 白名单、500 ms 计算预算、沙箱隔离与公平启动、四类终止保证。
@@ -68,7 +68,7 @@ stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段�
   以及本 README 的双语化。
 - **V1.4 —— Platform Fairness · Handbook · UX Refresh。** 平台镜像公平性的永久测试
   （Level 1–6，`tests/mirror-*.ts`）与同包自战 / 先手 / 地图分布战役（结论：镜像公平 PASS，
-  槽位 / 先手 / 地图偏差均 DISPROVEN，见 `Plans/Output/V1.4_PLATFORM_FAIRNESS_REPORT.md`）；
+  槽位 / 先手 / 地图偏差均 DISPROVEN，见 `docs/V1.4_FAIRNESS_REPORT.zh-CN.md`）；
   修复了唯一发现的平台不对称（Validator 采样网格锚点）；选手手册新增「坐标方向与镜像」
   与镜像自检工具 `check_mirror.py`；前端重构为赛事系统：首页 `/`（选择身份 + 最近比赛）、
   七步裁判向导、参赛者页四块六步与显式 LOCKED、观众记分板式大屏、回放播放器，统一状态
@@ -82,9 +82,9 @@ stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段�
 
 ---
 
-## 快速开始 / Quick Start
+## 快速开始
 
-### 1. 算法包结构（固定槽位 + 固定入口） / Algorithm package structure (fixed slots, fixed entry)
+### 1. 算法包结构（固定槽位 + 固定入口）
 
 算法包投放进两个**永久存在**的槽位。**正式投递点是运行期槽位根**：
 
@@ -160,7 +160,7 @@ Upload → staging → validate → preflight → hash → seal → replace
 
 
 
-### 2. 算法协议（两阶段输入文件 + argv） / Algorithm protocol (two-phase input files + argv)
+### 2. 算法协议（两阶段输入文件 + argv）
 
 平台不再把状态写进 stdin。每个回合，宿主以如下 argv 启动算法进程（**四个参数固定**）：
 
@@ -295,20 +295,15 @@ import hashlib
 assert hashlib.sha256(open(a.public, "rb").read()).hexdigest() == reveal["public_state_sha256"]
 ```
 
-
-
 ```
-PRE-REVEAL   public_state.json in place (with the Fixed Emitter); no process created
+PRE-REVEAL   public_state.json 就位（含固定 Emitter），算法进程尚未创建
    ↓
-REVEAL       reveal_state.json produced (obstacles); the algorithm still is not running
-   ↓  the judge presses START (it may sit here as long as it likes — no effect on fairness)
-START        only now does the host release the process → 3-2-1 countdown → GO → compute
+REVEAL       reveal_state.json 生成（障碍物），算法仍未运行
+   ↓  裁判按下 START（现场可停任意久，停多久都不影响公平）
+START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → 计算
 ```
 
-
-
-
-```python
+**每轮不再有人工选点、也没有 SHOOTER LOCK**：锚点在开赛前一次性选定并锁定，
 # Emitter 是**本场选定**的（逐场不同），必须从 public 里读，不要写死坐标
 s = public["emitters"][a.team]
 enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"]]
@@ -340,7 +335,7 @@ os.replace(tmp, a.output)
 
 完整可运行版本见 [`starter/solver.py`](starter/solver.py)。
 
-### 3. DSL 白名单 / DSL whitelist
+### 3. DSL 白名单
 
 **允许的运算符（全部，共 14 个）：**
 
@@ -361,7 +356,7 @@ os.replace(tmp, a.output)
 
 
 
-### 4. 限制规则 / Limits
+### 4. 限制规则
 
 | 限制 | 值 |
 |------|-----|
@@ -386,7 +381,7 @@ os.replace(tmp, a.output)
 
 
 
-### 5. 固定 Runtime（双方完全相同） / Frozen runtime (identical for both sides)
+### 5. 固定 Runtime（双方完全相同）
 
 正式比赛冻结统一 Runtime，双方环境逐项一致：
 
@@ -419,7 +414,7 @@ os.replace(tmp, a.output)
 
 
 
-### 6. 场地与判定 / Field & judging
+### 6. 场地与判定
 
 - 场地：`x ∈ [-20, 20]`，`y ∈ [-12, 12]`
 - 队伍区域：A 队 `x ∈ [-20, -4]`，B 队 `x ∈ [4, 20]`
@@ -455,9 +450,9 @@ os.replace(tmp, a.output)
 
 ---
 
-## 运行 / Running
+## 运行
 
-### 本地 Web UI（推荐） / Local Web UI (recommended)
+### 本地 Web UI（推荐）
 
 ```bash
 npm install
@@ -478,7 +473,7 @@ npm run app          # 构建前端 → 起服务 → 绑定 127.0.0.1:17800 →
 
 
 
-### 访问令牌（V1.2，每场轮换） / Access tokens (V1.2, rotated every match)
+### 访问令牌（V1.2，每场轮换）
 
 `/judge` 与 `/team/*` 都要求一个访问令牌。它**不是账号密码**，而是 capability：
 **谁拿到，谁就能行使那一面的权限。**
@@ -523,7 +518,7 @@ Emitter 锁定与计算状态**，投的是不是选手那份，一眼可对；�
 
 
 
-### 锦标赛模式（V1.2，默认开启） / Tournament Mode (V1.2, on by default)
+### 锦标赛模式（V1.2，默认开启）
 
 正式比赛**不允许平台自带的算法上场**。服务端对下列四个入口逐一设卡，
 只要算出来的包哈希命中「平台发行树」（`starter/`、`algorithms/team-*`、
@@ -576,7 +571,7 @@ npm run e2e          # Playwright browser rehearsal of a full match (real algori
 
 
 
-### 终端（fallback，与 Web UI 完全等价） / Terminal (fallback, equivalent to the Web UI)
+### 终端（fallback，与 Web UI 完全等价）
 
 ```bash
 npm install
@@ -607,7 +602,7 @@ npm run stress
 
 ---
 
-## 项目结构 / Repository structure
+## 项目结构
 
 ```
 几何斗殴/
@@ -637,18 +632,14 @@ npm run stress
 ├── starter/           # 官方 Starter Algorithm（槽位出厂即为它的副本）
 ├── demo/              # 参考解（reference-solver-v2）
 ├── tests/             # 回归测试套件 + 算法 fixture
-├── docs/
-│   └── agent-context/ # 给接手的 AI/开发者的**当前有效事实**（状态、架构、规矩）
-└── Plans/
-    ├── Input/         # 人输入的 Plan、规范与任务书
-    └── Output/        # 审计报告、工作日志与交接文档
+└── docs/              # 架构文档、公平性报告、发行说明、可复现性指南
 ```
 
 
 
 ---
 
-## 本地 Web UI 的边界 / Where the local Web UI stops
+## 本地 Web UI 的边界
 
 Web UI 是一个**包装层**，不是第二个引擎。三条结构性约束：
 
@@ -685,7 +676,7 @@ reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出�
 
 ---
 
-## 隔离与公平性 / Isolation & fairness
+## 隔离与公平性
 
 - 每次计算运行在独立的 `sandbox-exec` 沙箱中：默认拒绝、拒绝网络、拒绝 `fork`。
   沙箱内是**四区**布局 —— `app/`（只读算法包）、`input/`（只读的两份输入 JSON，0444）、
@@ -728,9 +719,9 @@ reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出�
 
 ---
 
-## 可复现性 / Reproducibility
+## 可复现性
 
-**中文.** 一场比赛可以**事后独立复核**，不需要重跑任何算法：
+一场比赛可以**事后独立复核**，不需要重跑任何算法：
 
 - `match.json` / `audit.json` / `replay.json` 落在 `artifacts/matches/<matchId>/`；
 - 逐轮记录 `roundStateHash = SHA256(publicStateHash + revealStateHash)`。拿到当年那两份
@@ -748,7 +739,7 @@ reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出�
 
 ---
 
-## 已知限制 / Known limitations
+## 已知限制
 
 - **僵局与终止**由引擎负责，见上文「终止保证」：STALEMATE（连续 20 回合零击杀）
   与 HARD_ROUND_LIMIT（第 60 回合）都会判 DRAW 并正常终局，不存在「跑不完等裁判裁定」。
@@ -770,25 +761,25 @@ reveal 比例的逐帧揭示，从不求值函数 —— 重新求值会画出�
 
 ---
 
-## 版本沿革 / Release provenance
+## 版本沿革
 
-**中文.** 本仓库是**研发历史**。公开发布的是
+本仓库是**研发历史**。公开发布的是
 <https://github.com/Xhoryon/geometry-battle> —— 那是一份**独立脱敏导出**，
 与本地研发仓库的 SHA **不互见**。
 
 - 已发布的 tag：`v1.0.0-competition`、`v1.1.0-competition`、`v1.2.0-competition`。
   它们**从不移动**，历史**从不改写**（不 force push、不 rebase 已发布的提交）。
 - V1.3（本地化）**尚未打 tag**。
-- 归档的试玩证据（`playtest/`）与历史审计（`Plans/Output/`）**保持原样**，
+- 归档的试玩证据（`playtest/`）**保持原样**，
   不因为术语更新而回改 —— 它们要作为历史证据可复现。
 
 
 
 ---
 
-## 许可与使用范围 / License & scope
+## 许可与使用范围
 
-### 定位 / Positioning
+### 定位
 
 Geometry Battle 是一个**教育性的算法竞赛沙盒**，用于：
 
@@ -800,7 +791,7 @@ Geometry Battle 是一个**教育性的算法竞赛沙盒**，用于：
 
 
 
-### 许可 / License
+### 许可
 
 本项目采用 **[PolyForm Noncommercial License 1.0.0](LICENSE)**，全文见仓库根目录的
 [`LICENSE`](LICENSE)（与 [官方原文](https://polyformproject.org/licenses/noncommercial/1.0.0)
@@ -829,7 +820,7 @@ Geometry Battle 是一个**教育性的算法竞赛沙盒**，用于：
 
 
 
-### 商业用途 / Commercial use
+### 商业用途
 
 **商业用途不在本许可的授权范围内。** 若要将本项目或其修改版用于商业目的 ——
 包括但不限于付费课程、商业培训、商业竞赛平台、托管服务、咨询交付，
@@ -839,5 +830,5 @@ Geometry Battle 是一个**教育性的算法竞赛沙盒**，用于：
 
 
 
-### 版权 / Copyright
+### 版权
 

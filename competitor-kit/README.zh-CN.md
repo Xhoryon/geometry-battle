@@ -1,6 +1,6 @@
 # Geometry Battle V1.1 — 参赛工具包（Competitor Kit）
 
-**中文** | [English](README.zh-CN.md)
+<a href="./README.md">English</a> | **简体中文**
 
 ---
 

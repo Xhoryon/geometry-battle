@@ -1,8 +1,6 @@
-<div align="right">
-
 **English** | <a href="./JSON_SCHEMA.zh-CN.md">简体中文</a>
 
-</div>
+---
 
 # JSON Schema Reference
 

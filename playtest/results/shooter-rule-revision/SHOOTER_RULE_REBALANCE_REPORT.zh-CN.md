@@ -1,22 +1,17 @@
 <div align="right">
 
-<a href="./SHOOTER_RULE_en.md">English</a> | **简体中文**
+<a href="./SHOOTER_RULE_REBALANCE_REPORT.md">English</a> | **简体中文**
 
 </div>
 
 
-# Shooter Rule Revision & Rebalance — Report / 射手规则修订与重平衡 — 报告
-
+# 射手规则修订与重平衡 — 报告
 
 **几何斗殴 V1.1 · 三算法对抗 · 规则修订后的重跑**
 
 ---
 
-## Document Metadata / 文档元数据
-
-
-
-### 中文
+## 文档元数据
 
 - 协议版本：1.1（`competitor-kit/` 公开接口）
 - 测试日期：2026-09-10
@@ -25,25 +20,7 @@
 
 ---
 
-## Git baseline / Git 基线
-
-
-
-
-
-```text
-90647f3  docs(rules): amend shooter elimination semantics
-2e825a1  feat(v1.1): preserve locked attack after shooter elimination
-95f2a5f  refactor(v1.1): drop stale cancellation comments and runner-cancel wording
-```
-
-
-
-```text
-Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md
-```
-
-### 中文
+## Git 基线
 
 **本轮全部证据的可寻址锚点**
 
@@ -72,18 +49,7 @@ Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.
 
 ---
 
-## 1. Old Rule / 1. 旧规则
-
-
-```text
-First Solver kills opponent Shooter
-→ opponent shot cancelled
-```
-
-
-
-
-### 中文
+## 1. 旧规则
 
 ```text
 先手方一旦击杀对方的 Shooter
@@ -98,16 +64,7 @@ Round-2 报告（`playtest/results/round-2/`）的判读是：
 
 ---
 
-## 2. New Rule / 2. 新规则
-
-
-```text
-After START, both sides gain independent and irrevocable attack rights for this round.
-```
-
-
-
-### 中文
+## 2. 新规则
 
 ```text
 START 之后，双方获得本轮独立且不可撤销的攻击权。
@@ -123,14 +80,7 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 
 ---
 
-## 3. Reason for Change / 3. 修订原因
-
-
-
-
-
-
-### 中文
+## 3. 修订原因
 
 不是平衡性推导的产物，是**人类决定**（任务书 §2：`Rule amended by human decision`）。
 
@@ -149,14 +99,7 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 
 ---
 
-## 4. Implementation Diff Scope / 4. 实现改动范围
-
-
-
-
-
-
-### 中文
+## 4. 实现改动范围
 
 生产改动面**只有取消语义本身**；DSL 白名单、命中判定、障碍物碰撞、先手规则、计时终点与超时预算、沙箱策略一律未动。
 
@@ -176,31 +119,7 @@ START 之后，双方获得本轮独立且不可撤销的攻击权。
 
 ---
 
-## 5. Regression Evidence / 5. 回归证据
-
-
-
-
-```text
-  ✓ dsl-contract            ✓ preflight-decoy          ✓ process-tree-cleanup
-  ✓ convexity-aliasing      ✓ result-ipc               ✓ hostile-input
-  ✓ official-starter        ✓ algorithm-slot  ✗        ✓ timing-fairness
-  ✓ map-fairness            ✓ full-match-e2e           ✓ replay
-  ✓ obstacle-block          ✓ runner-isolation         ✓ runtime-manifest
-  ✓ dual-shooter-selection  ✓ cross-round-cheat        ✓ competitor-kit
-  ✓ locked-attack-right     ✓ package-tamper
-  ✓ alive-kill              ✓ timeout-boundary
-  ✓ roundstate-equality
-  ✓ input-protocol
-  ✓ stage-gating
-  ✓ pre-start-execution
-
-25/26 suites passed
-Failed suite: algorithm-slot
-```
-
-
-### 中文
+## 5. 回归证据
 
 | 项 | 结果 |
 |---|---|
@@ -235,12 +154,11 @@ Failed suite: algorithm-slot
 
 ---
 
-### 5.1 R1–R8 / 5.1 R1–R8（任务书 §17）
+### 5.1 R1–R8（任务书 §17）
 
 
 
 
-### 中文
 
 | 编号 | 场景 | 结果 |
 |---|---|---|
@@ -257,12 +175,11 @@ Failed suite: algorithm-slot
 
 ---
 
-### 5.2 Old Test Reclassification / 5.2 §18 旧测试重分类
+### 5.2 §18 旧测试重分类
 
 
 
 
-### 中文
 
 | 断言 | 分类 | 处理 |
 |---|---|---|
@@ -277,11 +194,9 @@ Failed suite: algorithm-slot
 
 ---
 
+## 6. Fast ↔ Optimizer（正式赛后重跑 60 场）
 
 
-
-
-### 中文
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -297,11 +212,12 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。先手
 
 ---
 
+## 7. Fast ↔ Hybrid（60 场）
 
 
 
 
-### 中文
+
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -314,11 +230,9 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。先手
 
 ---
 
+## 8. Hybrid ↔ Optimizer（60 场）
 
 
-
-
-### 中文
 
 | | Round-2（旧规则） | Revision 2 |
 |---|---|---|
@@ -333,7 +247,7 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。先手
 
 ---
 
-## 9. Counterfactual: Offline Model Field-for-Field Matches Official Results / 9. 反事实：离线模型逐场命中官方结果
+## 9. 反事实：离线模型逐场命中官方结果
 
 
 
@@ -342,7 +256,6 @@ Fast **每一轮都是先手**（1.000 vs 0.000），却以 2-38 落败。先手
 
 
 
-### 中文
 
 本轮把旧的 `CF-NO-CANCEL` 归档为 **historical counterfactual**（§21），新增唯一反事实 **`CF-LEGACY-CANCEL`**（§22，重加被废止的取消分支）。同时保留 `locked-attack` 模式作为**模型保真度核对**（它现在就是生产规则，不再是反事实）。
 
@@ -363,14 +276,13 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-### 9.1 Old Rule's Cost in the **New World** / 9.1 旧规则在**新世界**上的代价（`CF-LEGACY-CANCEL` 归因）
+### 9.1 旧规则在**新世界**上的代价（`CF-LEGACY-CANCEL` 归因）
 
 
 
 
 
 
-### 中文
 
 在官方（新规则）世界上重放每个回合，用「先手的实际命中里是否含对方 Shooter」重推旧规则会取消什么（不再读平台 flag —— 平台已不再记录取消）：
 
@@ -386,26 +298,24 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-### 9.2 `CF-LEGACY-CANCEL` Forward Simulation / 9.2 `CF-LEGACY-CANCEL` 的前向模拟
+### 9.2 `CF-LEGACY-CANCEL` 的前向模拟
 
 
 
 
-### 中文
 
 
 对照 Round-2 官方实测（50-0-10、39-4-17、26-8-26）：`cf-legacy-cancel` 在 fast-vs-optimizer 上**精确复现** 50-0-10，另两对差 1–2 场（24-10-26 vs 26-8-26；38-4-18 vs 39-4-17）。差异属预期：模拟跑在**本轮**的地图序列与自动选点上，不是逐位复刻 Round-2 的人工选点记录。
 
 ---
 
-## 10. Mutual Elimination / 10. 同归于尽
+## 10. 同归于尽
 
 
 
 
 
 
-### 中文
 
 | 配对 | 同归于尽 | 占比 |
 |---|---|---|
@@ -422,14 +332,13 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-## 11. Timing / 11. 计时
+## 11. 计时
 
 
 
 
 
 
-### 中文
 
 计时规则**未改动**（先手 = 双方各自 GO 时刻起算的耗时更短者；终点 = `result.json` 的 mtime）。
 
@@ -445,12 +354,11 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-## 12. Match Length / 12. 对局长度
+## 12. 对局长度
 
 
 
 
-### 中文
 
 | | Round-2 | Revision 2 |
 |---|---|---|
@@ -463,13 +371,12 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-## 13. No-progress / 13. 僵持
+## 13. 僵持
 
 
 
 
 
-### 中文
 
 连续零击杀轮数（`longestNoKillStreak`，逐场取最长）：
 
@@ -486,7 +393,7 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-### 13.1 Absorbing State Test (cap 60) / 13.1 吸收态检验（cap 60）
+### 13.1 吸收态检验（cap 60）
 
 
 
@@ -494,7 +401,6 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 
 
-### 中文
 
 从 180 场里取出「至少有一侧打满 30 轮」的 **16 个条件**，对 **fast-vs-hybrid**（本轮平局与同归于尽最集中的一对，与 Round-2 同类检验口径一致）用 `--max-rounds 60` 重跑 16 × 2 摆位 = **32 场**：
 
@@ -511,11 +417,10 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-## 14. Rule Health / 14. 规则健康度
+## 14. 规则健康度
 
 
 
-### 中文
 
 | 健康项 | 判定 |
 |---|---|
@@ -529,7 +434,7 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 ---
 
-## 15. Platform Findings / 15. 平台发现
+## 15. 平台发现
 
 
 
@@ -544,7 +449,6 @@ Round-2 在旧规则下用离线模型预测「若移除取消」会怎样；本
 
 
 
-### 中文
 
 按任务书 §19：与本次规则无关的失败**不静默修复**，先定级。
 
@@ -570,9 +474,9 @@ Cycle-2 已记录并取证（`Plans/Output/V1.1 Timing Anchor & sys.path Remedia
 
 ---
 
-## 16. Final Answers / 16. 最终回答（任务书 §32）
+## 16. 最终回答（任务书 §32）
 
-### 16.1 Did removing shot cancellation solve the observed strategy collapse? / 16.1 删除 shot cancellation 是否解决了观察到的策略坍缩？
+### 16.1 删除 shot cancellation 是否解决了观察到的策略坍缩？
 
 
 ```text
@@ -582,7 +486,6 @@ NO
 
 
 
-### 中文
 
 ```text
 NO
@@ -597,7 +500,7 @@ NO
 
 ---
 
-### 16.2 Does computation speed still have substantial competitive value? / 16.2 计算速度是否仍有实质竞争价值？
+### 16.2 计算速度是否仍有实质竞争价值？
 
 
 ```text
@@ -605,7 +508,6 @@ NO (formal value retained, substantial benefit not supported by evidence)
 ```
 
 
-### 中文
 
 ```text
 NO（形式价值保留，实质收益未被证据支持）
@@ -617,7 +519,7 @@ NO（形式价值保留，实质收益未被证据支持）
 
 ---
 
-### 16.3 Has function quality optimization become overly dominant? / 16.3 函数质量优化是否变得过度强势？
+### 16.3 函数质量优化是否变得过度强势？
 
 
 ```text
@@ -626,7 +528,6 @@ YES
 
 
 
-### 中文
 
 ```text
 YES
@@ -638,7 +539,7 @@ Optimizer 拿下 75/180 场（41.7%），两场正面交锋分别是 **38-2** �
 
 ---
 
-### 16.4 Is the revised Shooter rule suitable as V1.1 playtest baseline? / 16.4 修订后的 Shooter 规则是否适合作为 V1.1 playtest 基线？
+### 16.4 修订后的 Shooter 规则是否适合作为 V1.1 playtest 基线？
 
 
 ```text
@@ -647,7 +548,6 @@ YES
 
 
 
-### 中文
 
 ```text
 YES
@@ -659,7 +559,7 @@ YES
 
 ---
 
-### 16.5 Should Stalemate measurement become the next rule task? / 16.5 Stalemate 测量是否应成为下一个规则任务？
+### 16.5 Stalemate 测量是否应成为下一个规则任务？
 
 
 ```text
@@ -669,7 +569,6 @@ YES
 
 
 
-### 中文
 
 ```text
 YES
@@ -685,11 +584,10 @@ YES
 
 ---
 
-## 17. Remaining Open Questions / 17. 遗留开放问题
+## 17. 遗留开放问题
 
 
 
-### 中文
 
 1. **函数质量支配是否是本规则集的结构性问题？** 去掉取消通道后，规则里再没有任何机制能补偿慢速方的函数质量优势。可动的杠杆（**本轮均未实施**）：调低时间预算、给先手方一个可量化的优势、或让射击成本与耗时挂钩。
 2. **同归于尽应当是平局吗？** 本轮按 §8 判 DRAW。19/180 且集中在 Fast↔Hybrid（25%），这个比例是否可接受、是否应当有别的处理（例如按剩余点数、按击杀数），未定义。
@@ -700,7 +598,7 @@ YES
 
 ---
 
-## 18. Reproduction Guide / 18. 复现指引
+## 18. 复现指引
 
 
 ```bash
@@ -742,7 +640,6 @@ done
 ```
 
 
-### 中文
 
 ```bash
 # 0. 规则与生产实现所处的提交（结果产出时的树）
@@ -786,7 +683,7 @@ done
 
 ---
 
-## 19. Completion Status / 19. 完成状态
+## 19. 完成状态
 
 
 ```text
@@ -802,7 +699,6 @@ Whether old cancellation path残留s
 
 
 
-### 中文
 
 ```text
 SHOOTER RULE REVISION & REBALANCE COMPLETE
@@ -834,7 +730,6 @@ Rule document   == Competitor Kit == production Judge == tests == Replay
 
 
 
-### 中文
 
 - **内部路径**: ✓ 全部路径相对于仓库根目录或使用规范占位符（`/tmp/`）
 - **Agent 状态**: ✓ 无 agent 执行日志、内部推理或工作流状态

@@ -36,9 +36,9 @@
 
 | 路径 | 内容 |
 |---|---|
-| `DUAL_ALGORITHM_PLAYTEST_REPORT.md` | Round-1 双算法基线报告 |
-| `round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md` | Round-2 三方平衡报告 |
-| `shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.md` | 取消规则修订后的再平衡报告 |
+| `DUAL_ALGORITHM_PLAYTEST_REPORT.zh-CN.md` | Round-1 双算法基线报告 |
+| `round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.zh-CN.md` | Round-2 三方平衡报告 |
+| `shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.zh-CN.md` | 取消规则修订后的再平衡报告 |
 | `<round>/metrics-*.json` | 逐场 records + 汇总指标 |
 | `<round>/*-summary.json` | 各轮汇总（含分位与 CF 汇总） |
 | `round-2/matrix-*.json` | 离线鲁棒性矩阵 |

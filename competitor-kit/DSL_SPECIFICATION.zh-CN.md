@@ -1,6 +1,6 @@
 # DSL 规范
 
-**语言**: [English](DSL_SPECIFICATION.zh-CN.md) | 中文
+<a href="./DSL_SPECIFICATION.md">English</a> | **简体中文**
 
 ---
 

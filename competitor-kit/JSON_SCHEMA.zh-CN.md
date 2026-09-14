@@ -1,8 +1,8 @@
-# JSON Schema Reference
-
-[English](JSON_SCHEMA.zh-CN.md) | **中文**
+<a href="./JSON_SCHEMA.md">English</a> | **简体中文**
 
 ---
+
+# JSON Schema 参考文档
 
 本文件描述三个正式 JSON 文件的字段结构。字段来自**真实引擎**产出，
 并由 `tests/competitor-kit.ts` 持续核对（真实样例的键集合必须与本文件的机器可读块一致）。

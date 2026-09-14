@@ -4,7 +4,7 @@
 
 </div>
 
-# ARCHITECTURE — Architecture — Layers & Boundaries
+# ARCHITECTURE — Layers & Boundaries
 
 > Structural constraints only, no history. Last updated: 2026-09-11.
 

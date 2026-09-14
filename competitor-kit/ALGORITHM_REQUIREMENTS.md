@@ -1,9 +1,8 @@
 <div align="right">
 
-**English** | <a href="./ALGORITHM_REQUIREMENTS_zh.md">简体中文</a>
+**English** | <a href="./ALGORITHM_REQUIREMENTS.zh-CN.md">简体中文</a>
 
 </div>
-
 
 
 
@@ -14,16 +13,6 @@
 > Every file, tool, and specification mentioned exists in `competitor-kit/`.
 
 ---
-
-
-
-```text
-Write a solver.py
-```
-
-
-
-
 
 # 0. One-Minute Overview
 
@@ -53,17 +42,6 @@ The platform handles maps, adjudication, timing, animation, win/loss — you do 
 | [tools/check_mirror.py](tools/check_mirror.py) | Mirror self-check (dev diagnostic: whether same code behaves identically on A / B sides, see §6.2) |
 
 ---
-
-
-
-```text
-my-algorithm/
-├── solver.py          ← required, must be at directory root
-├── optimizer.py       ← optional: your own modules
-└── utils/             ← optional: your own subdirectories
-```
-
-
 
 # 1. Submission Format
 
@@ -381,15 +359,6 @@ These rules determine whether your function **hits**; you do not implement them,
 
 
 
-```text
-Selected per match    Choose one from **your own initial points**; match won't start until selected
-Fixed for match       Once locked, same point for all rounds, cannot change
-Public               Coordinates revealed only **after both teams lock**
-                     (You can't see opponent's choice until both locked)
-Unkillable           Not a combat point; trajectory passing through has no effect
-```
-
-
 # 5. Function Requirements (Legality Constraints)
 
 Once the function's DSL tree passes parsing, Judge verifies whether it is a **legal function**:
@@ -398,38 +367,28 @@ Once the function's DSL tree passes parsing, Judge verifies whether it is a **le
 |f(x_e) − y_e| ≤ 1e-6      ← (x_e, y_e) is **this match's** Emitter, varies per match
 ```
 
+**The only correct way to read Emitter:**
 
 ```python
 s = public["emitters"][a.team]      # {"x": ..., "y": ...}
 x_e, y_e = s["x"], s["y"]
 ```
 
-
 ## 6.1 Fixed Emitter: Selected for This Match, Constant Throughout
 
 Each team has one **fixed Emitter**. It is selected by **you yourselves** before match start —
 pick one from your own initial points, click it, then lock (press `Lock` on match page):
 
-```text
-Selected per match   Pick one from **your side's initial points**; match won't start until selected
-Constant throughout  Once locked, same point for all rounds of this match, cannot change
-Public              Two coordinates only public **after both sides lock**
-                    (you cannot see opponent's choice before they lock, they cannot see yours)
-Unkillable          Not a combat point; trajectory passing through it produces no effect
-```
+- **Selected per match**: Pick one from **your side's initial points**; match won't start until selected
+- **Constant throughout**: Once locked, same point for all rounds of this match, cannot change
+- **Public**: Two coordinates only public **after both sides lock** (you cannot see opponent's choice before they lock, they cannot see yours)
+- **Unkillable**: Not a combat point; trajectory passing through it produces no effect
 
 **The point selected as Emitter is removed from `points`** — it is no longer a combat point.
 So if your team has 8 initial points and selects 1 as Emitter, your team's combat points on field are only 7,
 and opponent's kill targets correspondingly one fewer. This is **part of strategy**: trade one point for a more favorable launch position.
 
-Therefore your function every round MUST satisfy:
-
-```text
-|f(x_e) − y_e| ≤ 1e-6      ← (x_e, y_e) is **this match's** Emitter, varies per match
-```
-
-`f(x) = y_e + g(x − x_e)` this incremental form with Emitter as origin is most convenient,
-and naturally unaffected by coordinate changes — switch match, switch anchor, this code needs zero modification.
+Therefore your function every round MUST satisfy `|f(x_e) − y_e| ≤ 1e-6`, where `(x_e, y_e)` is **this match's** Emitter, which varies per match.
 
 **The only correct way to read Emitter:**
 
@@ -439,8 +398,6 @@ x_e, y_e = s["x"], s["y"]
 ```
 
 Do not hardcode `-18` / `18`, and do not assume it falls at field center somewhere.
-
-
 
 ### Attack Rights Lock at START
 
@@ -467,17 +424,15 @@ it is unkillable, hitting it produces no benefit. To zero out opponent's combat 
 
 ## 6.2 Orientation & Symmetry
 
+> V1.4 addition: this section is **explanatory** only — no rule changes; it spells out what the engine has always done.
+> The rows "Attack direction" and "Valid attack range" in the §6 table above are the condensed version of this section.
 
-```text
-Team A forward direction = increasing x
+Team A forward direction = increasing x  
 Team B forward direction = decreasing x
-```
 
 ### 6.2.1 Function vs traversal
 
-
-
-**English.** What you submit is always an ordinary function `y = f(x)` — it is defined for every `x`
+**What you submit is always an ordinary function `y = f(x)`** — it is defined for every `x`
 and has no direction of its own. Direction comes from how the Judge **traverses** it: Team A walks from
 `x = x_e` towards `x = 20` (increasing x) over `[x_e, 20]`; Team B walks from `x = x_e` towards `x = -20`
 (decreasing x) over `[-20, x_e]`. That traversal interval is the firing domain — function legality (§5) is
@@ -486,12 +441,11 @@ or the first exit from the field (`y ∉ [-12, 12]` or `x ∉ [-20, 20]`); the a
 graph re-enters the field. "Before the first contact" is direction-relative: for A it means smaller x, for B
 it means **larger** x. Likewise "in the attack direction" means `x_p ≥ x_e` for A and `x_p ≤ x_e` for B.
 
-
-```text
-Team A: u = x − x_e          Team B: u = x_e − x
-Forward direction always +u; convert enemy/obstacle coordinates to u first, then do geometry
-```
-
+**Recommended (SHOULD — not a mandatory API)**: work internally in a local forward coordinate
+`u` — `u = x − x_e` for Team A, `u = x_e − x` for Team B — so that "forward" is always `+u` and both sides
+share one code path. When turning a `u`-space polynomial (or any `g(u)` with `g(0) = 0`) back into an `x`
+AST, the only team-dependent node is `u` itself: `sub(x, x_e)` for A versus `sub(x_e, x)` for B, exactly as
+in the sketch below:
 
 ```python
 def u_node(team, x_e):
@@ -511,12 +465,8 @@ def poly_in_u(team, x_e, y_e, coeffs):
     return node
 ```
 
-**English.** Recommended (SHOULD — not a mandatory API): work internally in a local forward coordinate
-`u` — `u = x − x_e` for Team A, `u = x_e − x` for Team B — so that "forward" is always `+u` and both sides
-share one code path. When turning a `u`-space polynomial (or any `g(u)` with `g(0) = 0`) back into an `x`
-AST, the only team-dependent node is `u` itself: `sub(x, x_e)` for A versus `sub(x_e, x)` for B, exactly as
-in the sketch above.
-
+Team B line example (`f(x) = y_e + 0.3·(x_e − x)`, with `x_e = 18`, `y_e = 0` for illustration;
+**read actual values from `public_state.emitters.B`**):
 
 <!-- AST-PARSE-OK -->
 ```json
@@ -541,45 +491,38 @@ in the sketch above.
 }
 ```
 
-> **English.** Compare with the Team A example in §5: the same "rises 0.3 per unit forward" line has the
+> Compare with the Team A example in §5: the same "rises 0.3 per unit forward" line has the
 > opposite slope once it is written in `x`.
 
 ### 6.2.2 Array-order guarantees
 
+The engine guarantees exactly this about `public_state.points` and `reveal_state.obstacles`:
 
+| Array | Guarantee |
+|---|---|
+| `points` | All Team A entries first, then all Team B entries; within each group by map **generation / placement order** (`A1, A2, …`, `B1, B2, …`), **not** sorted by x, by distance to the Emitter, or by any other geometric quantity |
+| `points` | Order and entry count identical every round of the match: killed points stay in place with `alive: false` |
+| `points` | The two points locked as Emitters are removed and the remaining ids are **not renumbered** — so `A1` may be absent for the whole match and ids need not be contiguous |
+| `obstacles` | Numbered `O1..On` in generation order; the array is the same every round |
 
-
-**English.** The engine guarantees exactly this about `public_state.points` and `reveal_state.obstacles`:
-`points` lists all Team A entries first, then all Team B entries, each group in map **generation / placement
-order** (`A1, A2, …`, `B1, B2, …`) — **not** sorted by x, by distance to the Emitter, or by any other
-geometric quantity; the order and the entry count are identical every round of the match (killed points stay
-in place with `alive: false`); the two points locked as Emitters are removed and the remaining ids are **not
-renumbered**, so `A1` may be absent for the whole match and ids need not be contiguous; `obstacles` are
-numbered `O1..On` in generation order and the array is the same every round.
-**Do not assume array order is geometric order.** If you want targets by geometry, sort by `x` / `u` /
-distance yourself.
+**Do not assume array order is geometric order.** If you want targets by geometry, sort by `x` / `u` / distance yourself.
 
 ### 6.2.3 Both-side compatibility (MUST)
 
-
-**English.** **The same formal submission MUST run correctly as Team A and as Team B.** Slots are assigned by the
+**The same formal submission MUST run correctly as Team A and as Team B.** Slots are assigned by the
 organisers; your code learns its side only through `--team`, and both input JSON files are byte-identical for
 the two sides. The classic symptoms of a solver that was only ever debugged as Team A: filtering enemies with
 `p["x"] > x_e` (which matches nothing on the B side and then crashes or emits a degenerate function),
 hard-coding "forward" as `+x`, or inverting "before / after" the first contact.
 
+Check both:
 
 ```bash
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm   # default runs A, B once each (same world)
 python3 competitor-kit/tools/check_mirror.py ./my-algorithm          # mirror world: A@original ↔ B@mirror, and vice versa
 ```
 
-`check_mirror.py` is a **development diagnostic**, official Preflight does not run it: `FAIL` (one side legal, mirror side crashes / times out / illegal)
-is almost always a bug; both sides failing is also `FAIL` (not a mirror issue — run `validate_submission.py` first);
-`WARN` (both legal but geometry differs) is legal, only reminds you to confirm asymmetry is intentional.
-**But if a `WARN` has both pairs reporting "adjudication inconsistent" (hits / blocked / termination reason differ), that's the non-crashing form of the same "only works for Team A" bug
-(B side produced degenerate but legal function) — even though exit code is 0, treat it as seriously as `FAIL`.**
-**English.** `check_mirror.py` is a development diagnostic; the official Preflight does not run it. `FAIL`
+`check_mirror.py` is a **development diagnostic**; the official Preflight does not run it. `FAIL`
 (one side legal, its mirror crashing / timing out / illegal) is almost always a bug; both sides failing is also
 `FAIL` (not a mirror issue — run `validate_submission.py` first); `WARN` (both legal, but the geometry differs)
 is legal — it only asks you to confirm that the asymmetry is intentional. **But a `WARN` whose two pairs both
@@ -691,8 +634,6 @@ If strategy requires random search:
 ---
 
 # 11. MUST / SHOULD / MAY Overview
-
-## MUST (violation → Preflight failure / Invalid Shot / Timeout / disqualification)
 
 ## MUST (Not satisfied → Preflight failure / Invalid Shot / Timeout / violation)
 
@@ -911,6 +852,7 @@ but "sandbox blocked it" does not equal "allowed to try". Please write algorithm
 
 ---
 
+# 17. Pre-submission Checklist
 
 ```text
 [ ] Package root has solver.py

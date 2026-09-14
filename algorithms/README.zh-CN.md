@@ -1,6 +1,6 @@
 # algorithms/ —— canonical 出厂算法槽位（**只读 fixture**）
 
-**中文** | [English](README.zh-CN.md)
+<a href="./README.md">English</a> | **简体中文**
 
 > **本目录不是投递点。**
 >

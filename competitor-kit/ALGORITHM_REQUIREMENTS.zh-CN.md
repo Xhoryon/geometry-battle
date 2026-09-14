@@ -42,16 +42,6 @@
 | [tools/validate_submission.py](tools/validate_submission.py) | 本地自检工具 |
 | [tools/check_mirror.py](tools/check_mirror.py) | 镜像自检（开发诊断：同一份代码在 A / B 两侧是否一致，见 §6.2） |
 
-
-
-```text
-Write a solver.py
-```
-
-
-
-
-
 ---
 
 # 1. 提交物形态
@@ -75,17 +65,6 @@ my-algorithm/
 - 不允许符号链接；包大小 ≤ 8 MB，文件数 ≤ 256。
 - `manifest.json` 可选。如果提供，必须包含 `name` 与 `version`，且 `entry`（若写）只能是 `solver.py`。
 - 不接受压缩包上传。请直接给出目录。
-
-
-
-```text
-my-algorithm/
-├── solver.py          ← MUST exist, MUST be at directory root
-├── optimizer.py       ← Optional: your own modules
-└── utils/             ← Optional: your own subdirectories
-```
-
-
 
 ---
 
@@ -151,58 +130,6 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-
-
-```bash
-python3 <your-package>/solver.py \
-  --team A \
-  --public  <sandbox>/input/public_state.json \
-  --reveal  <sandbox>/input/reveal_state.json \
-  --output  <sandbox>/output/result.json
-```
-
-
-
-```text
---team     "A" or "B" (only these two values possible)
---public   Public state file path
---reveal   Reveal state file path
---output   Result output file path
-```
-
-
-
-
-```python
-import argparse, json, os, sys
-
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--team", required=True)
-    ap.add_argument("--public", required=True)
-    ap.add_argument("--reveal", required=True)
-    ap.add_argument("--output", required=True)
-    args = ap.parse_args()
-
-    with open(args.public, "rb") as f:
-        public = json.loads(f.read().decode("utf-8"))
-    with open(args.reveal, "r", encoding="utf-8") as f:
-        reveal = json.load(f)
-
-    dsl = build_function(args.team, public, reveal)   # see §5
-    result = {"schema_version": "1.1", "dsl": dsl}
-
-    tmp = args.output + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(result, f)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, args.output)
-
-if __name__ == "__main__":
-    sys.exit(main())
-```
-
 ---
 
 # 3. 输入：两份 JSON
@@ -224,12 +151,6 @@ if __name__ == "__main__":
   整场比赛都是同一个值。`points` 里没有 Emitter。
 - public 里**没有**障碍物、没有地图种子。你在 REVEAL 之前不可能知道障碍物位置。
 
-
-
-
-
-
-
 ---
 
 # 4. 输出：一份 JSON
@@ -249,15 +170,6 @@ if __name__ == "__main__":
 原子替换同时保证计时终点落在你「写完内容」的那一刻。
 
 **每轮只允许一次正式输出**：以 `output/result.json` 的最终内容为准，不要写多份。
-
-
-
-```json
-{ "schema_version": "1.1", "dsl": <AST> }
-```
-
-
-
 
 ---
 
@@ -318,43 +230,6 @@ f(x) = y_emitter + g(u)，g(0) = 0
 > `variable` 节点**必须**写 `{"type": "variable", "value": "x"}`。
 > 写成 `{"type":"variable"}` 或 `{"type":"variable","name":"x"}` 都会被判非法。
 
-
-
-
-
-
-```text
-u = x − x_emitter
-f(x) = y_emitter + g(u), g(0) = 0
-```
-
-
-
-
-<!-- AST-VALID -->
-```json
-{
-  "type": "add",
-  "args": [
-    { "type": "number", "value": 0 },
-    {
-      "type": "mul",
-      "args": [
-        { "type": "number", "value": 0.3 },
-        {
-          "type": "sub",
-          "args": [
-            { "type": "variable", "value": "x" },
-            { "type": "number", "value": -18 }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-
 ---
 
 # 6. 比赛规则（平台侧）
@@ -378,10 +253,6 @@ f(x) = y_emitter + g(u), g(0) = 0
 
 > 「命中判定」的 1e-6 与「经过 Emitter」的 1e-6 是两个**不同**概念：
 > 前者属于 Judge 规则，后者属于函数合法性。请不要把它们混用。
-
-
-
-
 
 ## 6.1 固定 Emitter：本场选定后整场不变
 
@@ -416,31 +287,7 @@ s = public["emitters"][a.team]      # {"x": ..., "y": ...}
 x_e, y_e = s["x"], s["y"]
 ```
 
-不要写死 `-18` / `18`，也不要假设它落在场地中央某处。
-
-
-
-```text
-Selected per match   Pick one from **your side's initial points**; match won't start until selected
-Constant throughout  Once locked, same point for all rounds of this match, cannot change
-Public              Two coordinates only public **after both sides lock**
-                    (you cannot see opponent's choice before they lock, they cannot see yours)
-Unkillable          Not a combat point; trajectory passing through it produces no effect
-```
-
-
-
-```text
-|f(x_e) − y_e| ≤ 1e-6      ← (x_e, y_e) is **this match's** Emitter, varies per match
-```
-
-
-
-```python
-s = public["emitters"][a.team]      # {"x": ..., "y": ...}
-x_e, y_e = s["x"], s["y"]
-```
-
+**不要写死任何坐标。**
 
 ### 攻击权在 START 时锁定
 
@@ -449,8 +296,6 @@ x_e, y_e = s["x"], s["y"]
 - 攻击**不执行**的唯一原因是算法侧的问题：`TIMEOUT`、`INVALID`、`CRASH`。
 - 本轮不重算：`public_state.json` / `reveal_state.json` 在 START 后冻结，
   不因第一击的结果而改变。
-
-
 
 ### Emitter 不是打击目标
 
@@ -464,21 +309,15 @@ x_e, y_e = s["x"], s["y"]
 > 整场不变 —— 于是「从哪里开火」重新成为一个可以经营的策略维度，
 > 而「逐轮选点」那套流程仍然不存在。
 
-
-
-
-## 6.2 坐标方向与镜像 / Orientation & Symmetry
+## 6.2 坐标方向与镜像
 
 > V1.4 新增的**说明**，不改变任何规则 —— 它只是把引擎一直以来的行为写清楚。
 > 上面 §6 表格里「攻击方向」「有效攻击范围」两行就是本节的浓缩版。
-> **English.** Added in V1.4 as an explanation only — no rule changes; it spells out what the engine has always done.
 
-```text
-Team A 的前进方向 = x 增大 / Team A forward direction = increasing x
-Team B 的前进方向 = x 减小 / Team B forward direction = decreasing x
-```
+Team A 的前进方向 = x 增大  
+Team B 的前进方向 = x 减小
 
-### 6.2.1 函数 vs 遍历 / Function vs traversal
+### 6.2.1 函数 vs 遍历
 
 你交出的始终是一个普通的数学函数 `y = f(x)`：它对任何 `x` 都有定义，本身**没有方向**。
 方向来自 Judge 的**遍历**方式：
@@ -491,7 +330,6 @@ Team B 的前进方向 = x 减小 / Team B forward direction = decreasing x
   （`y ∉ [-12, 12]` 或 `x ∉ [-20, 20]`）；之后即使函数重新回到场内，攻击也不恢复。
 - 「首次接触**之前**」是相对于遍历方向说的：对 A 是 `x` 更小的一侧，对 B 是 `x` 更**大**的一侧。
   同理，「目标位于攻击方向上」对 A 意味着 `x_p ≥ x_e`，对 B 意味着 `x_p ≤ x_e`。
-
 
 **建议（SHOULD，不是强制 API）**：在算法内部统一用一个**局部前进坐标** `u`，让两侧共用同一套代码：
 
@@ -549,10 +387,8 @@ Team B 的直线示例（`f(x) = y_e + 0.3·(x_e − x)`，举例取 `x_e = 18`�
 ```
 
 > 与 §5 的 Team A 示例对照：同样是「沿前进方向每单位上升 0.3」的直线，用 `x` 写出来斜率符号相反。
-> **English.** Compare with the Team A example in §5: the same "rises 0.3 per unit forward" line has the
-> opposite slope once it is written in `x`.
 
-### 6.2.2 数组顺序保证 / Array-order guarantees
+### 6.2.2 数组顺序保证
 
 引擎对 `public_state.points` 与 `reveal_state.obstacles` 的顺序**只**保证下面这些：
 
@@ -566,16 +402,14 @@ Team B 的直线示例（`f(x) = y_e + 0.3·(x_e − x)`，举例取 `x_e = 18`�
 **不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。**
 要按几何选目标，就自己按 `x` / `u` / 距离排序。
 
-
-### 6.2.3 双侧兼容（MUST） / Both-side compatibility (MUST)
+### 6.2.3 双侧兼容（MUST）
 
 **同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。** 槽位由赛事方分配，你的代码只会通过
 `--team` 得知自己在哪一侧；两份输入 JSON 对双方逐字节相同。只在 A 侧调试过的算法换到 B 侧，
 最常见的症状是：筛选敌人时写了 `p["x"] > x_e`（B 侧一个都筛不到 → 崩溃或交出退化函数）、
 把「前进」写死成 `+x`、或把首次接触的「之前 / 之后」写反。
 
-
-两件事都要自检 / Check both:
+两件事都要自检：
 
 ```bash
 python3 competitor-kit/tools/validate_submission.py ./my-algorithm   # 默认 A、B 各跑一次（同一个世界）
@@ -587,13 +421,6 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm          # 镜像世
 `WARN`（两侧都合法但几何不同）是合法的，只是提醒你确认不对称是有意为之。
 **但若 `WARN` 的两对配对都报「结算不一致」（命中 / 阻挡 / 终止原因不同），那就是同一个「只会打 Team A」bug
 的不崩溃形态（B 侧交出了退化但合法的函数）—— 退出码虽是 0，请像 `FAIL` 一样认真对待。**
-**English.** `check_mirror.py` is a development diagnostic; the official Preflight does not run it. `FAIL`
-(one side legal, its mirror crashing / timing out / illegal) is almost always a bug; both sides failing is also
-`FAIL` (not a mirror issue — run `validate_submission.py` first); `WARN` (both legal, but the geometry differs)
-is legal — it only asks you to confirm that the asymmetry is intentional. **But a `WARN` whose two pairs both
-report a different judge outcome (hits / blocked / end reason) is the non-crashing form of the same Team-A-only
-bug (the B side emitted a degenerate but legal function) — the exit code is 0, but treat it as seriously as
-`FAIL`.**
 
 ---
 
@@ -656,32 +483,6 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 这些路径要么不存在，要么被沙箱拒绝（`PermissionError`）。
 
 **每轮沙箱都会销毁重建**：不要指望 Round 1 写的文件在 Round 2 还能读到。
-
-
-
-```text
-output/            Only for writing result.json
-Current working directory  Equivalent to TMPDIR, writable, can place temporary files
-```
-
-
-```python
-import tempfile
-
-with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-    tmp = f.name
-    f.write(json.dumps(result))
-```
-
-
-
-```text
-/tmp
-/work
-/Users/...
-```
-
-
 
 ---
 
@@ -807,41 +608,8 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm
 比较两侧规范化后的几何与结算：`PASS` 一致、`WARN` 两侧都合法但不对称、`FAIL` 一侧合法而镜像侧失败
 （两侧都失败同样记 `FAIL`，那不是镜像问题 —— 先跑 `validate_submission.py`）。两对都「结算不一致」的
 `WARN` 要像 `FAIL` 一样认真对待（见 §6.2.3）。
-**English.** Run the mirror self-check as well (a development diagnostic, see §6.2.3; the official Preflight
-does not run it). It runs the same code once in the decoy world and once in its mirror (A on the original ↔ B
-on the mirror, and the reverse pair) and compares the normalised geometry and the Judge outcome of the two
-sides: `PASS` consistent, `WARN` both legal but asymmetric, `FAIL` one side legal while its mirror fails (both
-sides failing is also `FAIL` — not a mirror issue, run `validate_submission.py` first). A `WARN` whose two
-pairs both differ in judge outcome deserves the same attention as `FAIL` (see §6.2.3).
 
 > 两个工具都需要 Node.js（比赛仓库自带）。它们在仓库根目录运行时可用。
-
-
-
-```bash
-python3 competitor-kit/tools/validate_submission.py ./my-algorithm
-```
-
-
-```text
-Entrypoint        PASS
-Package           PASS
-CLI / startup     PASS
-Runtime           PASS
-Input             PASS
-Result JSON       PASS
-DSL               PASS
-Function legality PASS
-Timeout           PASS
-```
-
-
-
-```bash
-python3 competitor-kit/tools/check_mirror.py ./my-algorithm
-```
-
-
 
 ---
 
@@ -850,9 +618,9 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm
 正式提交后平台会执行 Preflight，检查内容包括：
 
 ```text
-Package structure / solver.py / Python startup / CLI arguments
-Decoy Public JSON / Decoy Reveal JSON / Result JSON / DSL validity
-Runtime / Timeout / Sandbox compatibility
+包结构 / solver.py / Python 启动 / 命令行参数
+Decoy Public JSON / Decoy Reveal JSON / 结果 JSON / DSL 合法性
+运行时 / 超时 / 沙箱兼容性
 ```
 
 Preflight 使用**独立的 decoy 世界**（种子由 `matchId` 派生），
@@ -867,17 +635,6 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 > 不会拖到正赛才炸。本地自检工具用的是同一条规则。
 >
 > 从 `public_state.emitters[team]` 读锚点，仍然是最省事的写法。
-
-
-
-```text
-Package structure / solver.py / Python startup / CLI arguments
-Decoy Public JSON / Decoy Reveal JSON / Result JSON / DSL validity
-Runtime / Timeout / Sandbox compatibility
-```
-
-
-
 
 ---
 
@@ -895,17 +652,6 @@ Runtime / Timeout / Sandbox compatibility
 
 如果 Python 抛异常，你会看到 traceback 的**头与尾**（中间的调用帧会被省略），
 根因（`ModuleNotFoundError` / `SyntaxError` / 你的异常消息）一定保留在尾部。
-
-
-
-```text
-缺少固定入口 solver.py（V1.1 §3：包根目录必须存在该文件）
-算法输出不合法: 输出不是合法 DSL: FORBIDDEN_OPERATOR: 运算符 "abs" 被禁止
-算法输出不合法: 输出不是合法 DSL: DEPTH_LIMIT: AST 深度超过限制 12（在第 13 层拒绝，未展开）
-算法输出不合法: 输出不是合法 DSL: NOT_THROUGH_SHOOTER: f(-18) = 0，与 Emitter y = 7.707 相差 7.708e+0 > ε=0.000001
-算法超时（>500ms 内未生成合法的 output/result.json）
-```
-
 
 ---
 
@@ -959,22 +705,6 @@ Runtime / Timeout / Sandbox compatibility
 沙箱会**技术性地**阻止其中大部分（进程创建、网络、越权读写、修改时间戳），
 但「沙箱拦住了」不等于「允许尝试」。请按规则写算法。
 
-
-
-```text
-1.  Network access / calling online services
-2.  Creating subprocesses (subprocess / multiprocessing will be rejected by sandbox)
-3.  Reading opponent algorithms, platform source, or Judge source
-4.  Modifying match JSON or result timestamps
-5.  Saving state across Rounds
-6.  Starting background daemons
-7.  Flooding stdout / stderr
-8.  Modifying own package or input files
-9.  Outputting piecewise / illegal DSL (if / abs / min / max / floor etc.)
-10. Depending on third-party packages outside RUNTIME_MANIFEST.md
-```
-
-
 ---
 
 # 17. 提交前检查清单
@@ -995,25 +725,6 @@ Runtime / Timeout / Sandbox compatibility
 [ ] 不访问网络、不创建进程
 [ ] 本地自检 PASS（默认 A、B 各跑一次 —— 两队都要 PASS）
 [ ] 以 --team A 与 --team B 都能正确运行：check_mirror.py 无 FAIL（WARN 需确认不对称是有意为之）
-```
-
-
-```text
-[ ] Package root has solver.py
-[ ] All four parameters parse correctly
-[ ] Input only read from --public / --reveal
-[ ] Result written to --output with only schema_version + dsl
-[ ] schema_version is "1.1"
-[ ] variable node writes value: "x"
-[ ] Function strictly passes through own fixed Emitter (read from public_state.emitters, don't hardcode coordinates)
-[ ] Finite, continuous, C² in attack range, convexity ≤100
-[ ] No third-party packages used
-[ ] Temporary files use tempfile / relative paths
-[ ] Result written with atomic replace
-[ ] Per-round time has margin (< 500 ms)
-[ ] No network access, no process creation
-[ ] Local self-check PASS (default runs A, B once each — both teams must PASS)
-[ ] Runs correctly as both --team A and --team B: check_mirror.py no FAIL (WARN requires confirming asymmetry is intentional)
 ```
 
 ---

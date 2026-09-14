@@ -1,6 +1,6 @@
 # Hybrid Tactical-First Anytime Optimizer
 
-**中文** | [English](README.zh-CN.md)
+<a href="./README.md">English</a> | **简体中文**
 
 Geometry Battle V1.1 参赛算法（Round 2）。第三套算法,用于回答:
 

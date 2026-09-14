@@ -175,8 +175,8 @@ Details and reproducibility clues see §4 item 7.
    "both sides can hit 7~8 points", but **all three test seeds still end in `STALEMATE`**:
    the stalemate segment is a period-2 limit cycle, both sides alternating between two shots that miss.
    This is a **strategy** problem, not a reproducibility problem — reproducibility has been nailed down by `tests/demo-repro`
-   (direct call and official sandbox each 10 times, byte-for-byte identical), see
-   `docs/agent-context/PROJECT_STATE.md` §5.2.
+   (direct call and official sandbox each 10 times, byte-for-byte identical)
+   `tests/demo-repro.ts` 
 
 ---
 

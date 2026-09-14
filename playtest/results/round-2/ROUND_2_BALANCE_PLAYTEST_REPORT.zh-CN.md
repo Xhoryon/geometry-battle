@@ -1,38 +1,31 @@
 <div align="right">
 
-<a href="./ROUND_2_en.md">English</a> | **简体中文**
+<a href="./ROUND_2_BALANCE_PLAYTEST_REPORT.md">English</a> | **简体中文**
 
 </div>
 
 
-
-**第二轮 — 算法平衡性实测报告**
+# 第二轮 — 算法平衡性实测报告
 
 Geometry Battle V1.1 · 三算法对抗 · 正式规则实验 + 反事实实验
 
-
 - 协议版本：1.1（`competitor-kit/` 公开接口）
-- Protocol version: 1.1 (`competitor-kit/` public interface)
 - 测试日期：2026-09-10
-- Test date: 2026-09-10
 - 本轮性质：**Playtest / 平衡性研究，不是平台开发任务**
-- Round nature: **Playtest / Balance study, not a platform development task**
 - 报告版本：**rev 2**（rev 1 的部分结论经对抗式复核后被推翻，修订处见 §25）
-- Report version: **rev 2** (Some conclusions from rev 1 were overturned after adversarial review; see §25 for revisions)
 
 ---
 
 ## Git baseline（本轮全部证据的可寻址锚点）
-## Git baseline (Addressable anchor for all evidence in this round)
 
-| 项 / Item | 值 / Value |
+| 项 | 值 |
 |---|---|
 | Branch | `feature/v1.1-ui-protocol` |
-| HEAD（结果写入时）/ HEAD (at result write time) | `f920f37384d07402b2376c36fde7b86765ba7901` |
+| HEAD（结果写入时） | `f920f37384d07402b2376c36fde7b86765ba7901` |
 | **RULE_BASELINE_SHA** | `8f7dc11029e99395ebcf977b85dc93780017ffb1` |
 | **ROUND1_BASELINE_SHA** | `6f987bfbd0ebbf9978cf1546817aa097e844e641` |
-| `v1.0.0-competition` | `26d7970fbcba7b50f04e0743130ca4ffdd3bd904`（本轮**未改变** / **unchanged** this round） |
-| Working tree（结果写入时）/ Working tree (at result write time) | **clean**（`git status` 无输出 / no output） |
+| `v1.0.0-competition` | `26d7970fbcba7b50f04e0743130ca4ffdd3bd904`（本轮**未改变**） |
+| Working tree（结果写入时） | **clean**（`git status` 无输出） |
 
 **Canonical rule path**（本轮唯一权威规则输入，未修改、未重命名）：
 
@@ -57,29 +50,20 @@ Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.
 本轮给出**明确答案：后者**，且是定量的。
 
 
-| 结论 / Conclusion | 答案 / Answer |
+| 结论 | 答案 |
 |---|---|
-| A. Hybrid 是否实质缩小了与 Fast 的差距？/ Did Hybrid materially close the gap to Fast? | **NO（但显著收窄）** / **NO (but significantly narrowed)** — 官方规则 Fast 26 / Hybrid 8 / Draw 26；按击杀裁决 draw 后为 **Fast 38 / Hybrid 17** / Under official rules Fast 26 / Hybrid 8 / Draw 26; after adjudicating draws by kills: **Fast 38 / Hybrid 17**. Fast 仍赢 69% 的已决对局 / Fast still wins 69% of decided matches |
-| B. Shooter Cancellation 是否是 Fast 统治的主要成因？/ Is Shooter Cancellation a major contributor to Fast dominance? | **YES** — 移除取消后胜负**完全反转**：50-0-10 → **2-38-20** / **YES** — Removing cancellation **completely reverses** outcomes: 50-0-10 → **2-38-20** |
-
-| C. 先手速度是否过度压制了函数质量？/ Does first-solver speed excessively suppress function quality? | **YES** — 仅 fast-vs-optimizer 一项，取消就吞掉了 **787 次**击杀，其中 **84.8% 落在最终仍然存活的点上** / **YES** — In fast-vs-optimizer alone, cancellation consumed **787 kills**, of which **84.8% landed on points that survived to the end**；Optimizer 实际全场只有 76 次击杀 / Optimizer only achieved 76 kills total |
-| D. 是否应在冻结锦标赛规则前修改官方规则？/ Should the official rules change before proceeding toward tournament freeze? | **建议 YES（仅建议，未实施）** / **Recommended YES (recommendation only, not implemented)** |
-| E. 现有证据是否足以定义 Stalemate Rule？/ Is there enough evidence to define a Stalemate Rule? | **NO** — 观测到的「僵持」是**吸收式不动点**，且分布被测试上限右删失，阈值**不可识别**（§14）/ **NO** — Observed "stalemates" are **absorbing fixed points**, and the distribution is right-censored by test limits; threshold is **not identifiable** (§14) |
+| A. Hybrid 是否实质缩小了与 Fast 的差距？ | **NO（但显著收窄）** — 官方规则 Fast 26 / Hybrid 8 / Draw 26；按击杀裁决 draw 后为 **Fast 38 / Hybrid 17**. Fast 仍赢 69% 的已决对局 |
+| B. Shooter Cancellation 是否是 Fast 统治的主要成因？ | **YES** — 移除取消后胜负**完全反转**：50-0-10 → **2-38-20** |
+| C. 先手速度是否过度压制了函数质量？ | **YES** — 仅 fast-vs-optimizer 一项，取消就吞掉了 **787 次**击杀，其中 **84.8% 落在最终仍然存活的点上**；Optimizer 实际全场只有 76 次击杀 |
+| D. 是否应在冻结锦标赛规则前修改官方规则？ | **建议 YES（仅建议，未实施）** |
+| E. 现有证据是否足以定义 Stalemate Rule？ | **NO** — 观测到的「僵持」是**吸收式不动点**，且分布被测试上限右删失，阈值**不可识别**（§14） |
 
 最关键的两条结构性发现：
 
-
 > **1. 在本规则集下，速度对胜负的影响只有一条通道，就是 Shot Cancellation 本身。**
-> 因为 §40/§41 冻结了回合快照，先手顺序**在数学上不产生任何结果差异**——这一点是由规范
-> 直接推出的，不是实验发现的（§10 说明为何原先的表述有误）。
+> 因为 §40/§41 冻结了回合快照，先手顺序**在数学上不产生任何结果差异**——这一点是由规范直接推出的，不是实验发现的（§10 说明为何原先的表述有误）。
 >
-> **1. Under this ruleset, speed affects outcomes through only one channel: Shot Cancellation itself.**
-> Because §40/§41 freeze the round snapshot, first-solver order **produces no mathematical difference in results**—this is derived directly from the specification, not experimentally discovered (§10 explains why the original phrasing was incorrect).
->
-> **2. 「僵持」不是慢收敛，而是吸收式不动点。** 在 30 轮上限触顶的对局中，双方每轮发出
-> **同一个函数**、Shooter 恒定、命中恒为 0；把上限提高到 60 轮后**仍然触顶**（§13）。
->
-> **2. "Stalemates" are not slow convergence, but absorbing fixed points.** In matches that hit the 30-round cap, both sides emit **the same function** every round, Shooters remain constant, hits remain 0; raising the cap to 60 rounds **still hits the cap** (§13).
+> **2. 「僵持」不是慢收敛，而是吸收式不动点。** 在 30 轮上限触顶的对局中，双方每轮发出**同一个函数**、Shooter 恒定、命中恒为 0；把上限提高到 60 轮后**仍然触顶**（§13）。
 
 ---
 
@@ -99,49 +83,46 @@ python3 playtest/harness/reproduce_round1.py --results /tmp/round1-verify/playte
 
 **exit 0，全部对账通过**。唯一事实源为 `raw/*/match.json`（平台自己落盘的产物）：
 
-
-| 项 / Item | 复现值 / Reproduced value | 报告声称 / Report claimed |
+| 项 | 复现值 | 报告声称 |
 |---|---|---|
 | matches / conditions / distinct map hashes | 60 / 30 / 30 | 60 / 30 / 30 |
-| rounds / 算法调用次数 / rounds / algorithm invocations | 585 / 1170 | 585 / 1170 |
+| rounds / 算法调用次数 | 585 / 1170 | 585 / 1170 |
 | fast / optimizer / draw | 50 / 0 / 10 | 50 / 0 / 10 |
 | INVALID / TIMEOUT | 0 / 0 | 0 / 0 |
-| optimizer 被取消 / optimizer cancelled | 304 | 304 |
-| fast blocked / kills / shooter kills / multi | 147 / 464 / 304 / 128 | 同左 / same |
-| optimizer blocked / kills / shooter kills / multi | 244 / 76 / 28 / 34 | 同左 / same |
-| kills per valid shot | 0.793 / 0.270 | 同上 / same |
-| first-shot rate | 1.000 / 0.000 | 同上 / same |
-| 交叉验证 / cross-validation | 866/866 一致，0 mismatch / 866/866 match, 0 mismatch | 同上 / same |
-| swap 一致性 / swap consistency | 21/21 | 21/21 |
-| max-rounds 僵持 / max-rounds stalemate | 10 | 10 |
-| 计算时间中位 / median compute time | 12.8 / 142.1 ms | 同上 / same |
+| optimizer 被取消 | 304 | 304 |
+| fast blocked / kills / shooter kills / multi | 147 / 464 / 304 / 128 | 同左 |
+| optimizer blocked / kills / shooter kills / multi | 244 / 76 / 28 / 34 | 同左 |
+| kills per valid shot | 0.793 / 0.270 | 同上 |
+| first-shot rate | 1.000 / 0.000 | 同上 |
+| 交叉验证 | 866/866 一致，0 mismatch | 同上 |
+| swap 一致性 | 21/21 | 21/21 |
+| max-rounds 僵持 | 10 | 10 |
+| 计算时间中位 | 12.8 / 142.1 ms | 同上 |
 
 
 
 ### 2.2 平台可重放性——精确到哪一层
 
-
 第二轮把 `fast-vs-optimizer` 用同一批 30 个条件完整重跑（60 场），并做了逐字段比对。
-
 
 **判定层面：完全相同。**
 
-
-
-| aFunction / bFunction 及其 hash / and their hashes | 全部相同 / all identical |
-| mapSeed / mapHash / pointCount / difficulty / seed | 585 轮全部相同 / all 585 rounds identical |
-| 安装的包 hash（slot 内容）/ installed package hash (slot content) | 60 场全部相同 / all 60 matches identical |
+| 项 | 结果 |
+|---|---|
+| winner / rounds | 60 / 60 identical |
+| per-round aHits / bHits / aKills / bKills | all identical |
+| aBlocked / bBlocked / cancelledA / cancelledB / aErrorCode / bErrorCode | all identical |
+| aliveAAfter / aliveBAfter / result / firstSolver | all identical |
+| aFunction / bFunction 及其 hash | 全部相同 |
+| mapSeed / mapHash / pointCount / difficulty / seed | 585 轮全部相同 |
+| 安装的包 hash（slot 内容） | 60 场全部相同 |
 
 **计时层面：不可复现。**
 
-
 - 866 个可配对的非空单侧耗时中，**0 个相同**；平均差 +0.71 ms，标准差 4.13 ms，极值 −39.6 ms / +43.9 ms；33% 相差 >1 ms，7% 相差 >5 ms。
-- Of 866 pairwise non-empty single-side timings, **0 were identical**; mean difference +0.71 ms, standard deviation 4.13 ms, extremes −39.6 ms / +43.9 ms; 33% differ >1 ms, 7% differ >5 ms.
 - 60 场的 `wallSeconds` 全部不同。
-- All 60 matches have different `wallSeconds`.
 
 **状态 hash：全部不同，但与战斗无关。** `publicStateHash` / `revealStateHash` / `roundStateHash` 在 585 轮中全部不同，`matchId` 60 场零重叠。根因是 `buildPublicState` / `buildRevealState` 把每场随机生成的 `match_id` 嵌入了状态 JSON，因此这些 hash 差异**不携带任何关于战斗随机性的信息**。
-
 
 > **修正 rev 1 的过度断言**：rev 1 写作「平台对固定算法对 + 固定种子是完全确定的」。
 > 严格地说，**只有判定是确定且可重放的；计时是墙上时钟，明确不可复现**。
@@ -153,59 +134,46 @@ python3 playtest/harness/reproduce_round1.py --results /tmp/round1-verify/playte
 
 ## 3. Hybrid 设计
 
-
 `playtest/competitors/solver-hybrid/` — **混合战术优先任意时算法优化器**
 
 设计契约（任务书 §9）：
 
-
 > 在任意较早时间停止，都已经拥有一个可执行的合法候选；随着计算继续，函数质量逐步提高。
-
 
 字面实现：第一个被构造的东西就是一条保证合法的 fallback；`best` 在任何候选胜过它时立即更新；每个阶段边界都是「此刻停手也能交卷」的点。
 
-
-| 阶段 / Stage | 内容 / Content | 实测（1170 个世界）/ Measured (1170 worlds) |
+| 阶段 | 内容 | 实测（1170 个世界） |
 |---|---|---|
-| **Stage 1 战术 / Stage 1 Tactical** | 刺杀直线、对每个敌点的直线、恰过（对方 Shooter + 任一敌点）的二次曲线、单参数 bend 族 / Assassination lines, lines to each enemy point, quadratics passing exactly through (opponent Shooter + any enemy point), single-parameter bend family | 中位 **3.26 ms**，候选中位 18 / median **3.26 ms**, candidate median 18 |
-| **Stage 2 多目标 / Stage 2 Multi-target** | ≤3 点精确有理插值、三角族、复合族 / ≤3-point exact rational interpolation, trigonometric family, composite family | 仅 631/1170 次进入，中位 5.99 ms / only 631/1170 entered, median 5.99 ms |
-| **Stage 3 深挖 / Stage 3 Deep search** | 自由度扫描下更大组合、局部细化 / Larger combinations under degree-of-freedom sweep, local refinement | 仅 598/1170 次进入，中位 0.01 ms / only 598/1170 entered, median 0.01 ms |
+| **Stage 1 战术** | 刺杀直线、对每个敌点的直线、恰过（对方 Shooter + 任一敌点）的二次曲线、单参数 bend 族 | 中位 **3.26 ms**，候选中位 18 |
+| **Stage 2 多目标** | ≤3 点精确有理插值、三角族、复合族 | 仅 631/1170 次进入，中位 5.99 ms |
+| **Stage 3 深挖** | 自由度扫描下更大组合、局部细化 | 仅 598/1170 次进入，中位 0.01 ms |
 
 **EARLY RETURN（§6）**：Stage 1 覆盖的是**整个廉价战术族**（不是采样）。因此 Stage 1 走完时若已持有 shooter kill 或 ≥2 杀，**立即开火、不再进入后续阶段**。
 
-
-| 停止原因 / Stop reason | 占比 / Proportion |
+| 停止原因 | 占比 |
 |---|---|
 | `stage1: shooter + another kill` | 30.2% |
 | `stage1: decisive tactical shot` | 15.9% |
 | `stage2: shooter + another kill` / `triple kill` | 1.5% / 1.4% |
 | `stage3: shooter + another kill` | 0.1% |
-| budget exhausted（无决定性解）/ budget exhausted (no decisive solution) | 51.0% |
+| budget exhausted（无决定性解） | 51.0% |
 
 **46.1% 的回合在 Stage 1 直接开火** —— 这正是 Hybrid 能与 Fast 同速度档的原因。
 
-
 ### 3.1 几何与合法性
-
 
 ```
 V = (x − x_s) / L,   f(x) = y_s + g(V),   g(0) = 0
 ```
 
 - `f(x_s) = y_s` 是**恒等式**，不会漂移到 1e-6 容差边缘（kit §9 的建议）。
-- `f(x_s) = y_s` is an **identity**, will not drift to the 1e-6 tolerance edge (kit §9 recommendation).
 - `L` 归一化到 `|V| ≤ 1`，多项式系数自然落在 `|const| ≤ 1000` 内。
-- `L` normalizes to `|V| ≤ 1`, polynomial coefficients naturally fall within `|const| ≤ 1000`.
 - 多项式用 `fractions.Fraction` **精确求解**；V 上聚集的目标组合会使 Vandermonde 病态（系数冲到 3×10⁴），这类组合被**显式跳过**。
-- Polynomials are solved **exactly** using `fractions.Fraction`; target combinations clustered on V make Vandermonde ill-conditioned (coefficients surge to 3×10⁴), such combinations are **explicitly skipped**.
 - 轨迹扫描**保守**：无法证明通畅即判 blocked。
-- Trajectory scanning is **conservative**: if clearance cannot be proven, judged as blocked.
 
 ### 3.2 规则来源（合规声明）
 
-
 Hybrid 的设计输入**只有**冻结的 Playtest Rules 与公开的 `competitor-kit/`。场地边界终止取自 §34 明文，并在第一轮由独立黑盒 cross-check（866/866）确认。
-
 
 > **流程说明（主动披露）**：编制 competitor-kit 参考文档时，一个子 agent 读取了 `src/core/Judge.ts`。该处得到的内部细节（采样步长 `min(0.005, π/(8ω))`、`maxPoints`、`OBSTACLE_CONTACT_EPS`、`penetration` 约定）**已明确排除在 Hybrid 设计输入之外**。y 边界终止规则本身属 §34 公开内容，不构成泄漏使用。
 
@@ -220,41 +188,38 @@ Hybrid 的设计输入**只有**冻结的 Playtest Rules 与公开的 `competito
 
 ```
 PRE-FLIGHT PASS — 2 个队别 × 9 个分节全部通过
-PRE-FLIGHT PASS — 2 teams × 9 sections all passed
-包哈希 / Package hash: a11dbf0a47622305ac123b2efeec07d8d4d653c955cc69f6f00b1f8dd44942b
-Team A / Team B 耗时 / time: 14.7 / 14.9 ms（上限 / limit: 2000 ms）
+包哈希: a11dbf0a47622305ac123b2efeec07d8d4d653c955cc69f6f00b1f8dd44942b
+Team A / Team B 耗时: 14.7 / 14.9 ms（上限: 2000 ms）
 ```
 
 同一哈希在两组实验槽位安装报告（`install-report.json`）中记录一致，可交叉核对。
 
-
 ### 4.2 离线鲁棒性矩阵（§10）
-
 
 公开 operator CLI **无法产出 0 或 1 障碍的地图**（本轮独立复验：`--obstacles 0` / `--obstacles 1` 均被拒为未知选项；`--difficulty` 只映射 easy=2 / medium=4 / hard=6）。因此 0/1 障碍的**平台级比赛**无法在不读取 MapGenerator 的前提下产生——记为 TEST LIMITATION。
 
-
 算法侧矩阵在离线完成（`gb_matrix.py`：合成世界 + 公开合法性筛查 + 黑盒命中模型）：
 
-
+| 包 | runs | illegal | TIMEOUT | no result |
+|---|---|---|---|---|
+| **solver-hybrid** | 600 | **0** | **0** | **0** |
+| solver-fast | 600 | 0 | 0 | 0 |
+| solver-optimizer | 600 | 0 | 0 | 0 |
 
 形状：障碍 {0,1,2,4,6} × 人数 {6,8,10} × 队别 {A,B} × 20 seeds。Hybrid 在 0 障碍时平均预测击杀 2.00，6 障碍时 1.60–1.88。
 
-
 ### 4.3 与另两套算法的对照
 
-
-| 指标 / Metric | Hybrid | Fast（Round-1 bench） | Optimizer（Round-1 bench） |
+| 指标 | Hybrid | Fast（Round-1 bench） | Optimizer（Round-1 bench） |
 |---|---|---|---|
-| 非法 / 崩溃（1170 次）/ illegal / crash (1170 invocations) | **0** | 0 | 0 |
-| 墙上时间中位 / wall time median | 29.4 ms | 27.2 ms | 189.7 ms |
-| 墙上时间 p95 / max / wall time p95 / max | 85.8 / 493.9 ms | 53.5 / 75.8 ms | 332.6 / 14741 ms |
-| 自身口径耗时中位 / self-reported time median | 8.6 ms | — | — |
-| 预测命中对方 Shooter / predicted hit on opponent Shooter | 48.3% | 53.6% | 55.0% |
-| 预测击杀均值 / predicted kills mean | 0.93 | 0.97 | 1.43 |
+| 非法 / 崩溃（1170 次） | **0** | 0 | 0 |
+| 墙上时间中位 | 29.4 ms | 27.2 ms | 189.7 ms |
+| 墙上时间 p95 / max | 85.8 / 493.9 ms | 53.5 / 75.8 ms | 332.6 / 14741 ms |
+| 自身口径耗时中位 | 8.6 ms | — | — |
+| 预测命中对方 Shooter | 48.3% | 53.6% | 55.0% |
+| 预测击杀均值 | 0.93 | 0.97 | 1.43 |
 
 **ALGORITHM FINDING**：Hybrid 与 Fast 同属速度档。
-
 
 **ALGORITHM FINDING（Stage 3 的边际价值）**：在 1170 个真实世界上，Stage 3 产出了候选（最多 235 个）却只改变了 **1 次**最终选择。在当前规则集上，**一旦战术解存在，更深的曲线拟合几乎不产生价值**——这是对「先手速度是否过度压制函数质量」的一条算法内直接回答。
 
@@ -266,16 +231,16 @@ Team A / Team B 耗时 / time: 14.7 / 14.9 ms（上限 / limit: 2000 ms）
 
 规模（§13）：每组 pair 均为 **30 个条件 × 槽位互换 = 60 场**。
 
-
 - 条件集与第一轮**完全相同**（同 seeds / 人数 / 难度），可与 Round-1 直接比较。
-- Condition set is **completely identical** to Round 1 (same seeds / team sizes / difficulties), directly comparable to Round 1.
 - 地图：6v6 / 8v8 / 10v10 × easy / medium / hard，30 个互不相同的地图哈希。
-- Maps: 6v6 / 8v8 / 10v10 × easy / medium / hard, 30 distinct map hashes.
 - 外部轮数上限 `--max-rounds 30`（**仅测试护栏，非比赛规则**——这一点在 §14 有决定性后果）。
-- External round cap `--max-rounds 30` (**test guardrail only, not competition rule**—this has decisive consequences in §14).
 - 三组共 **180 场**，合计约 1900 秒墙钟。
-- Three groups total **180 matches**, approximately 1900 seconds wall time.
 
+| pair | Winner A | Winner B | Draw |
+|---|---|---|---|
+| **fast-vs-hybrid** | Fast **26** | Hybrid **8** | **26** |
+| **optimizer-vs-hybrid** | Hybrid **39** | Optimizer **4** | **17** |
+| **fast-vs-optimizer** | Fast **50** | Optimizer **0** | **10** |
 
 **0 INVALID · 0 TIMEOUT · 0 CRASH**（180 场 / 2316 轮 / 3774 次实际执行的射击）。
 
@@ -284,73 +249,58 @@ Team A / Team B 耗时 / time: 14.7 / 14.9 ms（上限 / limit: 2000 ms）
 
 ## 6. Fast vs Hybrid（§15 的核心问题）
 
-
 | | Fast | Hybrid |
 |---|---|---|
 | wins / 胜利 | **26** | **8** |
 | draw / 平局 | 26 | 26 |
 | first-shot rate / 先手率 | **0.768** | 0.232 |
-| 被取消轮次 / cancelled rounds | 117 (11.8%) | 187 (18.9%) |
+| 被取消轮次 | 117 (11.8%) | 187 (18.9%) |
 | kills / 击杀 | **378** | 260 |
 | shooter kills / Shooter 击杀 | **193** | 118 |
 | kills per valid shot / 每次有效射击击杀 | **0.433** | 0.324 |
 | multi-kill rate / 多重击杀率 | 0.146 | 0.097 |
 | no-hit rate / 零命中率 | 0.766 | 0.842 |
-| 计算时间中位 / p95 / compute time median / p95 | 16.1 / 36.7 ms | 23.6 / 168.0 ms |
+| 计算时间中位 / p95 | 16.1 / 36.7 ms | 23.6 / 168.0 ms |
 
 ### 6.1 draw 不是均势，而是时钟到期
 
-
 **26 个 draw 全部是 `exhausted=True`（打满 30 轮上限）。** 其中：
 
-
 - **12 / 26 的存活分差 ≥ 2**，5 / 26 的分差 ≥ 4。
-- **12 / 26 have survival difference ≥ 2**, 5 / 26 have difference ≥ 4.
 - 极端案例 `s1111-p10-medium__fast-A`：Fast 存活 10 点 / 8 杀，Hybrid 存活 2 点 / 0 杀 —— 记录为 **draw**。
-- Extreme case `s1111-p10-medium__fast-A`: Fast survives 10 points / 8 kills, Hybrid survives 2 points / 0 kills — recorded as **draw**.
 - 26 个 draw 的合计击杀差：Fast +12，Hybrid −9，0 平。
-- Aggregate kill difference across 26 draws: Fast +12, Hybrid −9, 0 tied.
 
 **按击杀差（或存活差，结果相同）对 draw 裁决后：Fast 38 / Hybrid 17 / 5 完全平。**
 
-
 ### 6.2 修正 rev 1 的过度断言
-
 
 rev 1 写作「净胜差从 +50 压到 +18」，并据此判定 Hybrid 实质缩小了差距。该比较**不成立**：
 
-
 - Round-1 的 50-0-10 中 **50/50 场都是已决**；本轮 fast-vs-hybrid 只有 **34/60 已决**。
-- In Round 1's 50-0-10, **50/50 matches were decided**; this round's fast-vs-hybrid has only **34/60 decided**.
 - 跨不同「已决场数」直接比净值是苹果比橘子。
-- Directly comparing net values across different "decided match counts" is comparing apples to oranges.
 - 按裁决口径，Fast 的胜率从 100%（50/50）降到 **69%（38/55）**——确实显著下降，但**仍是明确的领先**（二项检验 P(Fast ≥ 26/34 | 公平) ≈ 0.0015）。
-- By adjudication caliber, Fast's win rate dropped from 100% (50/50) to **69% (38/55)**—indeed significantly down, but **still a clear lead** (binomial test P(Fast ≥ 26/34 | fair) ≈ 0.0015).
 
 **诚实的表述**：
 
-
 > Hybrid **显著收窄**了与 Fast 的差距（Fast 的已决胜率 100% → 69%，且拿下 8 场胜利，而 Optimizer 拿 0 场），但**没有关闭**它；而且约 43% 的对局根本没有分出胜负，这些僵持把差距「吸收」进了 draw 里。
-
 
 对照 `optimizer-vs-hybrid`（Hybrid 39 / Optimizer 4）可以看出：Hybrid 相对 **Optimizer** 的跃升是决定性的；相对 **Fast** 则只是收窄。
 
 
 ---
 
-
+## 7. Optimizer vs Hybrid
 
 | | Hybrid | Optimizer |
 |---|---|---|
 | wins / 胜利 | **39** | **4** |
 | draw / 平局 | 17 | 17 |
 | first-shot rate / 先手率 | **0.9987** | 0.0000 |
-| 被取消轮次 / cancelled rounds | **0** | 250 (33.7%) |
+| 被取消轮次 | **0** | 250 (33.7%) |
 | kills / 击杀 | **434** | 144 |
 | shooter kills / Shooter 击杀 | **250** | 47 |
 
 Hybrid 对 Optimizer 的统治形态，与 Fast 对 Optimizer **完全同构**：更快 → 每轮必先手 → 33.7% 的回合直接把对方整轮取消。
-
 
 **RULE-DESIGN FINDING**：同一套规则下，两套互不相关的快算法用同一种机制碾压了同一套慢算法。速度优势的传递路径被独立复现了两次。
 
@@ -362,11 +312,9 @@ Hybrid 对 Optimizer 的统治形态，与 Fast 对 Optimizer **完全同构**�
 
 每种地图条件都跑了 `X = Team A` 与 `Y = Team A` 两种排布，使用**同一 seed**（看到同一张图）。
 
-
 **修正 rev 1 的报告口径**：rev 1 只打印了 `swapConsistent / swapFlipped`，没有给出分母，读起来像是覆盖了全部 30 个条件。实际上该度量**只统计两腿都已决的条件**，其余（涉及 draw 的）被静默排除。完整分解如下：
 
-
-| pair | 两腿同判 / Both legs same | 两腿相反 / Both legs opposite | 单腿 draw / One leg draw | 双腿 draw / Both legs draw | 可分类占比 / Classifiable proportion |
+| pair | 两腿同判 | 两腿相反 | 单腿 draw | 双腿 draw | 可分类占比 |
 |---|---|---|---|---|---|
 | fast-vs-hybrid | 6 | **6** | 10 | 8 | **12 / 30 (40%)** |
 | optimizer-vs-hybrid | 14 | 3 | 9 | 4 | **17 / 30 (57%)** |
@@ -374,26 +322,26 @@ Hybrid 对 Optimizer 的统治形态，与 Fast 对 Optimizer **完全同构**�
 
 fast-vs-hybrid 的 6 个**完全反转**条件（同一张图，换槽位后胜者互换）：
 
-
+| condition | fast-A leg winner | hybrid-A leg winner |
+|---|---|---|
+| s909-p8-medium | hybrid | fast |
+| s1414-p10-medium | hybrid | fast |
+| s1616-p6-easy | hybrid | fast |
+| s2222-p6-easy | hybrid | fast |
+| s2424-p8-easy | fast | hybrid |
+| s2626-p10-easy | fast | hybrid |
 
 ### 8.1 算法效应 vs 槽位效应（§12 要求区分）
 
-
 - **槽位效应：未发现。** 两种排布**逐项完全对称**（fast-vs-hybrid 的 fast-A 与 hybrid-A 均为 13 / 4 / 13）；全量 A/B 槽位计时中位数均为 **21.2 ms**；先手占比 A=0.5099 / B=0.4896。
-- **Slot effect: not found.** Both arrangements are **item-by-item perfectly symmetric** (fast-vs-hybrid's fast-A and hybrid-A both 13 / 4 / 13); full A/B slot timing median both **21.2 ms**; first-solver proportion A=0.5099 / B=0.4896.
 - **算法效应：存在。** fast-vs-optimizer 在两种排布下都是 Fast 压倒性领先（26 vs 24 胜），这是纯粹的算法差异。
-- **Algorithm effect: exists.** fast-vs-optimizer has Fast overwhelmingly ahead in both arrangements (26 vs 24 wins), this is pure algorithm difference.
 - **但 fast-vs-hybrid 的算法效应无法被干净地分离**：只有 40% 的条件两腿都已决，其中一半还是反转。**这说明两套同档快算法之间，同一张图的胜负对极小的时序抖动高度敏感**——这本身就是一条结论，而不是噪声。
-- **But fast-vs-hybrid's algorithm effect cannot be cleanly separated**: only 40% of conditions have both legs decided, half of which reversed. **This indicates that between two same-tier fast algorithms, match outcomes on the same map are highly sensitive to tiny timing jitter**—this itself is a conclusion, not noise.
 
 ### 8.2 §24 的 start skew —— 不可观测
 
-
 任务书 §24 要求记录 `start skew`。**平台公开产物中不存在该量**：`match.json` 的每轮只有 `aTimeMs` / `bTimeMs`（各自 GO 锚定的计算耗时）与 `firstSolver`，`console.log` 中也没有 `release_ns` 或任何起点偏移字段（本轮已 grep 确认）。
 
-
 因此：
-
 
 > **`start skew` 是本 harness 不可观测的量。** §8.1 的"未发现槽位偏置"结论建立在 **计算耗时分布 + 先手占比**之上，而不是建立在实测起点偏移之上。若平台要支撑 §24 的完整要求，需要在产物中暴露双方的 GO 交付时刻。
 

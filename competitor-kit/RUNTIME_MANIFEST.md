@@ -35,9 +35,9 @@ The test directly reads the JSON block below. Do not modify its structure.
     "textwrap", "time", "traceback", "typing", "unittest", "uuid", "warnings"
   ],
   "importable_but_blocked": [
-    { "module": "subprocess", "reason": "沙箱拒绝 process-fork" },
-    { "module": "multiprocessing", "reason": "沙箱拒绝 process-fork" },
-    { "module": "socket", "reason": "沙箱拒绝网络访问" }
+    { "module": "subprocess", "reason": "Sandbox denies process-fork" },
+    { "module": "multiprocessing", "reason": "Sandbox denies process-fork" },
+    { "module": "socket", "reason": "Sandbox denies network access" }
   ],
   "unavailable": [
     "cvxpy", "jax", "matplotlib", "networkx", "numba", "numpy", "pandas",

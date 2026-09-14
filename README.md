@@ -17,7 +17,7 @@ algorithm optimization, and AI-assisted programming.**
 
 
 
-**English.** Both teams submit one algorithm package each, installed into two permanent
+Both teams submit one algorithm package each, installed into two permanent
 slots — `runs/slots/team-a` and `runs/slots/team-b`. The **runtime slot root** is the
 official delivery point; the `algorithms/` directory in the repo is only a factory
 fixture (see §1). Each round the platform injects **byte-identical** input files into
@@ -36,7 +36,7 @@ are delivered only through `output/result.json`; stdout is **not** an IPC channe
 
 
 
-**English.** The **only** rule change from V1.1 is the Fixed Emitter: it is no longer a
+The **only** rule change from V1.1 is the Fixed Emitter: it is no longer a
 platform constant but is **chosen before the match by each team from its own points**.
 Everything else is unchanged.
 
@@ -63,7 +63,7 @@ point can produce a match that never terminates — see
 
 
 
-**English.** The platform is currently **V1.4**, which stacks four layers:
+The platform is currently **V1.4**, which stacks four layers:
 
 - **V1.1 — frozen rules and judging.** The two-phase input protocol
   (`public_state.json` → `reveal_state.json`), the 14-operator DSL whitelist, the 500 ms
@@ -132,7 +132,7 @@ Upload → staging → validate → preflight → hash → seal → replace
 ```
 
 
-**English.** A package goes into one of two **permanent** slots. The official delivery
+A package goes into one of two **permanent** slots. The official delivery
 point is the **runtime slot root** (`runs/slots/`, git-ignored); the entry point is
 frozen to `solver.py` at the package root — `main.py`, `run.py` or `my_solver.py` are
 no longer accepted, and the platform does **not** read `manifest.entry` to decide what
@@ -238,7 +238,7 @@ reveal = json.load(open(a.reveal))
 assert hashlib.sha256(raw).hexdigest() == reveal["public_state_sha256"]  # binding self-check
 ```
 
-**English.** The platform no longer writes state to stdin. Each round the host starts
+The platform no longer writes state to stdin. Each round the host starts
 the algorithm process with exactly four arguments:
 
 ```
@@ -362,7 +362,7 @@ os.replace(tmp, a.output)
 
 
 
-**English.** Fourteen operators in total:
+Fourteen operators in total:
 
 | Kind | Operators |
 |------|--------|
@@ -381,8 +381,6 @@ operation.
 
 
 
-
-**English.**
 
 | Limit | Value |
 |------|-----|
@@ -412,7 +410,7 @@ starts at the anchor: A is `x ∈ [x_e, 20]`, B is `x ∈ [-20, x_e]`.
 
 
 
-**English.** A real match freezes one runtime, item by item identical for both sides:
+A real match freezes one runtime, item by item identical for both sides:
 
 | Item | Frozen value |
 |------|--------|
@@ -449,8 +447,6 @@ and "whose machine has more cores" would become a timing advantage.
 
 
 
-
-**English.**
 
 - Field: `x ∈ [-20, 20]`, `y ∈ [-12, 12]`
 - Team zones: A `x ∈ [-20, -4]`, B `x ∈ [4, 20]`
@@ -494,7 +490,7 @@ npm run app          # build frontend → start service → bind 127.0.0.1:17800
 
 
 
-**English.** No terminal needed for the normal flow.
+No terminal needed for the normal flow.
 
 | Route | Token | Purpose |
 |---|---|---|
@@ -516,7 +512,7 @@ npm run app          # build frontend → start service → bind 127.0.0.1:17800
 
 
 
-**English.** `/judge` and `/team/*` both require an access token. It is **not a
+`/judge` and `/team/*` both require an access token. It is **not a
 username/password** — it is a capability: **whoever holds it can act as that side.**
 
 | Surface | Token |
@@ -575,7 +571,7 @@ npm run e2e          # Playwright browser full match rehearsal (real algorithms 
 ```
 
 
-**English.** A real match **does not allow a platform-shipped algorithm to play.** The
+A real match **does not allow a platform-shipped algorithm to play.** The
 server checks four entry points; if the computed package hash hits the **platform
 distribution tree** (`starter/`, `algorithms/team-*`, `competitor-kit/starter`,
 `demo/*`, `playtest/competitors/*`) it is refused:
@@ -642,7 +638,7 @@ npm test -- web-projection web-server      # run only specified suites
 npm run stress
 ```
 
-**English.** Every entry point uses `runs/slots` by default and takes `--slots <dir>` to
+Every entry point uses `runs/slots` by default and takes `--slots <dir>` to
 point elsewhere. `npm test` runs the regression suites (see `tests/run-all.ts` for the
 list); `npm test -- <suite> <suite>` runs only the named ones. `npm run stress` is the
 map-generator stress check.
@@ -682,7 +678,7 @@ geometry-battle/
 └── docs/              
 ```
 
-**English.** `runs/slots/` is the runtime state and the official delivery point (and is
+`runs/slots/` is the runtime state and the official delivery point (and is
 git-ignored). `algorithms/` is the tracked factory fixture — first start seeds
 `runs/slots` from it once, and changing it afterwards does not change the algorithm a
 match runs. `src/core/` holds the engine and the canonical Judge; `src/server/` is the
@@ -701,7 +697,7 @@ Canvas 2D); `tests/` holds the regression suites and algorithm fixtures;
 
 
 
-**English.** The Web UI is a **wrapper**, not a second engine. Three structural
+The Web UI is a **wrapper**, not a second engine. Three structural
 constraints:
 
 1. **The server adds no judging of its own.** Every command in `src/server/` is one call
@@ -740,8 +736,6 @@ real trajectory ends permanently at first contact.
 
 ## Isolation & fairness
 
-
-**English.**
 
 - Every computation runs in its own `sandbox-exec` sandbox: deny by default, deny
   network, deny `fork`. Inside is a **four-zone** layout — `app/` (read-only package),
@@ -804,7 +798,7 @@ real trajectory ends permanently at first contact.
 
 
 
-**English.** A match can be **re-verified independently after the fact**, without
+A match can be **re-verified independently after the fact**, without
 re-running any algorithm:
 
 - `match.json` / `audit.json` / `replay.json` land in `artifacts/matches/<matchId>/`;
@@ -826,8 +820,6 @@ algorithm actually received cannot go unnoticed.
 
 ## Known limitations
 
-
-**English.**
 
 - **Stalemate and termination** are the engine's job, see "Termination guarantee" above:
   both STALEMATE (20 consecutive kill-free rounds) and HARD_ROUND_LIMIT (round 60) end
@@ -857,7 +849,7 @@ algorithm actually received cannot go unnoticed.
 
 
 
-**English.** This repository is the **public release** of Geometry Battle, using an
+This repository is the **public release** of Geometry Battle, using an
 independent sanitized history.
 
 - **Public tags**: `v1.2.0`, `v1.3.0`, `v1.4.0`.
@@ -876,7 +868,7 @@ independent sanitized history.
 
 
 
-**English.** Geometry Battle is an **educational algorithm competition sandbox** for:
+Geometry Battle is an **educational algorithm competition sandbox** for:
 **education** (classroom demos, self-study of the full platform-plus-algorithm loop);
 **algorithm optimisation** (comparing search / fitting / geometry strategies under one
 harness); **computational geometry experiments** (obstacle intersection, trajectory
@@ -892,7 +884,7 @@ club or self-organised matches).
 
 
 
-**English.** This project is licensed under the
+This project is licensed under the
 **[PolyForm Noncommercial License 1.0.0](LICENSE)**; the full text is in
 [`LICENSE`](LICENSE) at the repository root (byte-identical to the
 [official text](https://polyformproject.org/licenses/noncommercial/1.0.0), not rewritten
@@ -917,7 +909,7 @@ see PolyForm's Notices clause.
 
 
 
-**English.** **Commercial use is not granted by this licence.** Using this project or a
+**Commercial use is not granted by this licence.** Using this project or a
 modified version for commercial purposes — including but not limited to paid courses,
 commercial training, commercial competition platforms, hosted services, consulting
 deliverables, or integration into a commercial product — **requires a separate licence

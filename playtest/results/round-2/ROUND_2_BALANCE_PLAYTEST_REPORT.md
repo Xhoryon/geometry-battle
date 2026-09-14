@@ -1,6 +1,6 @@
 <div align="right">
 
-**English** | <a href="./ROUND_2_zh.md">简体中文</a>
+**English** | <a href="./ROUND_2_BALANCE_PLAYTEST_REPORT.zh-CN.md">简体中文</a>
 
 </div>
 
@@ -105,8 +105,6 @@ python3 playtest/harness/reproduce_round1.py --results /tmp/round1-verify/playte
 | max-rounds stalemate | 10 | 10 |
 | median compute time | 12.8 / 142.1 ms | same |
 
-**BASELINE REPRODUCTION PASSED。**
-
 **BASELINE REPRODUCTION PASSED.**
 
 
@@ -146,8 +144,6 @@ Round 2 completely re-ran `fast-vs-optimizer` with the same 30 conditions (60 ma
 ---
 
 ## 3. Hybrid Design
-
-## 3. Hybrid design
 
 `playtest/competitors/solver-hybrid/` — **Hybrid Tactical-First Anytime Optimizer**
 
@@ -329,8 +325,6 @@ Comparing to `optimizer-vs-hybrid` (Hybrid 39 / Optimizer 4) shows: Hybrid's lea
 
 ## 7. Optimizer vs Hybrid
 
-## 7. Optimizer vs Hybrid
-
 | | Hybrid | Optimizer |
 |---|---|---|
 | wins | **39** | **4** |
@@ -348,7 +342,7 @@ Hybrid's dominance pattern over Optimizer is **completely isomorphic** to Fast o
 
 ---
 
-## 8. Slot Swap（§12）
+## 8. Slot Swap (§12)
 
 
 

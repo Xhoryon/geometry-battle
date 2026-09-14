@@ -1,6 +1,6 @@
 # solver-fast — Algorithm A (快速战术求解器)
 
-**中文** | [English](README.zh-CN.md)
+<a href="./README.md">English</a> | **简体中文**
 
 几何斗殴 V1.1 playtest 参赛算法。以最快速度生成稳定、合法、战术价值高的攻击函数。
 

@@ -1,55 +1,57 @@
-<div align="right">
-
-**English** | <a href="./BILINGUAL_DOCUMENTATION.zh-CN.md">简体中文</a>
-
-</div>
+<div align="right"><strong>English</strong> | <a href="./BILINGUAL_DOCUMENTATION.zh-CN.md">简体中文</a></div>
 
 # Bilingual Documentation Index
 
-**Geometry Battle V1.4.1** — Complete bilingual documentation coverage.
+**Geometry Battle V1.4.2** — Complete bilingual documentation coverage with language switching.
 
 ---
 
 ## Overview
 
-All public-facing documentation in this repository is provided in both **Chinese (zh-CN)** and **English (en-US)**, using a consistent same-file bilingual format.
+All public-facing documentation in this repository is provided in both **Chinese (zh-CN)** and **English (en-US)**, using a language-paired file pattern (`.md` + `.zh-CN.md`).
 
-### Bilingual Format
+### Language Pairing Format
 
-Each bilingual document:
-- Begins with the marker: `<!-- bilingual-doc: zh-CN + en-US -->`
-- Presents content in **Chinese first, then English** for each section
-- Maintains technical accuracy in both languages
-- Preserves all code examples, tables, and technical terms
+Each documentation topic has two files:
+- **English version**: `filename.md` (e.g., `README.md`)
+- **Chinese version**: `filename.zh-CN.md` (e.g., `README.zh-CN.md`)
+- Both files include **language navigation** links at the top
+- Cross-references within each language stay within that language
+- Both versions maintain technical accuracy and completeness
 
 ---
 
 ## Core Documentation
 
-| File | Lines | Description |
-|------|-------|-------------|
-| [README.md](../README.md) | 1,286 | Main repository introduction, quick start, rules, tournament workflow |
-| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | 309 | System architecture, design constraints, engine resolution order |
-| [docs/V1.4_FAIRNESS_REPORT.md](V1.4_FAIRNESS_REPORT.md) | 452 | Platform fairness validation, mirror-symmetry testing, methodology |
-| [docs/RELEASE_NOTES.md](RELEASE_NOTES.md) | 394 | Release history for V1.4, V1.3, V1.2 |
-| [docs/BILINGUAL_DOCUMENTATION.md](BILINGUAL_DOCUMENTATION.md) | 198 | This file: Bilingual documentation index |
+| English | Chinese | Description |
+|---------|---------|-------------|
+| [README.md](../README.md) | [README.zh-CN.md](../README.zh-CN.md) | Main repository introduction, quick start, rules, tournament workflow |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | [ARCHITECTURE.zh-CN.md](ARCHITECTURE.zh-CN.md) | System architecture, design constraints, engine resolution order |
+| [V1.4_FAIRNESS_REPORT.md](V1.4_FAIRNESS_REPORT.md) | [V1.4_FAIRNESS_REPORT.zh-CN.md](V1.4_FAIRNESS_REPORT.zh-CN.md) | Platform fairness validation, mirror-symmetry testing |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | [RELEASE_NOTES.zh-CN.md](RELEASE_NOTES.zh-CN.md) | V1.4, V1.3, V1.2 release history |
+| [REPRODUCIBILITY.md](REPRODUCIBILITY.md) | [REPRODUCIBILITY.zh-CN.md](REPRODUCIBILITY.zh-CN.md) | Reproducibility guide and verification |
+| [BILINGUAL_DOCUMENTATION.md](BILINGUAL_DOCUMENTATION.md) | [BILINGUAL_DOCUMENTATION.zh-CN.md](BILINGUAL_DOCUMENTATION.zh-CN.md) | This file: documentation index |
 
 ---
 
 ## Competitor Documentation
 
-| File | Lines | Description |
-|------|-------|-------------|
-| [competitor-kit/ALGORITHM_REQUIREMENTS.md](../competitor-kit/ALGORITHM_REQUIREMENTS.md) | 1,343 | Complete algorithm requirements (§0–§18), DSL specification, legality rules |
-| [algorithms/README.md](../algorithms/README.md) | 205 | Algorithm submission structure, slots vs fixtures, upload pipeline |
+| English | Chinese | Description |
+|---------|---------|-------------|
+| [competitor-kit/README.md](../competitor-kit/README.md) | [competitor-kit/README.zh-CN.md](../competitor-kit/README.zh-CN.md) | Competitor kit overview |
+| [competitor-kit/ALGORITHM_REQUIREMENTS.md](../competitor-kit/ALGORITHM_REQUIREMENTS.md) | [competitor-kit/ALGORITHM_REQUIREMENTS.zh-CN.md](../competitor-kit/ALGORITHM_REQUIREMENTS.zh-CN.md) | Complete algorithm requirements (§0–§18) |
+| [competitor-kit/DSL_SPECIFICATION.md](../competitor-kit/DSL_SPECIFICATION.md) | [competitor-kit/DSL_SPECIFICATION.zh-CN.md](../competitor-kit/DSL_SPECIFICATION.zh-CN.md) | DSL specification, legal/illegal examples |
+| [competitor-kit/JSON_SCHEMA.md](../competitor-kit/JSON_SCHEMA.md) | [competitor-kit/JSON_SCHEMA.zh-CN.md](../competitor-kit/JSON_SCHEMA.zh-CN.md) | JSON field structure |
+| [competitor-kit/RUNTIME_MANIFEST.md](../competitor-kit/RUNTIME_MANIFEST.md) | [competitor-kit/RUNTIME_MANIFEST.zh-CN.md](../competitor-kit/RUNTIME_MANIFEST.zh-CN.md) | Runtime manifest |
+| [algorithms/README.md](../algorithms/README.md) | [algorithms/README.zh-CN.md](../algorithms/README.zh-CN.md) | Algorithm submission structure |
 
 ---
 
 ## Demo & Reference
 
-| File | Lines | Description |
-|------|-------|-------------|
-| [demo/reference-solver-v2/README.md](../demo/reference-solver-v2/README.md) | 378 | Reference solver design, candidate families, known limitations, reproducibility |
+| English | Chinese | Description |
+|---------|---------|-------------|
+| [demo/reference-solver-v2/README.md](../demo/reference-solver-v2/README.md) | [demo/reference-solver-v2/README.zh-CN.md](../demo/reference-solver-v2/README.zh-CN.md) | Reference solver design, limitations, reproducibility |
 
 ---
 
@@ -57,43 +59,46 @@ Each bilingual document:
 
 ### Competitor Algorithms
 
-| File | Lines | Description |
-|------|-------|-------------|
-| [playtest/competitors/solver-fast/README.md](../playtest/competitors/solver-fast/README.md) | 94 | Algorithm A: Fast tactical solver, closed-form candidates, early stopping |
-| [playtest/competitors/solver-optimizer/README.md](../playtest/competitors/solver-optimizer/README.md) | 92 | Algorithm B: Time-budgeted search, exact interpolation, trigonometric families |
-| [playtest/competitors/solver-hybrid/README.md](../playtest/competitors/solver-hybrid/README.md) | 167 | Algorithm C: Anytime optimizer, three-stage design, tactical-first strategy |
+| English | Chinese | Description |
+|---------|---------|-------------|
+| [playtest/competitors/solver-fast/README.md](../playtest/competitors/solver-fast/README.md) | [playtest/competitors/solver-fast/README.zh-CN.md](../playtest/competitors/solver-fast/README.zh-CN.md) | Fast tactical solver |
+| [playtest/competitors/solver-optimizer/README.md](../playtest/competitors/solver-optimizer/README.md) | [playtest/competitors/solver-optimizer/README.zh-CN.md](../playtest/competitors/solver-optimizer/README.zh-CN.md) | Time-budgeted search solver |
+| [playtest/competitors/solver-hybrid/README.md](../playtest/competitors/solver-hybrid/README.md) | [playtest/competitors/solver-hybrid/README.zh-CN.md](../playtest/competitors/solver-hybrid/README.zh-CN.md) | Anytime optimizer solver |
 
 ### Playtest Results
 
-| File | Lines | Description |
-|------|-------|-------------|
-| [playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md](../playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md) | 1,249 | Comprehensive balance analysis, 180-match campaign, cancellation dominance findings |
+| English | Chinese | Description |
+|---------|---------|-------------|
+| [playtest/results/DUAL_ALGORITHM_PLAYTEST_REPORT.md](../playtest/results/DUAL_ALGORITHM_PLAYTEST_REPORT.md) | [playtest/results/DUAL_ALGORITHM_PLAYTEST_REPORT.zh-CN.md](../playtest/results/DUAL_ALGORITHM_PLAYTEST_REPORT.zh-CN.md) | Dual algorithm playtest |
+| [playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md](../playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.md) | [playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.zh-CN.md](../playtest/results/round-2/ROUND_2_BALANCE_PLAYTEST_REPORT.zh-CN.md) | Round 2 balance analysis |
+| [playtest/results/shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.md](../playtest/results/shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.md) | [playtest/results/shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.zh-CN.md](../playtest/results/shooter-rule-revision/SHOOTER_RULE_REBALANCE_REPORT.zh-CN.md) | Shooter rule rebalance |
 
 ---
 
 ## Statistics
 
-**Total bilingual documentation: 4,887 lines**
+**Total document pairs: 19**
 
-- Core documentation: 2,639 lines
-- Competitor documentation: 1,548 lines
-- Demo & reference: 378 lines
-- Playtest documentation: 1,602 lines
+- Core documentation: 6 pairs
+- Competitor documentation: 6 pairs
+- Demo & reference: 1 pair
+- Playtest documentation: 6 pairs
 
 ---
 
 ## Verification
 
-All bilingual documents are verified by automated regression tests in:
+All language-paired documents are verified by automated regression tests:
 
 ```
 tests/bilingual-docs.spec.ts
 ```
 
 The test suite verifies:
-- Presence of bilingual marker in each file
-- File existence and accessibility
-- Basic structure integrity
+- Both `.md` and `.zh-CN.md` files exist for each documentation topic
+- Language navigation links are present in both versions
+- Cross-references within Chinese documents point to Chinese versions
+- No legacy bilingual markers remain
 
 ---
 
@@ -101,11 +106,12 @@ The test suite verifies:
 
 When adding new public-facing documentation:
 
-1. **Add bilingual marker** at the top: `<!-- bilingual-doc: zh-CN + en-US -->`
-2. **Write Chinese content first**, then add English translation
-3. **Preserve technical accuracy** in both languages
-4. **Update this index** with the new file
-5. **Add test coverage** in `tests/bilingual-docs.spec.ts`
+1. **Create two language files**: `filename.md` (English) and `filename.zh-CN.md` (Chinese)
+2. **Add language navigation** at the top of both files
+3. **Write complete content in both languages**, maintaining technical accuracy
+4. **Update cross-references**: English documents link to `.md`, Chinese documents link to `.zh-CN.md`
+5. **Update this index** with the new file pair
+6. **Add test coverage** to `tests/bilingual-docs.spec.ts`
 
 ---
 

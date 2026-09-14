@@ -1,6 +1,6 @@
 <div align="right">
 
-**English** | <a href="./SHOOTER_RULE_zh.md">简体中文</a>
+**English** | <a href="./SHOOTER_RULE_REBALANCE_REPORT.zh-CN.md">简体中文</a>
 
 </div>
 
@@ -14,20 +14,14 @@
 
 ## Document Metadata
 
-### English
-
 - Protocol version: 1.1 (`competitor-kit/` public interface)
 - Test date: 2026-09-10
 - Nature of this round: **Playtest / Balance Research + One Human-Authorized Rule Revision**, not a free platform development task
 - Rule version: **V1.1 Playtest Rules — Revision 2** (per task specification §28, not called V1.2)
 
-
-
 ---
 
 ## Git baseline
-
-### English
 
 **Addressable anchor for all evidence in this round**
 
@@ -54,27 +48,9 @@ Canonical rule path (sole authoritative rule input for this round, **revised thi
 Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md
 ```
 
-
-
-
-
-```text
-90647f3  docs(rules): amend shooter elimination semantics
-2e825a1  feat(v1.1): preserve locked attack after shooter elimination
-95f2a5f  refactor(v1.1): drop stale cancellation comments and runner-cancel wording
-```
-
-
-
-```text
-Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md
-```
-
 ---
 
 ## 1. Old Rule
-
-### English
 
 ```text
 First Solver kills opponent Shooter
@@ -87,18 +63,9 @@ Round-2 report (`playtest/results/round-2/`) concluded:
 
 > **Under this ruleset, speed affects outcome through exactly one channel: Shot Cancellation.**
 
-
-```text
-```
-
-
-
-
 ---
 
 ## 2. New Rule
-
-### English
 
 ```text
 After START, both sides gain independent and irrevocable attack rights for this round.
@@ -112,17 +79,9 @@ After START, both sides gain independent and irrevocable attack rights for this 
 
 Rule text: see `Plans/Input/Geometry Battle V1.1 — Competition Rules & Playtest Specification.md` §38.x / §39.
 
-
-```text
-```
-
-
-
 ---
 
 ## 3. Reason for Change
-
-### English
 
 Not a product of balance derivation, but a **human decision** (task specification §2: `Rule amended by human decision`).
 
@@ -148,8 +107,6 @@ That is: the cancellation rule nearly zeroed the slow side's function quality, m
 
 ## 4. Implementation Diff Scope
 
-### English
-
 Production change scope **limited to cancellation semantics only**; DSL whitelist, hit detection, obstacle collision, first-mover rule, timing endpoint and timeout budget, sandbox policy all untouched.
 
 | File | Change |
@@ -174,8 +131,6 @@ Production change scope **limited to cancellation semantics only**; DSL whitelis
 ---
 
 ## 5. Regression Evidence
-
-### English
 
 | Item | Result |
 |---|---|
@@ -208,32 +163,9 @@ Failed suite: algorithm-slot
 
 `algorithm-slot` failure **not introduced this round** (§15 P-1 has stash isolation and bisect evidence).
 
-
-
-
-```text
-  ✓ dsl-contract            ✓ preflight-decoy          ✓ process-tree-cleanup
-  ✓ convexity-aliasing      ✓ result-ipc               ✓ hostile-input
-  ✓ official-starter        ✓ algorithm-slot  ✗        ✓ timing-fairness
-  ✓ map-fairness            ✓ full-match-e2e           ✓ replay
-  ✓ obstacle-block          ✓ runner-isolation         ✓ runtime-manifest
-  ✓ dual-shooter-selection  ✓ cross-round-cheat        ✓ competitor-kit
-  ✓ locked-attack-right     ✓ package-tamper
-  ✓ alive-kill              ✓ timeout-boundary
-  ✓ roundstate-equality
-  ✓ input-protocol
-  ✓ stage-gating
-  ✓ pre-start-execution
-
-25/26 suites passed
-Failing suite: algorithm-slot
-```
-
-
 ---
 
-
-### English
+### 5.1 R1–R8
 
 | ID | Scenario | Result |
 |---|---|---|
@@ -248,14 +180,9 @@ Failing suite: algorithm-slot
 
 **Regression validity counter-proof**: After temporarily adding back the old guard (`if (!shooter.alive) continue;`) to `resolveOrderedShots`, suite immediately dropped from 10/10 to 6/10, with R1 / R2 / R5 / R6 all turning red, then restored and confirmed no remnants. That is, this regression batch **does catch** old cancellation rule resurrection.
 
-
-
-
 ---
 
 ### 5.2 Old Test Reclassification
-
-### English
 
 | Assertion | Classification | Handling |
 |---|---|---|
@@ -273,9 +200,7 @@ Failing suite: algorithm-slot
 
 ---
 
-## 6. Fast vs Optimizer / 6. Fast vs Optimizer
-
-### English
+## 6. Fast vs Optimizer
 
 | | Round-2 (old rule) | Revision 2 |
 |---|---|---|
@@ -289,14 +214,9 @@ Failing suite: algorithm-slot
 
 Fast **is first-mover every single round** (1.000 vs 0.000), yet lost 2-38. First-mover rate changed from "decisive" to "no conversion".
 
-
-
-
 ---
 
-## 7. Fast vs Hybrid / 7. Fast vs Hybrid
-
-### English
+## 7. Fast vs Hybrid
 
 | | Round-2 (old rule) | Revision 2 |
 |---|---|---|
@@ -307,20 +227,9 @@ Fast **is first-mover every single round** (1.000 vs 0.000), yet lost 2-38. Firs
 
 This is the only "near-tie" pairing (13-10), but **after swapping order, 6 out of 7 comparable conditions flipped outcome**, suggesting this difference is closer to timing noise rather than stable strategic advantage. Mutual elimination most concentrated in this pairing: **15/60 = 25.0%**.
 
-
-| | Round-2 (old rule) | Revision 2 |
-|---|---|---|
-| Record | Fast **26** · Hybrid 8 · Draw 26 | Fast **13** · Hybrid **10** · Draw **37** |
-| Fast First-mover rate | — | 0.841 |
-| Hybrid First-mover rate | — | 0.155 |
-| Swap consistency | — | `swapConsistent=1` / `swapFlipped=6` |
-
-
 ---
 
-## 8. Hybrid vs Optimizer / 8. Hybrid vs Optimizer
-
-### English
+## 8. Hybrid vs Optimizer
 
 | | Round-2 (old rule) | Revision 2 |
 |---|---|---|
@@ -334,21 +243,10 @@ This is the only "near-tie" pairing (13-10), but **after swapping order, 6 out o
 **Direction completely reversed**: Round-2 had Hybrid crushing Optimizer 39-4, Revision 2 has it crushed 3-37. Round-2's Hybrid advantage was a gift from the cancellation rule, not a function quality advantage. Swap consistency 14/1 shows this reversal is stable, not noise.
 
 
-| | Round-2 (old rule) | Revision 2 |
-|---|---|---|
-| Record | Hybrid **39** · Optimizer 4 · Draw 17 | Hybrid **3** · Optimizer **37** · Draw 20 |
-| Hybrid First-mover rate | 0.5604(cross-pairing) | 0.889 |
-| Optimizer First-mover rate | 0.000 | 0.111 |
-| Hybrid Kills per valid shot | 0.4495 | 0.487 |
-| Optimizer Kills per valid shot | 0.285 | **0.604** |
-| Swap consistency | — | `swapConsistent=14` / `swapFlipped=1` |
-
-
 ---
 
 ## 9. Counterfactual: Offline Model Field-for-Field Matches Official Results
 
-### English
 
 This round archives the old `CF-NO-CANCEL` as **historical counterfactual** (§21), adds sole new counterfactual **`CF-LEGACY-CANCEL`** (§22, re-adding abolished cancellation branch). Simultaneously retains `locked-attack` mode as **model fidelity check** (it's now production rule, no longer counterfactual).
 
@@ -382,7 +280,6 @@ This round's `locked-attack` mode simulation results also match official results
 ---
 
 
-### English
 
 Replay each round on the official (new rule) world, use "whether first-mover's actual hits contain opponent Shooter" to infer what old rule would cancel (no longer read platform flag — platform no longer records cancellation):
 
@@ -405,7 +302,6 @@ Old rule's penalty **monotonically correlated with algorithm speed**: slower, mo
 
 ### 9.2 `CF-LEGACY-CANCEL` Forward Simulation
 
-### English
 
 | Pairing | Mode | Wins | Suppressed shots | Fired after death |
 |---|---|---|---|---|
@@ -433,8 +329,6 @@ Compared to Round-2 official test (50-0-10, 39-4-17, 26-8-26): `cf-legacy-cancel
 
 ## 10. Mutual Elimination
 
-### English
-
 | Pairing | Mutual eliminations | Proportion |
 |---|---|---|
 | fast-vs-hybrid | **15 / 60** | **25.0%** |
@@ -448,22 +342,9 @@ This is an endgame state that was **impossible under old rule** (under old rule,
 
 Distribution clearly uneven: Fast↔Hybrid has one mutual elimination every four matches, while pairings involving Optimizer have few. Two "tactical priority + early return" style algorithms are more likely to shoot each other into mutual elimination.
 
-
-| Pairing | Mutual Elimination | Percentage |
-|---|---|---|
-| fast-vs-hybrid | **15 / 60** | **25.0%** |
-| optimizer-vs-hybrid | 1 / 60 | 1.7% |
-| fast-vs-optimizer | 3 / 60 | 5.0% |
-| **Total** | **19 / 180** | **10.6%** |
-
-
-
-
 ---
 
 ## 11. Timing
-
-### English
 
 Timing rules **unchanged** (first-mover = side with shorter elapsed time from respective GO timestamp; endpoint = `result.json` mtime).
 
@@ -477,21 +358,9 @@ Compared to Round-2 (fast 14.6 / hybrid 22.0 / optimizer 144.9 ms): all three el
 
 **Speed's formal value still exists, conversion ability basically gone**: Fast gets first-mover 100% in fast-vs-optimizer, yet lost 2-38; Optimizer's "fired after death rate" is 0.238 / 0.297, meaning a considerable portion of its shots already land after its Shooter has been counter-killed — precisely the portion old rule would delete, new rule allows.
 
-
-
-| Algorithm | Median Elapsed (pooled) | p95 | Max | First-mover rate |
-|---|---|---|---|---|
-| fast | 16.3 ms | 34.5 ms | 114.4 ms | **0.912** |
-| hybrid | 24.2 ms | 169.3 ms | 596.4 ms | 0.495 |
-| optimizer | **119.4 ms** | 311.6 ms | 902.2 ms | 0.058 |
-
-
-
 ---
 
 ## 12. Match Length
-
-### English
 
 | | Round-2 | Revision 2 |
 |---|---|---|
@@ -502,14 +371,9 @@ Compared to Round-2 (fast 14.6 / hybrid 22.0 / optimizer 144.9 ms): all three el
 
 Almost unchanged, matches hitting cap slightly increased.
 
-
-
-
 ---
 
 ## 13. No-progress
-
-### English
 
 Consecutive zero-kill rounds (`longestNoKillStreak`, per-match maximum):
 
@@ -523,11 +387,6 @@ Consecutive zero-kill rounds (`longestNoKillStreak`, per-match maximum):
 | Max | 29 | 29 |
 
 **Stalemate distribution worsened**: p75 rose from 21 to 25, matches hitting cap 53 → 58. Reason: new rule deleted the "first-mover zeroes opponent → round immediately ends" fast termination channel.
-
-
-
-| | Round-2 | Revision 2 |
-|---|---|---|
 | Mean | 7.03 | **8.26** |
 | Median | 0 | 0 |
 | p75 | 21 | **25** |
@@ -539,8 +398,6 @@ Consecutive zero-kill rounds (`longestNoKillStreak`, per-match maximum):
 ---
 
 ### 13.1 Absorbing State Test (cap 60)
-
-### English
 
 From 180 matches, extract **16 conditions** where "at least one side hit 30 rounds", rerun **fast-vs-hybrid** (this round's pairing most concentrated in draws and mutual eliminations, consistent with Round-2 same-test baseline) with `--max-rounds 60` for 16 × 2 positions = **32 matches**:
 
@@ -555,16 +412,9 @@ From 180 matches, extract **16 conditions** where "at least one side hit 30 roun
 
 > Coverage note (as-recorded): Constrained by this round's time budget, cap-60 only ran fast-vs-hybrid pairing (32/96 matches). `optimizer-vs-hybrid` and `fast-vs-optimizer` same-test **not completed**, whether their respective stalemates are likewise absorbing states **not measured**. Do not extrapolate this 68.8% to the other two pairings. Single 60-round match cost far exceeds 30-round (two sandboxes per round), running all three pairings would require approximately 2+ hours.
 
-
-
-
-
-
-
 ---
 
-
-### English
+## 14. Rule Health
 
 | Health item | Judgment |
 |---|---|
@@ -576,13 +426,9 @@ From 180 matches, extract **16 conditions** where "at least one side hit 30 roun
 | Public documentation consistent with production | **YES** — kit §6.1 and §38 share same source; README synchronized |
 | **Balance achieved** | **NO** — See §16 |
 
-
-
 ---
 
 ## 15. Platform Findings
-
-### English
 
 Per task specification §19: Failures unrelated to this rule revision **not silently fixed**, classify first.
 
@@ -606,25 +452,11 @@ Already recorded and evidenced in Cycle-2 (`Plans/Output/V1.1 Timing Anchor & sy
 
 In 180 matches, `INVALID` / `TIMEOUT` / `CRASH` all **0**, artifacts complete, `endReason` and per-round new fields all readable, replays fully loadable.
 
-
-
-
-```text
-✗ algorithm-slot: Repository has two bundled slots with identical structure (§2/§3/§41)
-    Assertion failed: Slot root should only have fixed entry points, actual: manifest.json,solver.py
-```
-
-
-
-
-
-
 ---
 
+## 16. Final Answers
 
 ### 16.1 Did removing shot cancellation solve the observed strategy collapse?
-
-### English
 
 ```text
 NO
@@ -637,19 +469,9 @@ Need to distinguish two things, otherwise will misread:
 - **Correctly fixed**: Speed dominating outcome through "cancellation" as **artificial channel**. This channel is indeed closed, offline model 180/180 match also proves closure is clean.
 - **Not fixed**: After removing that channel, this ruleset **has no remaining mechanism to offset function quality gap**. Round-2's conclusion "speed affects outcome solely through Shot Cancellation" holds; removing that channel naturally made "function quality" the sole channel.
 
-
-```text
-NO
-```
-
-
-
-
 ---
 
 ### 16.2 Does computation speed still have substantial competitive value?
-
-### English
 
 ```text
 NO (formal value retained, substantial benefit not supported by evidence)
@@ -660,16 +482,9 @@ NO (formal value retained, substantial benefit not supported by evidence)
 - Counter-proof: Optimizer has **23.8% / 29.7%** of shots landing after its own Shooter has been counter-killed — the slow side relies on "my shot won't be deleted anyway".
 
 
-```text
-NO (formal value retained, substantive benefit unsupported by evidence)
-```
-
-
 ---
 
 ### 16.3 Has function quality optimization become overly dominant?
-
-### English
 
 ```text
 YES
@@ -679,18 +494,9 @@ Optimizer won 75/180 matches (41.7%), two head-to-head pairings respectively **3
 
 **Per §25, this round does not modify algorithms.** This round's purpose is to measure `RULE EFFECT` not `ADAPTED META`; three competitor algorithms **frozen unchanged** throughout.
 
-
-```text
-YES
-```
-
-
-
 ---
 
 ### 16.4 Is the revised Shooter rule suitable as V1.1 playtest baseline?
-
-### English
 
 ```text
 YES
@@ -700,18 +506,9 @@ As a **rule**: It is internally coherent, implementation faithful (offline model
 
 But must give the full picture: **It is not a solution to balance**. Choosing YES is because "this rule is correct", not "this ruleset is already balanced". Balance issues (§16.1/§16.3) remain as-is for next round.
 
-
-```text
-YES
-```
-
-
-
 ---
 
 ### 16.5 Should Stalemate measurement become the next rule task?
-
-### English
 
 ```text
 YES
@@ -725,19 +522,9 @@ Three reasons:
 
 Per §26, this round **did not implement Stalemate rule** (maintains `DEFER`), only collected two measurements.
 
-
-```text
-YES
-```
-
-
-
-
 ---
 
 ## 17. Remaining Open Questions
-
-### English
 
 1. **Is function quality dominance a structural problem of this ruleset?** After removing cancellation channel, no mechanism remains in rules to compensate slow side's function quality advantage. Movable levers (**all not implemented this round**): lower time budget, give first-mover a quantifiable advantage, or link shot cost to elapsed time.
 2. **Should mutual elimination be a draw?** This round judges DRAW per §8. 19/180 and concentrated in Fast↔Hybrid (25%), whether this proportion is acceptable, whether there should be alternative handling (e.g., by remaining points, by kill count), undefined.
@@ -746,13 +533,9 @@ YES
 5. **P-1 (Should factory slots contain `manifest.json`)?** Needs adjudication before full regression can return to all-green.
 6. **Should three competitor algorithms be re-tuned for Revision 2?** Per §16/§25, this round **explicitly does not**; this should be next round's independently-authorized `ADAPTED META` experiment, and must be reported separately from this round's `RULE EFFECT`.
 
-
-
 ---
 
 ## 18. Reproduction Guide
-
-### English
 
 ```bash
 # 0. Commit where rule and production implementation reside (tree at result generation)
@@ -793,52 +576,9 @@ done
 ```
 
 **Note**: Do not reuse Round-2's `--out` or `--cache` — those archives are evidence under **old rule**. `gb_round2.py run` skips already-archived matches (idempotent), reusing to old directory will get 0 new results.
-
-
-```bash
-# 0. Rules and production implementation at commit (tree at result generation)
-git log --oneline -3          # 90647f3 / 2e825a1 / 95f2a5f
-
-# 1. Regression (permanent evidence of rule revision)
-npx ts-node tests/locked-attack-right.ts        # R1–R8, 10/10
-npm run typecheck
-npx ts-node tests/run-all.ts                    # Expected 25/26 (P-1 is pre-existing failure)
-
-# 2. Three-algorithm balance experiment (180 matches, ~45 minutes locally)
-bash playtest/harness/run_shooter_rule_revision.sh
-
-# 3. Summary only
-python3 playtest/harness/analyze_round2.py --root playtest/results/shooter-rule-revision
-
-# 4. Counterfactual (new name: locked-attack is production, cf-legacy-cancel is counterfactual)
-python3 playtest/harness/gb_counterfactual.py verify \
-    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
-    --out playtest/results/shooter-rule-revision/cf/verify-fast-vs-optimizer.json
-python3 playtest/harness/gb_counterfactual.py rounds \
-    --pair fast-vs-optimizer \
-    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
-    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
-    --out playtest/results/shooter-rule-revision/cf/rounds-fast-vs-optimizer.json
-python3 playtest/harness/gb_counterfactual.py simulate \
-    --pair fast-vs-optimizer --conditions playtest/harness/conditions-round2.json \
-    --out playtest/results/shooter-rule-revision/cf/sim-fast-vs-optimizer \
-    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
-    --ref-root playtest/results/shooter-rule-revision/raw \
-    --modes locked-attack cf-legacy-cancel
-
-# 5. Absorbing state verification (cap 60) — condition subset exported from archive using §13.1 method
-for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
-  python3 playtest/harness/gb_round2.py run --pair $p \
-      --conditions /tmp/cond-cap60.json --out /tmp/cap60-srr/$p --max-rounds 60
-done
-```
-
-
 ---
 
 ## 19. Completion Status
-
-### English
 
 ```text
 SHOOTER RULE REVISION & REBALANCE COMPLETE
@@ -864,25 +604,9 @@ Verifiable anchors:
 | Algorithms frozen unchanged | `git diff 877f142..95f2a5f --stat -- playtest/competitors/` should be empty |
 | V1.0 untouched | `git rev-parse v1.0.0-competition^{commit}` → `26d7970` |
 
-
-```text
-SHOOTER RULE REVISION & REBALANCE COMPLETE
-READY FOR INDEPENDENT RULE RE-GATE
-```
-
-
-```text
-Rule document   == Competitor Kit == production Judge == tests == Replay
-Whether old cancellation path remains
-```
-
-
-
 ---
 
 ## Document Sanitization Checklist
-
-### English
 
 - **Internal paths**: ✓ All paths are relative to repository root or use canonical placeholders (`/tmp/`)
 - **Agent state**: ✓ No agent execution logs, internal reasoning, or workflow state included
@@ -890,9 +614,8 @@ Whether old cancellation path remains
 - **Secrets**: ✓ No credentials, tokens, or sensitive configuration values
 - **Machine tokens preserved**: ✓ All technical identifiers (Team A, Team B, JSON keys, CLI flags, DSL operators, commit SHAs, numeric values) kept exact
 
-
-
 ---
 
 **Document ends**
+
 

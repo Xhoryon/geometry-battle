@@ -1,6 +1,6 @@
 # 运行时清单
 
-**[English](RUNTIME_MANIFEST.zh-CN.md) | [中文](RUNTIME_MANIFEST.zh-CN.md)**
+<a href="./RUNTIME_MANIFEST.md">English</a> | **简体中文**
 
 ---
 

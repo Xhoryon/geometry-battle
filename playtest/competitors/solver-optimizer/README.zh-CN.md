@@ -1,6 +1,6 @@
 # solver-optimizer — Algorithm B (Optimization Solver)
 
-**中文** | [English](./README.zh-CN.md)
+<a href="./README.md">English</a> | **简体中文**
 
 几何斗殴 V1.1 playtest 参赛算法。在官方时间预算内最大化攻击函数质量 — 设计上明显慢于快速求解器。
 

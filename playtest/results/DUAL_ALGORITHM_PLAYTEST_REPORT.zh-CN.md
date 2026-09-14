@@ -1,6 +1,6 @@
 # 双算法对战测试报告
 
-**[English](DUAL_ALGORITHM_PLAYTEST_REPORT.zh-CN.md)**
+<a href="./DUAL_ALGORITHM_PLAYTEST_REPORT.md">English</a> | **简体中文**
 
 Geometry Battle V1.1 — 首次算法对战测试
 两套参赛算法：`solver-fast`（Fast Tactical Solver）与 `solver-optimizer`（Optimization Solver）
