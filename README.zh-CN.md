@@ -1,15 +1,19 @@
 <div align="right">
 
-<a href="./README.md">English</a> | **简体中文**
+<a href="./README.md">English</a> | <strong>简体中文</strong>
 
 </div>
 
+# Geometry Battle / 几何斗殴
 
+**当前公开版本：V1.4.3**
 
-中文名：几何斗殴 · 当前版本：V1.3 Platform（中英双语界面）
+> **关于 V1.4.3**：V1.4.3 是一个纯文档与文档回归测试补丁。本版本清理了 V1.4.2 语言拆分后残留的重复章节、恢复了规范的标题与当前版本说明、修复了文档内部链接，并强化了双语语言对的完整性门禁。V1.4 的比赛规则、Validator、MatchEngine、运行时与前端运行逻辑保持完全不变。
+
+中文名：几何斗殴 · 当前版本：V1.4.3 Platform（中英双语界面）
 
 **许可：PolyForm Noncommercial License 1.0.0** —— *source-available for noncommercial use*。
-**这不是 OSI 认可的开源许可**，商业用途需另行授权，详见 [许可与使用范围](#许可与使用范围--license--scope)。
+**这不是 OSI 认可的开源许可**，商业用途需另行授权，详见 [许可与使用范围](#许可与使用范围)。
 
 ---
 
@@ -23,7 +27,7 @@
 
 判定由平台唯一的 Canonical Judge 完成，算法不得自行判定胜负。
 **START 之前，参赛代码一行都不会运行**；结果只经 `output/result.json` 交付，
-stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件--argv)。
+stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段输入文件-argv)。
 
 
 
@@ -150,15 +154,7 @@ Upload → staging → validate → preflight → hash → seal → replace
 它**不属于算法包**，不进包哈希、也不会被复制进沙箱。
 （正式比赛里 `<槽位根>` = `runs/slots`，见上。）
 
-
-
-
-
-```
-Upload → staging → validate → preflight → hash → seal → replace
-```
-
-
+---
 
 ### 2. 算法协议（两阶段输入文件 + argv）
 
@@ -304,6 +300,9 @@ START        宿主此刻才放行算法进程 → 倒计时 3-2-1 → GO → �
 ```
 
 **每轮不再有人工选点、也没有 SHOOTER LOCK**：锚点在开赛前一次性选定并锁定，
+耗时从**每方自己的** GO 写入时刻起算。
+
+```python
 # Emitter 是**本场选定**的（逐场不同），必须从 public 里读，不要写死坐标
 s = public["emitters"][a.team]
 enemies = [p for p in public["points"] if p["team"] != a.team and p["alive"]]
@@ -554,22 +553,6 @@ npm run e2e          # Playwright 浏览器完整赛事演练（真实算法 + �
 > 浏览器演练默认用**系统已装的 Google Chrome**（`channel: 'chrome'`）。
 > 若要改用 Playwright 自带内核，删掉 `web/e2e/playwright.config.ts` 里的 `channel`
 > 后跑一次 `npx playwright install chromium`。
-
-
-
-
-```bash
-npm run app -- --no-tournament   # development only: allow the factory starter to play
-```
-
-
-
-```bash
-npm run app:dev      # dev mode: server + vite dev server (HMR)
-npm run e2e          # Playwright browser rehearsal of a full match (real algorithms + real browser)
-```
-
-
 
 ### 终端（fallback，与 Web UI 完全等价）
 

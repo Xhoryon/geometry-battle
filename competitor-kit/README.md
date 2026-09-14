@@ -80,8 +80,8 @@ while hardcoding other values (e.g., a point position) will cause you to fail wh
 ## 3. Six Things You Need to Remember
 
 1. **Fixed entry point**: `solver.py` at the package root, four parameters `--team / --public / --reveal / --output`.
-   **The same formal submission MUST run correctly as Team A and as Team B**: A moves forward towards increasing x,
-   B towards decreasing x, and the order of `points` is not geometric order (A group first, then B, each in
+   **The same formal submission MUST run correctly as Team A and as Team B**: Team A moves forward towards increasing x (+x),
+   Team B towards decreasing x (-x), and the order of `points` is not geometric order (A group first, then B, each in
    generation order, identical every round, dead points kept in place, Emitter points removed without
    renumbering) — see ALGORITHM_REQUIREMENTS.md §6.2.
 2. **Input only via files**: two JSON files, paths provided by parameters; stdin is not an input channel.
@@ -148,11 +148,7 @@ It runs the same code in the decoy world and in its **mirror** (x → −x, team
 
 Conclusion: `PASS` = consistent; `WARN` = both sides legal but the geometry differs (legal — your solver is not mirror-symmetric; make sure it is intentional); `FAIL` = one side legal while its mirror crashes / times out / is illegal (the classic Team-A-only bug); both sides failing is also `FAIL` (not a mirror issue — run `validate_submission.py` first). Exit codes: 0 = PASS / WARN, 1 = FAIL, 2 = usage / environment.
 
-结论：`PASS` = 一致；`WARN` = 两侧都合法但几何不同（合法——你的求解器不是镜像对称的；确认这是刻意设计）；`FAIL` = 一侧合法而其镜像崩溃/超时/非法（典型的"只在 Team A 调试"bug）；两侧都失败同样记 `FAIL`（不是镜像问题——先跑 `validate_submission.py`）。退出码：0 = PASS / WARN，1 = FAIL，2 = 用法/环境。
-
 **Note:** a `WARN` whose two pairs both report a different judge outcome (hits / blocked / end reason) is the non-crashing form of the same Team-A-only bug (the B side emitted a degenerate but legal function) — the exit code is 0, but treat it as seriously as `FAIL`; the tool prints an extra hint in that case. Relative paths (the package directory, `--sandbox-root`) resolve against the **repository root**, as with `validate_submission.py`.
-
-**注意：**如果 `WARN` 的两对结果报告了不同的裁判结果（命中/被阻挡/终止原因），则是同一个"只在 Team A 调试"bug 的不崩溃形式（B 侧输出了退化但合法的函数）——退出码为 0，但应像 `FAIL` 一样严肃对待；工具会在这种情况下打印额外提示。相对路径（包目录、`--sandbox-root`）相对于**仓库根目录**解析，与 `validate_submission.py` 一样。
 
 **It is a development diagnostic, not an official rejection rule — the official Preflight does not run it.** Formal interface and function legality are still determined by `validate_submission.py` (== official Preflight).
 

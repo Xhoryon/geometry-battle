@@ -1,10 +1,14 @@
 <div align="right">
 
-**English** | <a href="./README.zh-CN.md">简体中文</a>
+<strong>English</strong> | <a href="./README.zh-CN.md">简体中文</a>
 
 </div>
 
+# Geometry Battle
 
+**Current public release: V1.4.3**
+
+> **Note on V1.4.3**: V1.4.3 is a documentation-only cleanup and documentation regression-testing patch. It removes structural split artifacts, restores standard titles, repairs links, and strengthens language-pair integrity checks. V1.4 competition rules, Validator behavior, MatchEngine behavior, runtime behavior, and web runtime semantics remain completely unchanged.
 
 **An educational algorithm competition sandbox for computational geometry,
 algorithm optimization, and AI-assisted programming.**
@@ -104,7 +108,7 @@ gets English**; a manual choice overrides automatic detection.
 ```
 runs/slots/                     ← runtime slot root (official delivery point; ignored by .gitignore)
 ├── team-a/                     → Team A Algorithm Slot
-│   └── solver.py               
+│   └── solver.py               # canonical entry point (required)
 ├── team-b/                     → Team B Algorithm Slot
 │   └── solver.py
 ├── .staging/                   
@@ -156,9 +160,7 @@ Package limits and the non-destructive upload pipeline:
 | Symlinks | Not allowed |
 | Entry | **`solver.py` at the package root** |
 
-```
-Upload → staging → validate → preflight → hash → seal → replace
-```
+---
 
 The organiser never unpacks an archive straight into a slot. If any step fails
 (bad structure, won't run, illegal output) the existing slot does not change by a
@@ -449,9 +451,9 @@ and "whose machine has more cores" would become a timing advantage.
 
 
 - Field: `x ∈ [-20, 20]`, `y ∈ [-12, 12]`
-- Team zones: A `x ∈ [-20, -4]`, B `x ∈ [4, 20]`
-- Attack direction: A toward `+x`, B toward `-x`
-- **Traversal direction:** the Judge walks the graph in the attack direction — A from `x_e` towards `x = 20` (increasing x), B from `x_e` towards `x = -20` (decreasing x); that interval is the firing domain and function legality is checked only there. "Before the first contact" is direction-relative: for B, "before" means larger x
+- Team zones: Team A `x ∈ [-20, -4]`, Team B `x ∈ [4, 20]`
+- Attack direction: Team A toward `+x`, Team B toward `-x`
+- **Traversal direction:** the Judge walks the graph in the attack direction — Team A from `x_e` towards `x = 20` (increasing x), Team B from `x_e` towards `x = -20` (decreasing x); that interval is the firing domain and function legality is checked only there. "Before the first contact" is direction-relative: for B, "before" means larger x
 - **Array order:** `points` lists Team A first, then Team B, each in generation order, identical every round; dead points stay in place (`alive: false`), the two points locked as Emitters are removed and ids are **not renumbered** (`A1` may be absent); `obstacles` are `O1..On` in generation order and never change. **Do not assume array order is geometric order** (not sorted by x or by distance)
 - **Both sides:** the same formal submission MUST run correctly as Team A and as Team B. Self-check with `python3 competitor-kit/tools/validate_submission.py <dir>` (the same judging code as the official Preflight, run once per team) and `python3 competitor-kit/tools/check_mirror.py <dir>` (mirror consistency — a development diagnostic the official Preflight does not run)
 - **Hit:** `|f(x_p) − y_p| ≤ 1e-6`, the point is in the attack direction, and it lies **before the first obstacle contact**
@@ -555,21 +557,6 @@ place.
 
 
 ### Tournament Mode (V1.2, on by default)
-
-
-
-
-```bash
-npm run app -- --no-tournament   # development self-test: allow factory starter to play
-```
-
-
-
-```bash
-npm run app:dev      # dev mode: service + vite dev server (HMR)
-npm run e2e          # Playwright browser full match rehearsal (real algorithms + real browser)
-```
-
 
 A real match **does not allow a platform-shipped algorithm to play.** The
 server checks four entry points; if the computed package hash hits the **platform

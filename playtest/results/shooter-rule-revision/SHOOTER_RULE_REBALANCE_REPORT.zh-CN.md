@@ -602,46 +602,6 @@ YES
 
 
 ```bash
-# 0. Commit where rule and production implementation reside (tree at result generation)
-git log --oneline -3          # 90647f3 / 2e825a1 / 95f2a5f
-
-# 1. Regression (permanent evidence of rule revision)
-npx ts-node tests/locked-attack-right.ts        # R1–R8, 10/10
-npm run typecheck
-npx ts-node tests/run-all.ts                    # Expected 25/26 (P-1 is existing failure)
-
-# 2. Three-algorithm balance experiment (180 matches, approximately 45 minutes on this machine)
-bash playtest/harness/run_shooter_rule_revision.sh
-
-# 3. Summary only
-python3 playtest/harness/analyze_round2.py --root playtest/results/shooter-rule-revision
-
-# 4. Counterfactual (new naming: locked-attack is production, cf-legacy-cancel is counterfactual)
-python3 playtest/harness/gb_counterfactual.py verify \
-    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
-    --out playtest/results/shooter-rule-revision/cf/verify-fast-vs-optimizer.json
-python3 playtest/harness/gb_counterfactual.py rounds \
-    --pair fast-vs-optimizer \
-    --raw playtest/results/shooter-rule-revision/raw/fast-vs-optimizer \
-    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
-    --out playtest/results/shooter-rule-revision/cf/rounds-fast-vs-optimizer.json
-python3 playtest/harness/gb_counterfactual.py simulate \
-    --pair fast-vs-optimizer --conditions playtest/harness/conditions-round2.json \
-    --out playtest/results/shooter-rule-revision/cf/sim-fast-vs-optimizer \
-    --cache playtest/results/shooter-rule-revision/cf/fn-fast-vs-optimizer.json \
-    --ref-root playtest/results/shooter-rule-revision/raw \
-    --modes locked-attack cf-legacy-cancel
-
-# 5. Absorbing state test (cap 60) — condition subset exported from archive by §13.1's method
-for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
-  python3 playtest/harness/gb_round2.py run --pair $p \
-      --conditions /tmp/cond-cap60.json --out /tmp/cap60-srr/$p --max-rounds 60
-done
-```
-
-
-
-```bash
 # 0. 规则与生产实现所处的提交（结果产出时的树）
 git log --oneline -3          # 90647f3 / 2e825a1 / 95f2a5f
 
@@ -672,7 +632,7 @@ python3 playtest/harness/gb_counterfactual.py simulate \
     --ref-root playtest/results/shooter-rule-revision/raw \
     --modes locked-attack cf-legacy-cancel
 
-# 5. 吸收态检验（cap 60）—— 条件子集由 §13.1 的方法从归档导出
+# 5. 吸收态检验（cap 60 回合）—— 条件子集由 §13.1 的方法从归档导出
 for p in fast-vs-hybrid optimizer-vs-hybrid fast-vs-optimizer; do
   python3 playtest/harness/gb_round2.py run --pair $p \
       --conditions /tmp/cond-cap60.json --out /tmp/cap60-srr/$p --max-rounds 60
@@ -685,16 +645,16 @@ done
 
 ## 19. 完成状态
 
-
 ```text
 SHOOTER RULE REVISION & REBALANCE COMPLETE
 READY FOR INDEPENDENT RULE RE-GATE
 ```
 
+本开发方**不宣布** `TOURNAMENT READY`。按任务书 §30，请交 Fresh READ-ONLY Auditor 逐项确认：
 
 ```text
 Rule document   == Competitor Kit == production Judge == tests == Replay
-Whether old cancellation path残留s
+旧 cancellation 路径是否残留
 ```
 
 

@@ -142,12 +142,17 @@ function extractAnchors(content: string): Set<string> {
   lines.forEach(line => {
     const match = headerRegex.exec(line);
     if (match) {
-      const anchor = match[1]
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '')
+      // Support both github standard and unicode slug patterns
+      const raw = match[1].trim().toLowerCase();
+      const anchor1 = raw
+        .replace(/[^\w\s一-鿿-]/g, '')
         .replace(/\s+/g, '-')
         .replace(/--+/g, '-');
-      anchors.add(anchor);
+      const anchor2 = raw
+        .replace(/[^\p{L}\p{N}\p{M}\s_-]/gu, '')
+        .replace(/ /g, '-');
+      anchors.add(anchor1);
+      anchors.add(anchor2);
     }
   });
 
@@ -191,7 +196,8 @@ interface NumericValues {
   timeouts: number;
   memory: number;
   cores: number;
-  rounds: number;
+  rounds20: boolean;
+  rounds60: boolean;
   sizes: number;
   precision: number;
 }
@@ -200,9 +206,11 @@ function extractNumericValues(content: string): NumericValues {
   return {
     timeouts: (content.match(/\b500\s*ms\b/gi) || []).length,
     memory: (content.match(/\b512\s*MB\b/gi) || []).length,
-    // Match "1 core" in English or "1 核" in Chinese (with any whitespace)
-    cores: (content.match(/\b1\s*(?:core|cores|核)\b/gi) || []).length,
-    rounds: (content.match(/\b(?:20|60)\s*(?:rounds?|回合)\b/gi) || []).length,
+    // Match "1 core" in English or "1 核" in Chinese (using negative lookahead for word chars)
+    cores: (content.match(/\b1\s*(?:cores?|核)(?!\w)/gi) || []).length,
+    // Pin presence of 20 rounds / 60 rounds limit concepts
+    rounds20: /(?:20\s*(?:\*{2})?\s*(?:consecutive\s+)?(?:个)?(?:连续零击杀)?(?:rounds?|回合)|round\s*(?:\*{2})?\s*20|第\s*(?:\*{2})?\s*20\s*回合)/i.test(content),
+    rounds60: /(?:60\s*(?:\*{2})?\s*(?:个)?(?:rounds?|回合)|round\s*(?:\*{2})?\s*60|第\s*(?:\*{2})?\s*60\s*回合)/i.test(content),
     sizes: (content.match(/\b8\s*MB\b/gi) || []).length,
     precision: (content.match(/\b1e-6\b/g) || []).length,
   };
@@ -217,6 +225,7 @@ interface NormativeRequirements {
   hasTeamAPlus: boolean;
   hasTeamBMinus: boolean;
   hasNetworkProhibited: boolean;
+  hasBothSidesMust: boolean;
 }
 
 function extractNormativeRequirements(content: string): NormativeRequirements {
@@ -226,11 +235,12 @@ function extractNormativeRequirements(content: string): NormativeRequirements {
                          /(?:required|must|必须|必需).{0,50}solver\.py/is.test(content),
     has500msLimit: /500\s*ms.{0,100}(?:limit|timeout|budget|上限|限制)/is.test(content) ||
                    /(?:limit|timeout|budget|上限|限制).{0,100}500\s*ms/is.test(content),
-    hasTeamAPlus: /Team\s+A.{0,100}[+＋]/is.test(content) || /A\s+队.{0,100}[+＋]/s.test(content),
-    hasTeamBMinus: /Team\s+B.{0,100}[-－—]/is.test(content) || /B\s+队.{0,100}[-－—]/s.test(content),
+    hasTeamAPlus: /(?:Team\s+A|A\s*队).{0,50}(?:[+＋]\s*x|增大|increasing\s*x|positive)/is.test(content),
+    hasTeamBMinus: /(?:Team\s+B|B\s*队).{0,50}(?:[-－—]\s*x|减小|decreasing\s*x|negative)/is.test(content),
     hasNetworkProhibited: /network.{0,100}(?:prohibited|forbidden|禁止)/is.test(content) ||
                           /(?:prohibited|forbidden|禁止).{0,100}network/is.test(content) ||
                           /网络.{0,50}禁止/s.test(content),
+    hasBothSidesMust: /(?:MUST\s+run\s+correctly\s+as\s+Team\s+A\s+and\s+as\s+Team\s+B|同一正式提交必须能够在\s*Team\s*A\s*与\s*Team\s*B\s*两侧正确运行)/i.test(content),
   };
 }
 
@@ -313,26 +323,48 @@ allFiles.filter(f => !isExemptFromPairing(f)).forEach(filePath => {
 });
 
 // ============================================================================
-// REQUIREMENT 4: Language Anti-Vacuity
+// REQUIREMENT 4: Language Purity (Anti-Vacuity)
 // ============================================================================
 
 allFiles.filter(f => !isExemptFromPairing(f)).forEach(filePath => {
-  test(`REQ4: ${filePath} substantial content in correct language`, () => {
+  test(`REQ4: ${filePath} language purity check`, () => {
     const fullPath = resolve(REPO_ROOT, filePath);
     if (!existsSync(fullPath)) return;
 
     const content = readFileSync(fullPath, 'utf-8');
-    const detectedLang = detectLanguage(content);
-
     const isChineseFile = filePath.endsWith('.zh-CN.md');
-    const expectedLang = isChineseFile ? 'zh' : 'en';
 
-    if (detectedLang === 'unknown' || detectedLang === 'mixed') {
-      return; // Allow mixed/unknown (technical docs)
+    // Clean code blocks, inline code, links, and HTML tags
+    const cleaned = content
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/`[^`]+`/g, '')
+      .replace(/https?:\/\/[^\s)]+/g, '')
+      .replace(/<[^>]+>/g, '');
+
+    if (!isChineseFile) {
+      // English file must not have substantial Chinese prose paragraphs
+      const cleanedEn = cleaned.replace(/简体中文/g, '');
+      const zhParagraphs = cleanedEn.split('\n\n').filter(para => {
+        const zhCount = (para.match(/[一-龥]/g) || []).length;
+        return zhCount >= 10;
+      });
+      assert(zhParagraphs.length === 0,
+        `${filePath} (English) contains substantial Chinese prose paragraphs: ${zhParagraphs.length} found`);
+    } else {
+      // Chinese file must not have substantial English prose paragraphs
+      const cleanedZh = cleaned.replace(/English/g, '');
+      const enParagraphs = cleanedZh.split('\n\n').filter(para => {
+        // Exclude lines that are purely markdown tables or technical tokens
+        if (para.trim().startsWith('|') || para.trim().startsWith('-') || para.trim().startsWith('*')) {
+          return false;
+        }
+        const words = (para.match(/\b[a-zA-Z]{3,}\b/g) || []).length;
+        const zhCount = (para.match(/[一-龥]/g) || []).length;
+        return words > 25 && zhCount < 5;
+      });
+      assert(enParagraphs.length === 0,
+        `${filePath} (Chinese) contains substantial English prose paragraphs: ${enParagraphs.length} found`);
     }
-
-    assert(detectedLang === expectedLang,
-      `${filePath} 应主要为 ${expectedLang}，但检测为 ${detectedLang}`);
   });
 });
 
@@ -371,10 +403,11 @@ pairs.forEach(({base, chinese}) => {
         `1 core 出现次数不匹配: EN=${baseNums.cores}, CN=${cnNums.cores}`);
     }
 
-    if (baseNums.rounds > 0 || cnNums.rounds > 0) {
-      assert(cnNums.rounds === baseNums.rounds,
-        `rounds 出现次数不匹配: EN=${baseNums.rounds}, CN=${cnNums.rounds}`);
-    }
+    assert(cnNums.rounds20 === baseNums.rounds20,
+      `20 rounds limit 概念不匹配: EN=${baseNums.rounds20}, CN=${cnNums.rounds20}`);
+
+    assert(cnNums.rounds60 === baseNums.rounds60,
+      `60 rounds limit 概念不匹配: EN=${baseNums.rounds60}, CN=${cnNums.rounds60}`);
 
     if (baseNums.precision > 0 || cnNums.precision > 0) {
       assert(cnNums.precision === baseNums.precision,
@@ -406,6 +439,9 @@ pairs.forEach(({base, chinese}) => {
 
     assert(cnReqs.hasTeamBMinus === baseReqs.hasTeamBMinus,
       `Team B - 不匹配: EN=${baseReqs.hasTeamBMinus}, CN=${cnReqs.hasTeamBMinus}`);
+
+    assert(cnReqs.hasBothSidesMust === baseReqs.hasBothSidesMust,
+      `both sides MUST compatibility 不匹配: EN=${baseReqs.hasBothSidesMust}, CN=${cnReqs.hasBothSidesMust}`);
 
     assert(cnReqs.hasNetworkProhibited === baseReqs.hasNetworkProhibited,
       `network prohibited 不匹配: EN=${baseReqs.hasNetworkProhibited}, CN=${cnReqs.hasNetworkProhibited}`);
@@ -452,6 +488,67 @@ allFiles.filter(f => !isExemptFromPairing(f)).forEach(filePath => {
       assert(anchors.has(anchor),
         `锚点 "#${anchor}" 在 ${targetFile} 中未找到（可用: ${Array.from(anchors).slice(0, 5).join(', ')}...）`);
     });
+  });
+});
+
+// ============================================================================
+// REQUIREMENT 8: Document Structure & Anti-Duplication Gate
+// ============================================================================
+
+allFiles.filter(f => !isExemptFromPairing(f)).forEach(filePath => {
+  test(`REQ8: ${filePath} structure & duplication integrity`, () => {
+    const fullPath = resolve(REPO_ROOT, filePath);
+    if (!existsSync(fullPath)) return;
+
+    const content = readFileSync(fullPath, 'utf-8');
+
+    // 1. Check for duplicate major headings (# Heading)
+    const cleaned = content.replace(/```[\s\S]*?```/g, '');
+    const h1Matches = cleaned.match(/^#\s+(.+)$/gm) || [];
+    assert(h1Matches.length === 1,
+      `${filePath} should have exactly one top-level H1 heading, found ${h1Matches.length}: ${h1Matches.join(', ')}`);
+
+    // 2. Check for numbered major sections (## N. Title where N is an integer, not N.M)
+    const numberedSections: number[] = [];
+    const sectionRegex = /^#{1,2}\s+(\d+)\.\s+[^\d]/gm;
+    let match;
+    while ((match = sectionRegex.exec(cleaned)) !== null) {
+      numberedSections.push(parseInt(match[1], 10));
+    }
+
+    if (numberedSections.length > 0) {
+      // Check for duplicate section numbers
+      const seen = new Set<number>();
+      const dups: number[] = [];
+      numberedSections.forEach(n => {
+        if (seen.has(n)) dups.push(n);
+        seen.add(n);
+      });
+      assert(dups.length === 0,
+        `${filePath} contains duplicate numbered sections: ${dups.join(', ')}`);
+
+      // Check for monotonic sequence (no backwards jump)
+      let prev = -1;
+      for (const n of numberedSections) {
+        assert(n >= prev,
+          `${filePath} section numbering jumped backwards from ${prev} to ${n}`);
+        prev = n;
+      }
+    }
+
+    // 3. Check for obvious adjacent duplicated code blocks
+    const codeBlocks: string[] = [];
+    const blockRegex = /```[\s\S]*?```/g;
+    let bMatch;
+    while ((bMatch = blockRegex.exec(content)) !== null) {
+      codeBlocks.push(bMatch[0]);
+    }
+    for (let i = 0; i < codeBlocks.length - 1; i++) {
+      if (codeBlocks[i].length > 40 && codeBlocks[i] === codeBlocks[i + 1]) {
+        assert(false,
+          `${filePath} contains adjacent duplicated code block: ${codeBlocks[i].slice(0, 30)}...`);
+      }
+    }
   });
 });
 

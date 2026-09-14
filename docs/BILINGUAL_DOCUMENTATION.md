@@ -2,7 +2,7 @@
 
 # Bilingual Documentation Index
 
-**Geometry Battle V1.4.2** — Complete bilingual documentation coverage with language switching.
+**Geometry Battle V1.4.3** — Complete bilingual documentation coverage with language switching.
 
 ---
 

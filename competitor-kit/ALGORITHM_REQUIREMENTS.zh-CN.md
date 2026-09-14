@@ -15,7 +15,7 @@
 
 ---
 
-# 0. 一分钟概览
+## 0. 一分钟概览
 
 你要做的东西只有一件：
 
@@ -44,7 +44,7 @@
 
 ---
 
-# 1. 提交物形态
+## 1. 提交物形态
 
 **提交物 = 一个算法目录**（不是 zip）。
 
@@ -68,7 +68,7 @@ my-algorithm/
 
 ---
 
-# 2. 启动契约（MUST）
+## 2. 启动契约（MUST）
 
 平台用固定参数启动你的算法。**你看到的 `sys.argv` 形态是**：
 
@@ -132,7 +132,7 @@ if __name__ == "__main__":
 
 ---
 
-# 3. 输入：两份 JSON
+## 3. 输入：两份 JSON
 
 每轮你会收到两份文件，路径由 `--public` / `--reveal` 给出。
 
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 
 ---
 
-# 4. 输出：一份 JSON
+## 4. 输出：一份 JSON
 
 写到 `--output` 指定的路径：
 
@@ -173,7 +173,7 @@ if __name__ == "__main__":
 
 ---
 
-# 5. 函数合法性（MUST）
+## 5. 函数合法性（MUST）
 
 你的 `dsl` 必须同时满足：
 
@@ -232,7 +232,7 @@ f(x) = y_emitter + g(u)，g(0) = 0
 
 ---
 
-# 6. 比赛规则（平台侧）
+## 6. 比赛规则（平台侧）
 
 这些规则决定你的函数**是否命中**，你不需要实现它们，但需要理解它们才能选对策略。
 
@@ -309,7 +309,7 @@ x_e, y_e = s["x"], s["y"]
 > 整场不变 —— 于是「从哪里开火」重新成为一个可以经营的策略维度，
 > 而「逐轮选点」那套流程仍然不存在。
 
-## 6.2 坐标方向与镜像
+## 6.2 坐标方向与镜像 / Orientation & Symmetry
 
 > V1.4 新增的**说明**，不改变任何规则 —— 它只是把引擎一直以来的行为写清楚。
 > 上面 §6 表格里「攻击方向」「有效攻击范围」两行就是本节的浓缩版。
@@ -424,7 +424,7 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm          # 镜像世
 
 ---
 
-# 7. Runtime 与资源（MUST 遵守）
+## 7. Runtime 与资源（MUST 遵守）
 
 完整清单见 [RUNTIME_MANIFEST.md](RUNTIME_MANIFEST.zh-CN.md)。核心事实：
 
@@ -451,7 +451,7 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm          # 镜像世
 
 ---
 
-# 8. 工作区与临时文件（MUST 遵守）
+## 8. 工作区与临时文件（MUST 遵守）
 
 沙箱内可写的地方只有两处：
 
@@ -486,7 +486,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 
 ---
 
-# 9. 时间预算（MUST）
+## 9. 时间预算（MUST）
 
 - 单轮计算时间上限 **500 ms**，从你收到 `GO` 的时刻起算。
 - 超过 500 ms 未产出合法 `result.json` → 本轮 `TIMEOUT`。
@@ -508,7 +508,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 
 ---
 
-# 10. 随机性与可复现（MAY）
+## 10. 随机性与可复现（MAY）
 
 如果策略需要随机搜索：
 
@@ -522,7 +522,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 
 ---
 
-# 11. MUST / SHOULD / MAY 一览
+## 11. MUST / SHOULD / MAY 一览
 
 ## MUST（不满足 → Preflight 失败 / Invalid Shot / Timeout / 违规）
 
@@ -573,7 +573,7 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 
 ---
 
-# 12. 本地自检（SHOULD）
+## 12. 本地自检（SHOULD）
 
 提交前先跑：
 
@@ -613,7 +613,7 @@ python3 competitor-kit/tools/check_mirror.py ./my-algorithm
 
 ---
 
-# 13. 官方 Preflight
+## 13. 官方 Preflight
 
 正式提交后平台会执行 Preflight，检查内容包括：
 
@@ -638,7 +638,7 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 
 ---
 
-# 14. 错误信息怎么读
+## 14. 错误信息怎么读
 
 平台会把失败原因原样告诉你，例如：
 
@@ -655,7 +655,7 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 
 ---
 
-# 15. 比赛终止（Revision 3 起已全部实现）
+## 15. 比赛终止（Revision 3 起已全部实现）
 
 **每场合法比赛都在有限时间内终止。** 引擎自己保证这一点 —— 不依赖任何外部参数。
 比赛结束的可能方式**穷举**如下：
@@ -685,12 +685,12 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 
 ---
 
-# 16. 禁止事项
+## 16. 禁止事项
 
-以下行为属于违规：
+以下行为属于违规（网络访问与子进程被沙箱禁止）：
 
 ```text
-1.  网络访问 / 调用在线服务
+1.  网络访问禁止 / 调用在线服务禁止
 2.  创建子进程（subprocess / multiprocessing 会被沙箱拒绝）
 3.  读取对手算法、平台源码或 Judge 源码
 4.  修改比赛 JSON 或结果时间戳
@@ -707,7 +707,7 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 
 ---
 
-# 17. 提交前检查清单
+## 17. 提交前检查清单
 
 ```text
 [ ] 包根目录有 solver.py
@@ -729,7 +729,7 @@ Preflight `PASS` 后算法才进入 `READY` 状态。
 
 ---
 
-# 18. 示例
+## 18. 示例
 
 - 最小可运行模板：[starter/solver.py](starter/solver.py)
 - 真实输入输出样例：[examples/](examples/)

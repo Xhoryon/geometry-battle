@@ -593,7 +593,6 @@ No-progress 定义采用规范 §46 候选定义：某回合双方击杀均为 0
 2. 8 场全部重跑。
 2. All 8 matches re-run.
 3. **重跑后胜负与轮数 100% 一致，无任何结果变化**；`s303` 的最大耗时从 935.7 ms 回落到 74.7 ms。
-3. **After re-run, outcomes and rounds 100% consistent, no result changes**; `s303` max time dropped from 935.7 ms to 74.7 ms.
 
 **诚实归因**：`s1111-p10-medium__fast-A`（13:00:19 完成）的窗口与本轮作者执行的一次 `validate-submission` 重负载检查重叠；`s303` 与已知的跨回合沙箱停顿特征一致。两者均属 **PLATFORM-CONTAMINATED / 环境噪声**，不计为算法结果。
 
@@ -645,15 +644,11 @@ No-progress 定义采用规范 §46 候选定义：某回合双方击杀均为 0
 ## 17. 文档发现
 
 1. **任务书引用了不存在的文件名**：§0 要求读取 `Plans/Input/Geometry Battle V1.1 Playtest Rules.md`，本仓库从无此文件。
-1. **Task specification references non-existent filename**: §0 requires reading `Plans/Input/Geometry Battle V1.1 Playtest Rules.md`, this repository never had this file.
 2. **场地边界终止条件仍未写入 competitor-kit**，而它影响 Fast 55.3% 的回合。
-2. **Arena boundary termination condition still not documented in competitor-kit**, yet it affects 55.3% of Fast's rounds.
 3. **规范未定义 CF-NO-CANCEL / CF-SIMULTANEOUS 的语义**（§39/§55 只给名称与用途）。本 harness 的定义已写入 `gb_counterfactual.py` 模块 docstring。
-3. **Specification does not define CF-NO-CANCEL / CF-SIMULTANEOUS semantics** (§39/§55 only give name and purpose). This harness's definitions are written in `gb_counterfactual.py` module docstring.
 4. **`aBlocked` 字段的精确谓词未公开**。OFFICIAL MODE 校验发现：轨迹在**场地边界**终止的回合中，平台 `blocked` 取值为 `True` 106 次 / `False` 209 次（fast-vs-optimizer），模型无法从公开规则复现该谓词。该字段**不参与反事实计算**，不影响本轮任何结论，但第三方无法完整复核平台的 blocked 统计——建议公开其定义。
 4. **`aBlocked` field's precise predicate not public**. OFFICIAL MODE validation found: in rounds where trajectory terminates at **arena boundary**, platform `blocked` value is `True` 106 times / `False` 209 times (fast-vs-optimizer), model cannot reproduce this predicate from public rules. This field **does not participate in counterfactual computation**, does not affect any conclusions this round, but third parties cannot fully verify platform's blocked statistics—recommend publishing its definition.
 5. **平台不暴露 `start skew`**，使 §24 无法被完整满足（§8.2）。
-5. **Platform does not expose `start skew`**, making §24 impossible to fully satisfy (§8.2).
 
 ---
 
@@ -748,48 +743,34 @@ playtest/results/round-2/cf/verify-fast-vs-hybrid.json
 ## 20. 局限性
 
 1. **0 / 1 障碍地图无法通过公开 CLI 触达**（本轮独立复验）。§10 的这两个形状只在**算法侧**离线矩阵中验证，未做平台级比赛。
-1. **0 / 1 obstacle maps unreachable via public CLI** (independently verified this round). These two shapes in §10 only verified in **algorithm-side** offline matrix, no platform-level matches.
 2. **§18 门禁的 `blocked` 字段未达成字面一致**（§18.1）。
-2. **§18 gate's `blocked` field did not achieve literal consistency** (§18.1).
 3. **Stalemate 分布右删失**，阈值不可识别（§14）。**这是 rev 2 相对 rev 1 最重要的修正。**
-3. **Stalemate distribution right-censored**, threshold not identifiable (§14). **This is rev 2's most important correction relative to rev 1.**
 4. **`start skew` 不可观测**（§8.2），§24 因此不完整。
-4. **`start skew` not observable** (§8.2), §24 therefore incomplete.
 5. **§23 的 `process state` / `sandbox state` 未采集**（事后不可补采，§15.1）。
-5. **§23's `process state` / `sandbox state` not collected** (cannot be retroactively collected, §15.1).
 6. **CF 语义由本 harness 定义**（规范未定义）；换一种定义可能给出不同的反事实数值。
-6. **CF semantics defined by this harness** (specification does not define); different definition might yield different counterfactual values.
 7. **CF 模拟沿用官方 map 序列**（逐轮 obstacles + 固定点位），只让存活集合演化。障碍无法离线再生；点位不移动，因此这部分是精确的而非近似。
-7. **CF simulation reuses official map sequence** (per-round obstacles + fixed positions), only survival set evolves. Obstacles cannot be regenerated offline; positions don't move, so this part is exact not approximate.
 8. **CF 中重跑的求解器在离线环境执行**（无 sandbox 的 1 核 / 512 MB / 线程=1 限制）。已验证三套算法确定性、且在官方世界上逐字节复现平台记录的函数（217/217），但严格意义上离线预算不等于沙箱预算。
-8. **CF re-run solvers execute in offline environment** (no sandbox's 1 core / 512 MB / threads=1 limit). Verified all three algorithms deterministic, and byte-for-byte reproduced platform-recorded functions on official worlds (217/217), but strictly speaking offline budget ≠ sandbox budget.
 9. **`fast-vs-hybrid` 的算法效应无法干净分离**：只有 40% 条件两腿都已决，其中一半反转（§8.1）。
-9. **`fast-vs-hybrid` algorithm effect cannot be cleanly separated**: only 40% conditions have both legs decided, half of which reversed (§8.1).
 10. **计时不受控且不可复现**（§2.2）。本轮实验期间宿主存在并发负载（§15.1）。
-10. **Timing uncontrolled and not reproducible** (§2.2). Host had concurrent load during this round's experiments (§15.1).
 11. **样本规模**：每 pair 60 场 / 30 张独立地图。对 26-8-26 这样接近的比分功效有限。
-11. **Sample size**: 60 matches / 30 independent maps per pair. Limited statistical power for close scores like 26-8-26.
 12. **只有三套算法**，且 Hybrid 由本轮作者设计；其设计选择（如 `SHOOTER_WEIGHT=1.5`）未做敏感性扫描。
-12. **Only three algorithms**, and Hybrid designed by this round's author; its design choices (e.g., `SHOOTER_WEIGHT=1.5`) not sensitivity-scanned.
 
 ---
-
 
 ## 21. 建议
 
 **全部为建议。按 §27 与本轮约束，未实施任何规则修改，也未修改 production。**
 
-
-| # | 建议 / Recommendation | 依据 / Basis |
+| # | 建议 | 依据 |
 |---|---|---|
-| R1 | **将 §38 Shot Cancellation 提交人类决策复核。** 候选：改为「取消仅在后手**未产出合法函数**时生效」，即 CF-NO-CANCEL 的规则化 / **Submit §38 Shot Cancellation to human decision review.** Candidate: change to "cancellation only applies when second solver **did not produce legal function**", i.e., rulification of CF-NO-CANCEL | §9 / §11：移除后胜负反转 / §9 / §11: outcomes reverse after removal |
-| R2 | **优先修复 competitor-kit 的场地边界终止文档缺口** / **Prioritize fixing competitor-kit's arena boundary termination documentation gap** | §15.3 / §17.2 |
-| R3 | **先补「无上限」实验，再谈 Stalemate 阈值。** 本轮**撤回** rev 1 的 20/30 建议 / **First supplement "no cap" experiments, then discuss Stalemate threshold.** This round **withdraws** rev 1's 20/30 recommendations | §14：删失 + 吸收态 ⇒ 阈值不可识别 / §14: censoring + absorbing states ⇒ threshold not identifiable |
-| R4 | **公布 `aBlocked` 的判定谓词**，或从统计口径中移除该字段 / **Publish `aBlocked` judgment predicate**, or remove this field from statistical caliber | §17.4 |
-| R5 | **修正任务书 §0 的规则文件名引用** / **Correct task specification §0's rule filename reference** | §17.1 |
-| R6 | **在产物中暴露双方 GO 交付时刻**，否则 §24 的 start skew 无法被任何 harness 测量 / **Expose both sides' GO delivery moments in artifacts**, otherwise §24's start skew cannot be measured by any harness | §8.2 |
-| R7 | **在后续轮次扩大样本**（≥100 条件 × swap）再决定 R1 的最终形态 / **Expand sample in subsequent rounds** (≥100 conditions × swap) before deciding R1's final form | §20.11 |
-| R8 | **若采纳 R1，必须补做完整回归**：取消规则的改动会同时影响 Shooter assassination 的价值、僵持率与 fast 的相对地位 / **If adopting R1, must supplement full regression**: cancellation rule changes simultaneously affect Shooter assassination value, stalemate rate, and fast's relative position | §59 Rule Change Procedure |
+| R1 | **将 §38 Shot Cancellation 提交人类决策复核。** 候选：改为「取消仅在后手**未产出合法函数**时生效」，即 CF-NO-CANCEL 的规则化 | §9 / §11：移除后胜负反转 |
+| R2 | **优先修复 competitor-kit 的场地边界终止文档缺口** | §15.3 / §17.2 |
+| R3 | **先补「无上限」实验，再谈 Stalemate 阈值。** 本轮**撤回** rev 1 的 20/30 建议 | §14：删失 + 吸收态 ⇒ 阈值不可识别 |
+| R4 | **公布 `aBlocked` 的判定谓词**，或从统计口径中移除该字段 | §17.4 |
+| R5 | **修正任务书 §0 的规则文件名引用** | §17.1 |
+| R6 | **在产物中暴露双方 GO 交付时刻**，否则 §24 的 start skew 无法被任何 harness 测量 | §8.2 |
+| R7 | **在后续轮次扩大样本**（≥100 条件 × swap）再决定 R1 的最终形态 | §20.11 |
+| R8 | **若采纳 R1，必须补做完整回归**：取消规则的改动会同时影响 Shooter assassination 的价值、僵持率与 fast 的相对地位 | §59 Rule Change Procedure |
 
 ---
 
@@ -805,44 +786,36 @@ playtest/results/round-2/cf/verify-fast-vs-hybrid.json
 >
 > 官方规则下 Fast 26 / Hybrid 8 / Draw 26。关键在于 **26 个 draw 全部是 30 轮时钟到期**，其中 12 个存活分差 ≥2；按击杀差裁决后为 **Fast 38 / Hybrid 17 / 5 完全平**。即 Fast 仍赢下 **69%** 的已决对局（P ≈ 0.0015），且 Hybrid 在 30 个条件中**从未两腿全胜**（Fast 做到 6 次）。
 >
-> Under official rules Fast 26 / Hybrid 8 / Draw 26. Key point: **all 26 draws are 30-round clock expiration**, 12 with survival difference ≥2; after adjudicating by kill difference: **Fast 38 / Hybrid 17 / 5 completely tied**. That is, Fast still wins **69%** of decided matches (P ≈ 0.0015), and Hybrid **never swept both legs** across 30 conditions (Fast did 6 times).
 >
 > 收窄是真实的：Fast 的已决胜率从第一轮的 **100%（50/50）** 降到 **69%**，Hybrid 拿下 8 胜而 Optimizer 是 0 胜；`optimizer-vs-hybrid` 中 Hybrid 39-4 碾压。但「缩小差距」与「关闭差距」是两回事，本轮的证据只支持前者。
 >
-> Narrowing is real: Fast's decided win rate dropped from Round 1's **100% (50/50)** to **69%**, Hybrid won 8 while Optimizer won 0; in `optimizer-vs-hybrid` Hybrid crushed 39-4. But "narrowing the gap" and "closing the gap" are different things; this round's evidence only supports the former.
 
 
 **B. Shooter Cancellation 是否是 Fast 统治的主要成因？**
 
 > **YES。**
 >
-> **YES.**
 >
 > 移除取消后 fast-vs-optimizer 从 **50-0-10** 反转为 **2-38-20**；optimizer-vs-hybrid 从 **39-4-17** 反转为 **3-37-20**。回合级归因：取消在 fast-vs-optimizer 中吞掉 **787 次**击杀，其中 **84.8% 的目标在官方对局结束时仍然存活**（排除了「本来就该死」的替代解释），含 **253 次**对 Fast Shooter 的反杀——占全部回合的 43%。该结论已被一个**独立编写的模拟器**复现（0/60 分歧），且离线重跑的求解器在官方世界上**逐字节复现平台记录的函数**（217/217），排除了环境/计时假象。
 >
-> After removing cancellation, fast-vs-optimizer reversed from **50-0-10** to **2-38-20**; optimizer-vs-hybrid reversed from **39-4-17** to **3-37-20**. Round-level attribution: cancellation consumed **787 kills** in fast-vs-optimizer, **84.8% of targets survived to official match end** (ruling out "would have died anyway" alternative explanation), including **253** counter-kills on Fast's Shooter—43% of all rounds. This conclusion was reproduced by an **independently written simulator** (0/60 divergence), and offline re-run solvers **byte-for-byte reproduced platform-recorded functions** on official worlds (217/217), ruling out environment/timing artifacts.
 
 
 **C. 先手速度是否过度压制了函数质量？**
 
 > **YES。**
 >
-> **YES.**
 >
 > 三层证据：(1) 回合级：787 / 663 / 316 次击杀在三种对阵中因取消而未被执行，且多数目标最终存活；(2) 前向模拟：移除取消后慢算法的胜场从 0 → 38、4 → 37；(3) 算法内证据：Hybrid 的 Stage 3（更深的曲线拟合）在 1170 个世界上只改变了 1 次结果——**即使把时间给它，更高质量的函数也不产生价值**。
 >
-> Three layers of evidence: (1) Round-level: 787 / 663 / 316 kills not executed due to cancellation across three matchups, majority of targets survived to end; (2) Forward simulation: after removing cancellation, slow algorithm wins went from 0 → 38, 4 → 37; (3) Within-algorithm evidence: Hybrid's Stage 3 (deeper curve fitting) only changed results 1 time across 1170 worlds—**even given the time, higher-quality functions produce no value**.
 >
 > 措辞保留：CF 测量的是「substantially」（数量级），「excessively」（是否过度）是需要在规则评审中做的价值判断，不由本报告代为裁定。
 >
-> Wording reservation: CF measures "substantially" (order of magnitude), "excessively" (whether excessive) is a value judgment to be made in rule review, not determined by this report.
 
 
 **D. 是否应在冻结锦标赛规则前修改官方规则？**
 
 > **YES（建议）。**
 >
-> **YES (recommendation).**
 >
 > 依据 §19 的 `CANCELLATION-DOMINATED` 判定与 §21 的 R1 / R2 / R3。
 >
@@ -850,26 +823,21 @@ playtest/results/round-2/cf/verify-fast-vs-hybrid.json
 >
 > **本轮未实施任何修改，也未修改 production（§27）。** 仅提交候选供人类决策。
 >
-> **This round did not implement any modifications, nor modified production (§27).** Only submitted candidates for human decision.
 
 
 **E. 现有证据是否足以定义 Stalemate Rule？**
 
 > **NO。**
 >
-> **NO.**
 >
 > 僵持**真实存在且是结构性的**（53/53 永不化解，提高到 60 轮仍不化解），因此「需要某种终止条件」这一点成立。但**阈值数值不可识别**：观测分布被 30 轮测试上限右删失，53 个尾部观测全部等于「上限 − 最后击杀轮」，没有观测到任何自然分辨率；分位数与上限 1:1 缩放。**rev 1 的 20 / 30 阈值建议已撤回**，它是从删失分位数上循环论证得出的。
 >
-> Stalemates **truly exist and are structural** (53/53 never self-resolve, still don't resolve at 60 rounds), therefore "need some termination condition" is established. But **threshold value not identifiable**: observed distribution right-censored by 30-round test cap, all 53 tail observations equal "cap − last kill round", no natural resolution observed; percentiles scale 1:1 with cap. **rev 1's 20 / 30 threshold recommendations withdrawn**, they were circularly derived from censored percentiles.
 >
 > 需要先做「无上限」实验（见 §14 与 R3）才能在下一轮给出阈值建议。
 >
-> Need to first conduct "no cap" experiments (see §14 and R3) before providing threshold recommendations in next round.
 >
 > **本轮未实现正式 Stalemate Rule（§22 明确禁止）。**
 >
-> **This round did not implement formal Stalemate Rule (§22 explicitly forbids).**
 
 ---
 

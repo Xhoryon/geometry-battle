@@ -6,6 +6,29 @@
 
 # Release Notes
 
+## V1.4.3 (2026-09-14) — Documentation Cleanup & Pair Integrity
+
+V1.4.3 is a documentation-only cleanup and documentation regression-testing patch.
+
+This release:
+- Removes duplicated and misplaced sections left by the V1.4.2 language split.
+- Restores the canonical README title and current-release statement.
+- Removes opposite-language prose residue across all documentation pairs.
+- Repairs language-switch and internal documentation links and anchors.
+- Strengthens paired-document regression checks (`bilingual-docs.ts`).
+- Adds structural-order, language-purity, and exact-switch checks.
+- Re-runs privacy, path, and credential scans.
+
+It does not change competition rules, Validator behavior, MatchEngine behavior, runtime behavior, protocol semantics, authorization, replay authority, or Web runtime behavior.
+
+## V1.4.2 (2026-09-14) — Language-Switchable Documentation
+
+V1.4.2 split all documentation into switchable language pairs (`.md` and `.zh-CN.md`).
+
+## V1.4.1 (2026-09-13) — Complete Bilingual Documentation
+
+V1.4.1 delivered complete bilingual coverage across repository documentation.
+
 ## V1.4.0 (2026-09-13) — Platform Fairness & Tournament UX
 
 V1.4 addresses platform fairness (Team A/B mirror symmetry), expands tournament participant
@@ -101,7 +124,7 @@ Prepared from independently audited internal snapshot `febf1c69fb6cb786248115131
 
 > License: **PolyForm Noncommercial License 1.0.0** (see root [`LICENSE`](../LICENSE)).
 > *Source-available for noncommercial use* — **NOT** an OSI-approved open-source license.
-> Commercial use requires separate authorization. See [README License & Usage Scope](../README.md#license--usage-scope).
+> Commercial use requires separate authorization. See [README License](../README.md#license).
 
 ### Rule Differences from V1.1 (Only One)
 
