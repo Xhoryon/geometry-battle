@@ -44,7 +44,7 @@ stdout **不是** IPC 通道 —— 见 [算法协议](#2-算法协议两阶段�
 | `HARD_ROUND_LIMIT` | 到达第 **60** 回合（无论局面如何）→ DRAW |
 
 四类终止方式（`ELIMINATION` / `MUTUAL_ELIMINATION` / `STALEMATE` / `HARD_ROUND_LIMIT`）
-覆盖全部情形，判定在引擎内部，任何入口都跑不出一场不终止的比赛 —— 见 [场地与判定](#6-场地与判定--field--judging)。
+覆盖全部情形，判定在引擎内部,任何入口都跑不出一场不终止的比赛 —— 见 [场地与判定](#6-场地与判定)。
 
 
 

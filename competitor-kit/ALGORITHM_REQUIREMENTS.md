@@ -45,7 +45,7 @@ The platform handles maps, adjudication, timing, animation, win/loss — you do 
 
 # 1. Submission Format
 
-**Submission = one algorithm directory** (not a zip).
+**Submission = one algorithm directory**.
 
 ```text
 my-algorithm/
@@ -63,7 +63,6 @@ Rules:
   (passes validation on first check, see [README.md](README.md) §5).
 - Symlinks not allowed; package size ≤ 8 MB, file count ≤ 256.
 - `manifest.json` optional. If provided, MUST contain `name` and `version`, and `entry` (if written) can only be `solver.py`.
-- No compressed archive uploads. Provide directory directly.
 
 ---
 
@@ -422,10 +421,15 @@ it is unkillable, hitting it produces no benefit. To zero out opponent's combat 
 > constant throughout match — thus "from where to fire" becomes a strategy dimension that can be cultivated again,
 > while the "per-round point selection" process still does not exist.
 
-## 6.2 Orientation & Symmetry
+## 6.2 坐标方向与镜像 / Orientation & Symmetry
 
 > V1.4 addition: this section is **explanatory** only — no rule changes; it spells out what the engine has always done.
 > The rows "Attack direction" and "Valid attack range" in the §6 table above are the condensed version of this section.
+
+**Team A faces +x (right); Team B faces -x (left).**
+
+**Team A 的前进方向 = x 增大**  
+**Team B 的前进方向 = x 减小**
 
 Team A forward direction = increasing x  
 Team B forward direction = decreasing x
@@ -500,12 +504,14 @@ The engine guarantees exactly this about `public_state.points` and `reveal_state
 
 | Array | Guarantee |
 |---|---|
-| `points` | All Team A entries first, then all Team B entries; within each group by map **generation / placement order** (`A1, A2, …`, `B1, B2, …`), **not** sorted by x, by distance to the Emitter, or by any other geometric quantity |
+| `points` | All Team A entries first, then all Team B entries; within each group by map **generation / placement order** (`A1, A2, …`, `B1, B2, …`), **not** sorted by x, by distance to the Emitter, or by any other geometric quantity<br>先是 Team A 的全部条目，再是 Team B 的全部条目；每组内部按地图生成/放置顺序（`A1, A2, …`、`B1, B2, …`），**不按** x、离 Emitter 的距离或任何其它几何量排序 |
 | `points` | Order and entry count identical every round of the match: killed points stay in place with `alive: false` |
-| `points` | The two points locked as Emitters are removed and the remaining ids are **not renumbered** — so `A1` may be absent for the whole match and ids need not be contiguous |
+| `points` | The two points locked as Emitters are removed and the remaining ids are **not renumbered** — so `A1` may be absent for the whole match and ids need not be contiguous<br>被锁定为 Emitter 的两个点会被移除，剩余 id **不重新编号** —— 所以 `A1` 可能整场缺席，id 不必连续 |
 | `obstacles` | Numbered `O1..On` in generation order; the array is the same every round |
 
 **Do not assume array order is geometric order.** If you want targets by geometry, sort by `x` / `u` / distance yourself.
+
+**不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。**如果想按几何顺序处理目标，请自行按 `x` / `u` / 距离排序。
 
 ### 6.2.3 Both-side compatibility (MUST)
 
@@ -514,6 +520,8 @@ organisers; your code learns its side only through `--team`, and both input JSON
 the two sides. The classic symptoms of a solver that was only ever debugged as Team A: filtering enemies with
 `p["x"] > x_e` (which matches nothing on the B side and then crashes or emits a degenerate function),
 hard-coding "forward" as `+x`, or inverting "before / after" the first contact.
+
+**同一正式提交必须能够在 Team A 与 Team B 两侧正确运行。**槽位由组织方分配；你的代码仅通过 `--team` 得知自己的阵营，且两侧收到的输入 JSON 文件逐字节相同。只在 Team A 调试过的求解器的典型症状：用 `p["x"] > x_e` 过滤敌方（在 B 侧匹配不到任何目标，然后崩溃或输出退化函数）、将"前进"硬编码为 `+x`、或反转"首次接触之前/之后"的判断。
 
 Check both:
 
@@ -529,6 +537,8 @@ is legal — it only asks you to confirm that the asymmetry is intentional. **Bu
 report a different judge outcome (hits / blocked / end reason) is the non-crashing form of the same Team-A-only
 bug (the B side emitted a degenerate but legal function) — the exit code is 0, but treat it as seriously as
 `FAIL`.**
+
+`check_mirror.py` 是**开发诊断工具**；官方 Preflight 不会运行它。`FAIL`（一侧合法，其镜像崩溃/超时/非法）几乎总是 bug；两侧都失败同样记 `FAIL`（不是镜像问题——先跑 `validate_submission.py`）；`WARN`（两侧都合法，但几何不同）是合法的——它只是要求你确认非对称是刻意设计。**但如果 `WARN` 的两对结果报告了不同的裁判结果（命中/被阻挡/终止原因），则是同一个"只在 Team A 调试"bug 的不崩溃形式（B 侧输出了退化但合法的函数）——退出码为 0，但应像 `FAIL` 一样严肃对待。**
 
 ---
 
@@ -583,15 +593,15 @@ with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
 
 Or use relative paths directly (relative to current working directory).
 
-**Do not hardcode**:
+**Working directory**: `cwd` and `TMPDIR` are the only writable areas available; use them for any temporary files.
+
+**Do not hardcode absolute paths** — these either do not exist in the sandbox or are rejected (`PermissionError`):
 
 ```text
 /tmp
 /work
 /Users/...
 ```
-
-These paths either do not exist or are rejected by sandbox (`PermissionError`).
 
 **Sandbox is destroyed and rebuilt every round**: do not expect files written in Round 1 to still be readable in Round 2.
 
@@ -654,6 +664,7 @@ If strategy requires random search:
 | M13 | Do not flood stdout / stderr |
 | M14 | Only use modules listed in [RUNTIME_MANIFEST.md](RUNTIME_MANIFEST.md) |
 | M15 | Same formal submission MUST run correctly on both Team A and Team B sides (only `--team` differs; see §6.2.3) |
+| M15 | 同一正式提交必须能够在 Team A 与 Team B 两侧正确运行（仅 `--team` 不同；见 §6.2.3） |
 
 
 
@@ -870,6 +881,7 @@ but "sandbox blocked it" does not equal "allowed to try". Please write algorithm
 [ ] No network access, no process creation
 [ ] Local self-check PASS (default runs A, B once each — both teams must PASS)
 [ ] Runs correctly as both --team A and --team B: check_mirror.py no FAIL (WARN requires confirming asymmetry is intentional)
+[ ] 作为 --team A 和 --team B 均正确运行:check_mirror.py 无 FAIL(WARN 须确认非对称为刻意设计)
 ```
 
 ---

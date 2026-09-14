@@ -28,7 +28,7 @@ opponent point when it passes exactly through it, within range.
 Judging is done by the platform's single canonical Judge — algorithms never decide the
 outcome themselves. **Not one line of contestant code runs before START**, and results
 are delivered only through `output/result.json`; stdout is **not** an IPC channel
-(see [the algorithm protocol](#2-algorithm-protocol-two-phase-input-files--argv)).
+(see [the algorithm protocol](#algorithm-protocol-two-phase-input-files--argv)).
 
 
 ### V1.2 rules at a glance
@@ -53,7 +53,7 @@ Everything else is unchanged.
 The four end reasons (`ELIMINATION` / `MUTUAL_ELIMINATION` / `STALEMATE` /
 `HARD_ROUND_LIMIT`) cover every case; the decision is inside the engine, so no entry
 point can produce a match that never terminates — see
-[field & judging](#6-field--judging).
+[field & judging](#field--judging).
 
 
 ---

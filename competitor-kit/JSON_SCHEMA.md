@@ -268,12 +268,16 @@ For write method, see the "Result Submission" section in [ALGORITHM_REQUIREMENTS
 
 The engine **only** guarantees these about order (all else is not guaranteed):
 
-- `points`: all Team A entries first, then all Team B entries; within each group, in map generation / placement order (`A1, A2, …`, `B1, B2, …`).
+- `points`: all Team A entries first, then all Team B entries; within each group, in map generation / placement order (`A1, A2, …`, `B1, B2, …`).<br>先是 Team A 的全部条目，再是 Team B 的全部条目；每组内部按地图生成/放置顺序（`A1, A2, …`、`B1, B2, …`）。
 - `points`: **same order, same entry count** every round throughout the match — killed points stay in place with only `alive` set to `false`; entries **do not** disappear on a kill.
-- `points`: the two points locked as Emitters are removed, and remaining IDs are **not renumbered** (so `A1` may be absent).
+- `points`: the two points locked as Emitters are removed, and remaining IDs are **not renumbered** (so `A1` may be absent).<br>被锁定为 Emitter 的两个点会被移除，剩余 ID **不重新编号**（所以 `A1` 可能缺席）。
 - `obstacles`: numbered `O1..On` in generation order, and the array is the same every round throughout the match.
 
+**Do not assume array order is geometric order.**
+
 **Do not assume array order represents x ascending, distance from Emitter ascending, or any other geometric ordering.**
+
+**不要假设数组顺序代表 x 从小到大、离 Emitter 从近到远，或任何其它几何排序。**
 
 ---
 

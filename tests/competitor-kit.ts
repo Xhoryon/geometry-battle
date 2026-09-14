@@ -685,7 +685,9 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
 
   // 正向对照：文档必须**真的**写了正确的东西，否则「全都不提」也会全绿
   const kitReadme = fs.readFileSync(path.join(KIT, 'README.md'), 'utf-8');
-  const rootReadme = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+  const rootReadmeEn = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+  const rootReadmeZh = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.zh-CN.md'), 'utf-8');
+  const rootReadme = rootReadmeEn + '\n' + rootReadmeZh; // Combined for dual-language checks
   assert(/500\s*ms/.test(kitReadme), 'competitor-kit/README.md 必须写明 500 ms');
   assert(/500\s*ms/.test(rootReadme), '仓库 README 必须写明 500 ms');
   assert(/emitters/.test(rootReadme), '仓库 README 必须写明 emitters（固定 Emitter 在 public 里）');
@@ -703,7 +705,9 @@ test('competitor-kit: 面向选手的文档与 Revision 3 常量一致（防再�
   // ---- canonical 槽位目录自己的 README 必须讲对语义（Final Tag Re-Gate 的缺口）----
   // 它在被描述的目录里，是投递者最可能先打开的一份 —— 教错方向的代价是
   // 「投进去被静默忽略、比赛拿出厂 starter 跑完」。
-  const algorithmsReadme = fs.readFileSync(path.join(ALGORITHMS_DIR, 'README.md'), 'utf-8');
+  const algorithmsReadmeEn = fs.readFileSync(path.join(ALGORITHMS_DIR, 'README.md'), 'utf-8');
+  const algorithmsReadmeZh = fs.readFileSync(path.join(ALGORITHMS_DIR, 'README.zh-CN.md'), 'utf-8');
+  const algorithmsReadme = algorithmsReadmeEn + '\n' + algorithmsReadmeZh; // Combined for dual-language checks
   assert(
     /runs\/slots/.test(algorithmsReadme),
     'algorithms/README.md 必须写明运行期槽位根 runs/slots（正式投递点）'
@@ -777,7 +781,9 @@ test('competitor-kit: 文档不得再把 Emitter 写成平台常量（V1.2 §一
   // 选手手册必须讲清楚 decoy 锚点的语义：它是**decoy 地图上的点**，不是平台常量，
   // 因此写死坐标会在本地自检 / Preflight 就 FAIL。这句话是防止选手
   // 「本地都过了」却在正赛每轮 INVALID 的关键提示。
-  const req = textOf('ALGORITHM_REQUIREMENTS.md');
+  const reqEn = textOf('ALGORITHM_REQUIREMENTS.md');
+  const reqZh = fs.readFileSync(path.join(KIT, 'ALGORITHM_REQUIREMENTS.zh-CN.md'), 'utf-8');
+  const req = reqEn + '\n' + reqZh; // Combined for dual-language checks
   assert(/Preflight/.test(req) && /decoy/.test(req), '选手手册必须解释 Preflight 用的是 decoy 世界');
   assert(
     /写死/.test(req) && /decoy 地图/.test(req),
@@ -795,10 +801,18 @@ test('competitor-kit: 文档不得再把 Emitter 写成平台常量（V1.2 §一
 // ============================================================================
 
 test('competitor-kit: 手册写明坐标方向 / 数组顺序 / 双侧兼容，中英文原句都在（V1.4 §6.2）', () => {
-  const req = readDoc('ALGORITHM_REQUIREMENTS.md');
-  const schema = readDoc('JSON_SCHEMA.md');
-  const kitReadme = readDoc('README.md');
-  const rootReadme = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+  const reqEn = readDoc('ALGORITHM_REQUIREMENTS.md');
+  const reqZh = fs.readFileSync(path.join(KIT, 'ALGORITHM_REQUIREMENTS.zh-CN.md'), 'utf-8');
+  const req = reqEn + '\n' + reqZh; // Combined for dual-language checks
+  const schemaEn = readDoc('JSON_SCHEMA.md');
+  const schemaZh = fs.readFileSync(path.join(KIT, 'JSON_SCHEMA.zh-CN.md'), 'utf-8');
+  const schema = schemaEn + '\n' + schemaZh; // Combined for dual-language checks
+  const kitReadmeEn = readDoc('README.md');
+  const kitReadmeZh = fs.readFileSync(path.join(KIT, 'README.zh-CN.md'), 'utf-8');
+  const kitReadme = kitReadmeEn + '\n' + kitReadmeZh; // Combined for dual-language checks
+  const rootReadmeEn = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.md'), 'utf-8');
+  const rootReadmeZh = fs.readFileSync(path.join(PLATFORM_ROOT, 'README.zh-CN.md'), 'utf-8');
+  const rootReadme = rootReadmeEn + '\n' + rootReadmeZh; // Combined for dual-language checks
 
   // 章节本身（双语标题）
   assert(/## 6\.2 坐标方向与镜像 \/ Orientation & Symmetry/.test(req), 'ALGORITHM_REQUIREMENTS 必须有 §6.2「坐标方向与镜像 / Orientation & Symmetry」');
