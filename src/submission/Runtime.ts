@@ -18,8 +18,14 @@
  * 双方环境相同由三件事共同保证：
  *   1. 同一个解释器（`/usr/bin/python3`，沙箱 argv 固定，规范 §6）；
  *   2. 同一份 scrubbed 环境变量（`SandboxRunner.scrubEnv`）；
- *   3. 线程数被钉死为 1（`OMP_NUM_THREADS` 等），避免多线程 BLAS 把
- *      「谁的机器核多」变成计时优势。
+ *   3. BLAS/OpenMP 库的线程数被钉死为 1（`OMP_NUM_THREADS` 等），避免多线程
+ *      数值计算库把「谁的机器核多」变成计时优势。
+ *
+ * F6: cpuQuota / threadLimit 的真实语义（Gate 0.5 修正）
+ * - cpuQuota=1: 单一参赛进程 + BLAS/OpenMP 并行度限制为 1，**非** OS 级单核绑定
+ * - threadLimit=1: BLAS/OpenMP 库被环境变量约束为 1 线程，**非**禁止所有线程创建
+ * - Python threading.Thread 可以创建，但无计时优势（500ms wall-time deadline）
+ * - 无 OS-level CPU affinity / cgroup quota / 物理单核 pinning
  */
 
 import { execFileSync } from 'child_process';
@@ -63,6 +69,10 @@ export interface FrozenRuntime {
  *
  * 沙箱内可用模块的**唯一权威清单**是 `competitor-kit/RUNTIME_MANIFEST.md`，
  * 由 `tests/runtime-manifest.ts` 在真实沙箱里逐条验证。
+ *
+ * F6 修正（Gate 0.5）：
+ * - cpuQuota: 单一进程 + BLAS/OpenMP=1，非 OS 级单核
+ * - threadLimit: BLAS/OpenMP 约束，非禁止所有线程
  */
 export const FROZEN_RUNTIME: FrozenRuntime = {
   implementation: 'CPython',
@@ -70,8 +80,10 @@ export const FROZEN_RUNTIME: FrozenRuntime = {
   platform: 'darwin',
   /** Third-party packages: NONE（stdlib only） */
   packages: [],
+  /** Single contestant process + BLAS/OpenMP parallelism=1 (not OS-level core pinning) */
   cpuQuota: 1,
   memoryLimitMb: MEMORY_LIMIT_MB,
+  /** BLAS/OpenMP constrained to 1 thread (Python threading available but no advantage) */
   threadLimit: 1,
   timeoutMs: COMPUTE_TIMEOUT_MS,
   stdoutCapBytes: 256 * 1024,
