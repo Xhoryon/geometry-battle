@@ -125,10 +125,34 @@ function toWireObstacles(obstacles: readonly Obstacle[]): WireObstacle[] {
   });
 }
 
+/**
+ * Gate 0 Finding F3: 按阶段过滤障碍物 —— 观众板在 REVEAL 之前不能泄漏障碍物布局。
+ *
+ * 障碍物只在以下阶段可见：
+ *   - REVEAL / COUNTDOWN / COMPUTING / PUBLIC —— 参赛代码已经开始运行或即将运行
+ *   - MATCH_END —— 比赛已结束，全部信息公开
+ *
+ * 其他阶段（SETUP / UPLOAD_A / UPLOAD_B / EMITTER_SELECT / READY）一律返回空数组。
+ */
+function shouldRevealObstacles(phase: MatchPhase): boolean {
+  return (
+    phase === 'REVEAL' ||
+    phase === 'COUNTDOWN' ||
+    phase === 'COMPUTING' ||
+    phase === 'PUBLIC' ||
+    phase === 'MATCH_END'
+  );
+}
+
 function buildArena(snap: MatchSnapshot, map: GeneratedMap | null): ArenaView {
+  // Gate 0 F3: 阶段门控 —— REVEAL 之前不投影障碍物
+  const obstacles = shouldRevealObstacles(snap.phase)
+    ? toWireObstacles(map?.obstacles ?? [])
+    : [];
+
   return {
     field: { xMin: FIELD.xMin, xMax: FIELD.xMax, yMin: FIELD.yMin, yMax: FIELD.yMax },
-    obstacles: toWireObstacles(map?.obstacles ?? []),
+    obstacles,
     emitters: snap.emitters
       ? {
           A: { id: snap.emitters.A.id, position: toWirePoint(snap.emitters.A.position) },

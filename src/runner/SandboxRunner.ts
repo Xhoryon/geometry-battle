@@ -987,6 +987,11 @@ export function spawnRunner(opts: {
    * 1ms 的粒度相对 500ms 预算可忽略（Rule Revision 3 §11）；双方各自轮询、相位独立，
    * 不产生方向固定的偏置。计时终点是**文件可读的那一刻**（规范 §22/§28），
    * 而不是进程退出时刻 —— 后者会把解释器退出开销算进算法耗时。
+   *
+   * Gate 0 Finding F3: 增加真实时间校验 ——
+   * mtime 可能在宿主进程暂停时失真（SIGSTOP / 虚拟机挂起），因此必须同时检查
+   * 从 releaseNs 到**当前时刻**的真实流逝时间（单调时钟）。若真实耗时已超预算，
+   * 即使 mtime 看起来合法也必须拒绝结果（防止宿主暂停绕过硬截止线）。
    */
   const pollForResult = () => {
     if (finished || !released || pendingResult) return;
@@ -1004,10 +1009,21 @@ export function spawnRunner(opts: {
       resultError = parsed.error;
       return;
     }
+    // Gate 0 F3: 真实时间硬截止线 —— 先检查从 GO 到现在的真实流逝时间（单调时钟）。
+    // 若已超预算，则无论 mtime 如何都拒收（防止宿主暂停、mtime 伪造等绕过）。
+    const nowNs = process.hrtime.bigint();
+    if (releaseNs !== null) {
+      const realElapsedMs = Number(nowNs - releaseNs) / 1e6;
+      if (realElapsedMs > opts.timeoutMs) {
+        // 真实时间已超预算 —— 即使 mtime 看起来合法，也不接受（F3 修复）
+        resultError = `结果文件的真实到达时间 ${realElapsedMs.toFixed(1)}ms 超过预算 ${opts.timeoutMs}ms（硬截止线）`;
+        return;
+      }
+    }
     // 计时终点取**结果文件的 mtime**（算法自己写完内容的时刻），
     // 而不是本轮询回调的执行时刻 —— 宿主侧的串行开销会系统性地推迟后一方的读数
     // （见 WALL_ANCHOR 注释）。时间戳不可得或换算结果不合理时退回轮询时刻。
-    let resultNs = process.hrtime.bigint();
+    let resultNs = nowNs;
     const writtenWallNs = resultWrittenWallNs(sandbox.resultPath);
     if (writtenWallNs !== null && releaseNs !== null) {
       const candidate = wallToMonotonicNs(writtenWallNs);

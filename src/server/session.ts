@@ -13,9 +13,13 @@
  * 串行化：`MatchEngine` 不可重入（一轮计算中途改状态会让审计对不上）。
  * 因此同一时刻只允许一条命令在跑，**忙的时候直接拒绝**而不是排队 ——
  * 排队会让裁判点了按钮却不知道发生了什么，拒绝 + 人话错误才说得清。
+ *
+ * 修复的 Finding：
+ *   Gate 0.5 F1 跨队隔离边界（Defense Layer 1）：uploadPackage 后立即清理临时目录
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { MatchEngine, MatchOptions } from '../core/Match';
 import { MatchSetupUI } from '../ui/MatchSetupUI';
 import { persistArtifacts } from '../core/Logs';
@@ -271,9 +275,24 @@ export class MatchSession {
       // **先判后装**：此前是「装完再拒绝」，于是被拒的包其实已经落在槽位里了 ——
       // 拒绝只改了返回值，槽位状态照旧被污染。
       const blocked = this.tournamentRejection(team, inspectPackage(staged.dir).hash, '上传内容');
-      if (blocked) return blocked;
+      if (blocked) {
+        // 拒绝时立即清理临时目录（Defense Layer 1）
+        try {
+          fs.rmSync(staged.dir, { recursive: true, force: true });
+        } catch {
+          /* ignore cleanup failure */
+        }
+        return blocked;
+      }
 
       const r = await this.setup.installAlgorithm(team, staged.dir);
+      // Defense Layer 1：安装完成后立即清理原始上传临时目录，
+      // 防止其他队伍在其 solver 执行阶段读取残留文件（Gate 0.5 F1）
+      try {
+        fs.rmSync(staged.dir, { recursive: true, force: true });
+      } catch {
+        /* ignore cleanup failure */
+      }
       return {
         ok: r.success,
         errors: r.errors,
