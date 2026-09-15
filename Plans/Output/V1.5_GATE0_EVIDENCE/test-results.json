@@ -1,0 +1,50 @@
+[
+  {
+    "name": "typecheck",
+    "command": [
+      "npm",
+      "run",
+      "typecheck"
+    ],
+    "exit_code": 0,
+    "seconds": 0.67,
+    "log": "typecheck.log"
+  },
+  {
+    "name": "typecheck-web",
+    "command": [
+      "npm",
+      "run",
+      "typecheck:web"
+    ],
+    "exit_code": 0,
+    "seconds": 0.89,
+    "log": "typecheck-web.log"
+  },
+  {
+    "name": "gate0-targeted",
+    "command": [
+      "node",
+      "-r",
+      "ts-node/register",
+      "tests/run-all.ts",
+      "fixed-emitter",
+      "locked-attack-right",
+      "termination",
+      "input-protocol",
+      "stage-gating",
+      "pre-start-execution",
+      "package-tamper",
+      "runtime-manifest",
+      "web-projection",
+      "web-wizard",
+      "server-team",
+      "team-auth",
+      "process-tree-cleanup",
+      "cross-round-cheat"
+    ],
+    "exit_code": 0,
+    "seconds": 198.02,
+    "log": "gate0-targeted.log"
+  }
+]
