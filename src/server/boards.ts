@@ -125,10 +125,25 @@ function toWireObstacles(obstacles: readonly Obstacle[]): WireObstacle[] {
   });
 }
 
-function buildArena(snap: MatchSnapshot, map: GeneratedMap | null): ArenaView {
+/**
+ * F7 修正：根据阶段过滤 obstacles。
+ *
+ * 观众在正式 REVEAL 之前不应看到 obstacle geometry。
+ */
+function shouldRevealObstacles(phase: WirePhase): boolean {
+  // 复用现有 reveal 语义：REVEAL 及之后的阶段可见
+  return phase === 'REVEAL' || phase === 'COMPUTING' || phase === 'ROUND_RESULT' || phase === 'MATCH_END';
+}
+
+function buildArena(snap: MatchSnapshot, map: GeneratedMap | null, forSpectator: boolean = false): ArenaView {
+  // F7: 观众板在 reveal 之前隐藏 obstacles
+  const obstacles = (forSpectator && !shouldRevealObstacles(snap.phase))
+    ? []
+    : toWireObstacles(map?.obstacles ?? []);
+
   return {
     field: { xMin: FIELD.xMin, xMax: FIELD.xMax, yMin: FIELD.yMin, yMax: FIELD.yMax },
-    obstacles: toWireObstacles(map?.obstacles ?? []),
+    obstacles,
     emitters: snap.emitters
       ? {
           A: { id: snap.emitters.A.id, position: toWirePoint(snap.emitters.A.position) },
@@ -215,7 +230,7 @@ export function spectatorBoard(
     matchId: snap.matchId,
     round: snap.round,
     phase: snap.phase,
-    arena: buildArena(snap, snap.map),
+    arena: buildArena(snap, snap.map, true), // F7: 标记为观众板，启用阶段过滤
     alive: { A: snap.alive.A, B: snap.alive.B },
     trajectoryHandle,
     computes: buildComputes(snap),

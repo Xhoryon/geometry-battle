@@ -134,6 +134,12 @@ export interface MatchOptions {
    */
   stalemateNoProgressLimit?: number;
   hardRoundLimit?: number;
+  /**
+   * Tournament mode (V1.5 Gate 0.5 F2 修正)。
+   *
+   * true 时：沙箱不可用将导致立即失败，不允许 bare-Python fallback。
+   */
+  tournamentMode?: boolean;
 }
 
 export interface PointState {
@@ -234,6 +240,7 @@ export class MatchEngine {
   private teamBName: string;
   private stalemateLimit: number;
   private hardRoundLimit: number;
+  private tournamentMode: boolean;
 
   private map: GeneratedMap | null = null;
   /**
@@ -301,6 +308,7 @@ export class MatchEngine {
     this.teamBName = opts.teamBName ?? 'Team B';
     this.stalemateLimit = opts.stalemateNoProgressLimit ?? STALEMATE_NO_PROGRESS_LIMIT;
     this.hardRoundLimit = opts.hardRoundLimit ?? HARD_ROUND_LIMIT;
+    this.tournamentMode = opts.tournamentMode ?? false;
     this.audit = new AuditRecorder(this.matchId);
     this.audit.log('MatchCreated', { seed: this.seed, pointCount: this.pointCount });
   }
@@ -455,6 +463,7 @@ export class MatchEngine {
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
+      tournamentMode: this.tournamentMode,
     });
 
     const outcome = stage.team === 'A' ? duel.a : duel.b;
@@ -514,6 +523,7 @@ export class MatchEngine {
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
+      tournamentMode: this.tournamentMode,
     });
 
     const detail: Record<string, unknown> = {
@@ -973,6 +983,7 @@ export class MatchEngine {
       denyReadPaths: this.sandboxDenyReadPaths(),
       timeoutMs: this.timeoutMs,
       memoryLimitMb: this.memoryLimitMb,
+      tournamentMode: this.tournamentMode,
     });
     // 本轮**不再**有 onFirstResult 取消钩子：先手方击杀对方 Shooter 不再终止对方进程。
     // 双方的进程生命周期只由 valid result / timeout / crash / invalid output / 正常清理

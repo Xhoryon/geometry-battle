@@ -213,6 +213,13 @@ export interface DuelOptions {
   denyReadPaths?: string[];
   timeoutMs?: number;
   memoryLimitMb?: number;
+  /**
+   * Tournament mode (V1.5 Gate 0.5 F2 修正)。
+   *
+   * true 时：沙箱不可用将导致立即失败，不允许 bare-Python fallback。
+   * false/undefined 时：旧行为（开发自测允许 fallback）。
+   */
+  tournamentMode?: boolean;
 }
 
 export interface DuelResult {
@@ -310,7 +317,24 @@ shift
 exec "$@"
 `;
 
+/**
+ * Sandbox 可用性检测 override（测试 seam for F2）。
+ *
+ * 生产环境永远为 null；测试可以设为 false 来模拟 sandbox 不可用的场景。
+ */
+let sandboxAvailabilityOverride: boolean | null = null;
+
+/**
+ * 设置 sandbox 可用性 override（仅供测试使用）。
+ */
+export function setSandboxAvailabilityOverride(available: boolean | null): void {
+  sandboxAvailabilityOverride = available;
+}
+
 export function sandboxExecAvailable(): boolean {
+  if (sandboxAvailabilityOverride !== null) {
+    return sandboxAvailabilityOverride;
+  }
   return process.platform === 'darwin' && fs.existsSync('/usr/bin/sandbox-exec');
 }
 
@@ -353,7 +377,10 @@ function buildProfile(sandboxDirRaw: string, sandboxRootRaw: string, denyReadPat
   // 保留它们不会伤到沙箱自身 —— 末尾的 `(allow file-read* (subpath sandboxDir))`
   // 按 SBPL「后匹配者胜」重新放行；模板里无条件存在的
   // `(deny file-read* (subpath sandboxRoot))` 与它同理，且一直工作正常。
-  const SYSTEM_DENIES = ['/private/tmp', '/private/var/tmp'];
+  //
+  // Gate 0.5 F1: 添加 /private/var/folders 以防止跨队读取原始上传
+  // macOS 的 os.tmpdir() 通常返回 /var/folders/... (符号链接到 /private/var/folders/...)
+  const SYSTEM_DENIES = ['/private/tmp', '/private/var/tmp', '/private/var/folders'];
 
   /** p 是否等于 self 或是 self 的祖先 */
   const covers = (p: string, self: string): boolean => p === self || self.startsWith(p + path.sep);
@@ -663,8 +690,9 @@ export function spawnRunner(opts: {
   sandbox: PreparedSandbox;
   timeoutMs: number;
   memoryLimitMb: number;
+  tournamentMode?: boolean;
 }): SpawnedRunner {
-  const { team, sandbox } = opts;
+  const { team, sandbox, tournamentMode } = opts;
 
   // 参赛入口的 argv：队别只经 Runner Context 传递（规范 §12），输入只经文件（规范 §13），
   // 结果只经文件（规范 §24）—— 四个参数固定，双方唯一差异是 --team 的取值（规范 §6）。
@@ -677,6 +705,41 @@ export function spawnRunner(opts: {
   const bootstrapPath = path.join(sandbox.dir, '__gb_bootstrap.py');
 
   const useSandbox = sandboxExecAvailable();
+
+  // F2: Tournament mode 不允许 bare-Python fallback
+  if (tournamentMode && !useSandbox) {
+    const outcome: RunnerOutcome = {
+      team,
+      success: false,
+      stdout: '',
+      stderr: '',
+      error: 'Tournament mode requires formal sandbox, but sandbox-exec is not available',
+      errorCode: 'ISOLATION_UNAVAILABLE',
+      computeTimeMs: 0,
+      sandboxDir: sandbox.dir,
+      isolation: {
+        ...sandbox.isolation,
+        mechanism: 'none',
+        filesystemScoped: false,
+        networkDenied: false,
+        childProcessDenied: false,
+      },
+      cancelled: false,
+      resultJson: null,
+      dslText: null,
+    };
+    return {
+      team,
+      proc: undefined as any,
+      sandbox,
+      ready: Promise.reject(new Error(outcome.error!)),
+      prepare: () => {},
+      release: () => 0n,
+      done: Promise.resolve(outcome),
+      cancel: () => {},
+    };
+  }
+
   const inner = [
     sandbox.launcherPath,
     String(opts.memoryLimitMb * 1024),
@@ -1163,8 +1226,20 @@ export async function runDuel(opts: DuelOptions): Promise<DuelResult> {
     denyReadPaths: opts.denyReadPaths,
   });
 
-  const runnerA = spawnRunner({ team: 'A', sandbox: sandboxA, timeoutMs, memoryLimitMb });
-  const runnerB = spawnRunner({ team: 'B', sandbox: sandboxB, timeoutMs, memoryLimitMb });
+  const runnerA = spawnRunner({
+    team: 'A',
+    sandbox: sandboxA,
+    timeoutMs,
+    memoryLimitMb,
+    tournamentMode: opts.tournamentMode,
+  });
+  const runnerB = spawnRunner({
+    team: 'B',
+    sandbox: sandboxB,
+    timeoutMs,
+    memoryLimitMb,
+    tournamentMode: opts.tournamentMode,
+  });
 
   // 每一方的进程生命周期只由它自己决定：valid result / timeout / crash /
   // invalid output / 正常清理（V1.1 规则修订 §10）。

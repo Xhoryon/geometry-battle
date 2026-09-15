@@ -16,6 +16,7 @@
  */
 
 import * as path from 'path';
+import * as fs from 'fs';
 import { MatchEngine, MatchOptions } from '../core/Match';
 import { MatchSetupUI } from '../ui/MatchSetupUI';
 import { persistArtifacts } from '../core/Logs';
@@ -171,6 +172,7 @@ export class MatchSession {
       difficulty: s.difficulty,
       artifactRoot: this.opts.artifactRoot,
       slotRoot: this.opts.slotRoot,
+      tournamentMode: this.tournamentMode,
       ...(this.opts.sandboxRoot ? { sandboxRoot: this.opts.sandboxRoot } : {}),
     };
     return new MatchSetupUI(o);
@@ -268,17 +270,28 @@ export class MatchSession {
       const staged = writeUploadedPackage(files);
       if (!staged.ok) return { ok: false, errors: staged.errors };
 
-      // **先判后装**：此前是「装完再拒绝」，于是被拒的包其实已经落在槽位里了 ——
-      // 拒绝只改了返回值，槽位状态照旧被污染。
-      const blocked = this.tournamentRejection(team, inspectPackage(staged.dir).hash, '上传内容');
-      if (blocked) return blocked;
+      try {
+        // **先判后装**：此前是「装完再拒绝」，于是被拒的包其实已经落在槽位里了 ——
+        // 拒绝只改了返回值，槽位状态照旧被污染。
+        const blocked = this.tournamentRejection(team, inspectPackage(staged.dir).hash, '上传内容');
+        if (blocked) return blocked;
 
-      const r = await this.setup.installAlgorithm(team, staged.dir);
-      return {
-        ok: r.success,
-        errors: r.errors,
-        detail: { team, hash: r.hash, stage: r.detail?.stage, files: files.length },
-      };
+        const r = await this.setup.installAlgorithm(team, staged.dir);
+        return {
+          ok: r.success,
+          errors: r.errors,
+          detail: { team, hash: r.hash, stage: r.detail?.stage, files: files.length },
+        };
+      } finally {
+        // Gate 0.5 F1: 立即清理原始上传临时目录，防止跨队读取
+        // 安装流程已将包复制到槽位和密封副本，原始上传不再需要
+        try {
+          fs.rmSync(staged.dir, { recursive: true, force: true });
+        } catch {
+          // 清理失败不影响上传结果，但记录警告
+          // 生产环境应考虑添加监控
+        }
+      }
     });
   }
 

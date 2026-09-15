@@ -200,6 +200,7 @@ export {
   SpawnedRunner,
   PreparedSandbox,
   sandboxExecAvailable,
+  setSandboxAvailabilityOverride,
   prepareSandbox,
   spawnRunner,
   runDuel,
