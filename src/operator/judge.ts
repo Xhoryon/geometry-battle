@@ -353,12 +353,15 @@ async function main(): Promise<void> {
               break;
             }
             case 's': {
-              // **不重复实现引擎的门禁** —— MatchEngine 自己知道「上传完毕 +
-              // preflight 通过」才是可开赛状态，UI 再猜一套（比如按阶段名判断）
-              // 只会造出一个和引擎不一致的影子规则。直接把它的结论报出来。
+              // F5 Gate 0.5: 移除交互模式中的自动选择
+              // autoSelectEmitters() 仅供无人值守演练（Match.ts:702-707）
+              // 交互模式应进入 EMITTER_SELECT 阶段，由裁判或参赛方选择
               const r = setup.startMatch();
-      engine.autoSelectEmitters();
-              console.log(r.success ? '  ✓ 比赛已开始。' : `  ✕ ${r.errors.join('; ')}`);
+              console.log(r.success ? '  ✓ 比赛已开始 —— 进入 EMITTER_SELECT 阶段。' : `  ✕ ${r.errors.join('; ')}`);
+              if (r.success) {
+                console.log('  → 双方需各自选择并锁定本场 Emitter（交互模式待实现）');
+                console.log('  → 或使用 --auto 模式进行无人值守自动选择');
+              }
               break;
             }
             case 'r':

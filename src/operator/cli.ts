@@ -262,7 +262,13 @@ async function main(): Promise<void> {
 
     if (!opts.audience) console.log('\n═══ 3. 开始比赛 ═══');
     const started = setup.startMatch();
+    // F5 Gate 0.5: 只在无人值守模式自动选择 Emitter
+    // autoSelectEmitters() 契约明确：仅供演练与测试（Match.ts:702-707）
+    if (opts.auto) {
       engine.autoSelectEmitters();
+    } else {
+      throw new Error('Interactive CLI mode requires --auto for automated Emitter selection');
+    }
     if (!started.success) throw new Error(`开始比赛失败: ${started.errors.join('; ')}`);
     if (!opts.audience) console.log(setup.renderStatusTable());
     persistNow(engine); // 开赛后立即落盘一次：即使 0 回合也有审计轨迹（P1-A）
