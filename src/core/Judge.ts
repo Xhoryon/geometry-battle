@@ -25,6 +25,7 @@ import {
 } from '../obstacle/Obstacle';
 import { CanonicalNode, evaluateNode, analyzeComplexity, oscillationBound } from './Ast';
 import { FIELD, HIT_EPSILON, OBSTACLE_CONTACT_EPS, attackEndX } from './Rules';
+import { analyticObstacleIntersection, Line } from '../geometry/AnalyticIntersection';
 
 export interface TrajectoryPoint {
   x: number;
@@ -108,7 +109,9 @@ function obstacleXRange(obstacle: Obstacle): [number, number] {
 
 /**
  * 求曲线在 [xLo, xHi] 上与障碍物「首次接触」的 x。
- * 沿传播方向 dir 扫描，找到第一个 penetration <= 0 的位置并二分细化。
+ *
+ * F4 Gate 0.5 修正：使用解析几何相交检测，避免采样遗漏狭窄障碍物。
+ * 原 128 步采样可能在样本点之间遗漏接触；现优先使用解析方法。
  */
 function firstContactX(
   ast: CanonicalNode,
@@ -129,10 +132,27 @@ function firstContactX(
   };
 
   // 退化为单个 x（例如垂直线段，x 跨度为零）：直接在该处判定。
-  // 否则下面的采样区间为空，这类障碍物会永远无法阻挡。
   if (hi === lo) return pen(lo) <= 0 ? lo : null;
 
-  // 沿传播方向归一化：从 start 到 end
+  // F4: 优先使用解析几何相交检测
+  const shooter = { x: dir === 1 ? lo : hi, y: evaluateNode(ast, dir === 1 ? lo : hi) };
+  const line: Line = {
+    start: shooter,
+    dir,
+    xEnd: dir === 1 ? hi : lo,
+    evalY: (x: number) => evaluateNode(ast, x),
+  };
+
+  const analyticX = analyticObstacleIntersection(line, obstacle, OBSTACLE_CONTACT_EPS);
+  if (analyticX !== null) {
+    // 验证解析结果在有效区间内
+    if (analyticX >= Math.min(lo, hi) - 1e-9 && analyticX <= Math.max(lo, hi) + 1e-9) {
+      return analyticX;
+    }
+  }
+
+  // Fallback: 如果解析方法失败或返回区间外结果，使用采样（保留向后兼容）
+  // 这种情况不应该发生，但作为安全保障
   const start = dir === 1 ? lo : hi;
   const end = dir === 1 ? hi : lo;
   const span = Math.abs(end - start);
