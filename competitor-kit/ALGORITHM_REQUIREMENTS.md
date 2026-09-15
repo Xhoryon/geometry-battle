@@ -465,10 +465,10 @@ bug (the B side emitted a degenerate but legal function) — the exit code is 0,
 |---|---|
 | Python | CPython 3.9.6 |
 | 第三方包 | **无**（`numpy` / `scipy` / `sympy` / `torch` 等均不可用） |
-| CPU | 1 核 |
-| 线程 | 1（线程环境变量被钉为 1） |
+| 进程 | 单一参赛进程（子进程创建被拒绝） |
+| BLAS/OpenMP 并行度 | 1 线程（环境变量约束数值计算库） |
 | 内存 | 512 MB |
-| 单轮超时 | **500 ms**（Rule Revision 3 §11） |
+| 单轮超时 | **500 ms** wall-time（Rule Revision 3 §11） |
 | stdout | ≤ 256 KB，且不是结果通道 |
 | stderr | ≤ 64 KB，可用于有限调试 |
 
@@ -476,6 +476,11 @@ bug (the B side emitted a degenerate but legal function) — the exit code is 0,
 `random` / `itertools` / `functools`。
 
 **禁止**：`pip install` / `conda install` 等任何安装行为（沙箱拒绝进程创建且无网络）。
+
+**说明**（F6 Gate 0.5 修正）：
+- `OMP_NUM_THREADS` 等环境变量被设置为 `1`，约束 BLAS/OpenMP 库的并行度
+- Python `threading.Thread` 可以创建，但 500ms wall-time deadline 无法通过多线程获得优势
+- 无 OS 级 CPU 绑核或 cgroup 配额
 
 ---
 

@@ -89,7 +89,7 @@ cvxpy  z3  networkx  jax  tensorflow  statsmodels
 | `multiprocessing` | 同上（需要 fork） | `PermissionError: [Errno 1] Operation not permitted` |
 | `socket` | 沙箱 `(deny network*)` | `PermissionError: [Errno 1] Operation not permitted` |
 
-不要依赖它们：需要并行计算时请用单进程算法（线程上限也是 1）。
+不要依赖它们：需要并行计算时请用单进程算法（BLAS/OpenMP 库被限制为 1 线程）。
 
 以下能力实测**可用**：
 
@@ -107,8 +107,8 @@ cvxpy  z3  networkx  jax  tensorflow  statsmodels
 
 | 项目 | 值 | 说明 |
 |---|---|---|
-| CPU | 1 核 | 不要依赖并行 |
-| 线程上限 | 1 | `OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS` 均被钉为 `1` |
+| 进程 | 单一参赛进程 | 子进程创建被沙箱拒绝 |
+| BLAS/OpenMP | 1 线程 | `OMP_NUM_THREADS` / `OPENBLAS_NUM_THREADS` / `MKL_NUM_THREADS` / `NUMEXPR_NUM_THREADS` / `VECLIB_MAXIMUM_THREADS` 均为 `1`，约束数值计算库并行度 |
 | 内存 | 512 MB | 超限进程被终止 |
 | 单轮计算超时 | 500 ms | 从你收到 `GO` 的时刻起算 |
 | stdout 上限 | 256 KB | 超限判失败；stdout **不是**结果通道 |
