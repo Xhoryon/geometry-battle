@@ -1077,6 +1077,20 @@ export function spawnRunner(opts: {
       const candidateMs = Number(candidate - releaseNs) / 1e6;
       if (candidateMs >= 0 && candidateMs <= opts.timeoutMs) resultNs = candidate;
     }
+
+    // F3 Gate 0.5: Hard deadline enforcement
+    // Even if mtime is within budget, real elapsed time must also be within budget.
+    // This prevents host suspension from allowing over-budget execution.
+    const realElapsedMs = releaseNs !== null
+      ? Number(process.hrtime.bigint() - releaseNs) / 1e6
+      : Number(process.hrtime.bigint() - startedNs) / 1e6;
+
+    if (realElapsedMs > opts.timeoutMs) {
+      // Real time exceeded budget, even if mtime suggests otherwise
+      resultError = `算法实际耗时 ${realElapsedMs.toFixed(2)}ms 超出预算 ${opts.timeoutMs}ms（mtime 可能因宿主暂停而失真）`;
+      return;
+    }
+
     pendingResult = { resultJson: text, dslText: parsed.dslText, resultNs };
     // 预算问题到此为止：合法结果已在预算内到达（计时终点是它自己的 mtime）。
     // 不撤销这个定时器的话，若结果恰在 deadline 前 50ms 内被侦测到，
